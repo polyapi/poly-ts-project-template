@@ -1,0 +1,43 @@
+# Dependencies
+node_modules/
+package-lock.json
+
+# Build outputs
+dist/
+build/
+*.min.js
+*.min.css
+
+# Logs
+*.log
+logs/
+
+# Environment files
+.env
+.env.local
+.env.production
+
+# Coverage reports
+coverage/
+
+# IDE files
+.vscode/
+.idea/
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.temp
+
+# Specific project files that shouldn't be formatted
+working-app.json
+models/*
+tests/testProdPaymentLink.ts
+
+# JSON files (will format package.json and tsconfig.json specifically when needed)
+*.json
+!package.json
+!tsconfig.json

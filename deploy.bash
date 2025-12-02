@@ -1,0 +1,2 @@
+npx poly function add SOME_CFX ./src/workflowName/client/SOME_CFX.ts --context="SOME.CONTEXT" --description="Some desc" --client --ignore-dependencies && 
+npx poly function add SOME_SFX ./src/workflowName/server/SOME_SFX.ts --context="SOME.CONTEXT" --server --logs=enabled --execution-api-key $WORKFLOW_EXECUTION_API_KEY --ignore-dependencies
