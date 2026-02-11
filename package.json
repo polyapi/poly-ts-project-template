@@ -7,7 +7,7 @@
     "test": "tests"
   },
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "jest",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "format:ts": "prettier --write \"**/*.{ts,tsx}\"",
@@ -27,20 +27,20 @@
   },
   "homepage": "https://github.com/polyapi/poly-ts-project-template#readme",
   "dependencies": {
-    "polyapi": "^0.25.8",
+    "polyapi": "^0.25.17",
     "ts-node": "^10.9.2",
-    "typescript": "^5.8.3"
+    "typescript": "^5.9.3"
   },
   "devDependencies": {
     "@types/jest": "^30.0.0",
-    "@types/node": "^24.1.0",
+    "@types/node": "^24.10.13",
     "@typescript-eslint/eslint-plugin": "^8.38.0",
     "@typescript-eslint/parser": "^8.38.0",
-    "eslint": "^8.57.1",
+    "eslint": "^9.39.2",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-prettier": "^5.5.3",
     "jest": "^30.2.0",
-    "prettier": "^3.6.2",
-    "ts-jest": "^29.4.5"
+    "prettier": "^3.8.1",
+    "ts-jest": "^29.4.6"
   }
 }
