@@ -1,0 +1,158 @@
+/**
+ * Type definitions for CLI artifacts and operations
+ */
+
+export interface WebhookFile {
+  filePath: string;
+  fileName: string;
+  content: any;
+}
+
+export interface FunctionFile {
+  tsFilePath: string;
+  type: 'client' | 'server';
+  metadata: {
+    name: string;
+    context: string;
+    description: string;
+    visibility?: 'ENVIRONMENT' | 'TENANT' | 'PUBLIC';
+    logsEnabled?: boolean;
+    generateContexts?: string[];
+    executionApiKey?: string;
+    cachePolyLibrary?: boolean;
+  };
+}
+
+export interface WebhookTriggerFileContent {
+  name?: string;
+  source: {
+    webhookName: string;
+    webhookContext: string;
+  };
+  destination: {
+    functionName: string;
+    functionContext: string;
+  };
+  waitForResponse?: boolean;
+}
+
+export interface ErrorHandlerTriggerFileContent {
+  name?: string;
+  errorHandler: {
+    path: string;
+    applicationIds?: string[];
+    userIds?: string[];
+    functionIds?: string[];
+  };
+  destination: {
+    functionName: string;
+    functionContext: string;
+  };
+  enabled?: boolean;
+}
+
+export type TriggerFileContent =
+  | WebhookTriggerFileContent
+  | ErrorHandlerTriggerFileContent;
+
+export interface TriggerFile {
+  filePath: string;
+  fileName: string;
+  content: TriggerFileContent;
+}
+
+export interface SchemaFile {
+  filePath: string;
+  fileName: string;
+  content: {
+    name: string;
+    context: string;
+    schema: any;
+  };
+}
+
+export interface VariableFile {
+  filePath: string;
+  fileName: string;
+  content: {
+    name: string;
+    context: string;
+    description?: string;
+    instruction?: string;
+    value?: unknown;
+    secret?: boolean;
+    secrecy?: 'SECRET' | 'OBSCURED' | 'PARTIAL' | 'NONE';
+    visibility?: 'ENVIRONMENT' | 'TENANT' | 'PUBLIC';
+    state?: 'ALPHA' | 'BETA' | 'STABLE' | 'DEPRECATED' | 'DISABLED';
+    expiresAt?: string;
+    ownerUserId?: string | null;
+    schema?: Record<string, unknown>;
+  };
+}
+
+export interface JobFunctionRef {
+  functionName: string;
+  functionContext: string;
+  eventPayload?: Record<string, unknown>;
+  headersPayload?: Record<string, unknown>;
+  paramsPayload?: Record<string, unknown>;
+}
+
+export interface JobSchedulePeriodical {
+  type: 'periodical';
+  value: string;
+  acceptableDelayTime?: number | null;
+}
+
+export interface JobScheduleInterval {
+  type: 'interval';
+  value: number;
+  acceptableDelayTime?: number | null;
+}
+
+export interface JobScheduleOnTime {
+  type: 'on_time';
+  value: string;
+  acceptableDelayTime?: number | null;
+}
+
+export type JobSchedule =
+  | JobSchedulePeriodical
+  | JobScheduleInterval
+  | JobScheduleOnTime;
+
+export interface JobFile {
+  filePath: string;
+  fileName: string;
+  content: {
+    name: string;
+    schedule: JobSchedule;
+    executionType: 'sequential' | 'parallel';
+    enabled: boolean;
+    functions: JobFunctionRef[];
+    ownerUserId?: string;
+  };
+}
+
+export interface TableColumnDef {
+  name: string;
+  type: string;
+  default?: unknown;
+  required?: boolean;
+  unique?: boolean;
+  primary?: boolean;
+  schema?: Record<string, unknown> | null;
+}
+
+export interface TableFile {
+  filePath: string;
+  fileName: string;
+  content: {
+    name: string;
+    context: string;
+    description?: string;
+    ownerUserId?: string;
+    visibility?: 'ENVIRONMENT' | 'TENANT';
+    columns: TableColumnDef[];
+  };
+}
