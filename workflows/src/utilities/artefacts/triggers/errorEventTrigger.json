@@ -1,0 +1,14 @@
+{
+  "name": "globalErrorAlerts",
+  "errorHandler": {
+    "path": "example",
+    "applicationIds": [],
+    "userIds": [],
+    "functionIds": []
+  },
+  "destination": {
+    "functionName": "errorAlerts",
+    "functionContext": "example.utilities"
+  },
+  "enabled": true
+}

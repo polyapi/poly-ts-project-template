@@ -1,0 +1,42 @@
+{
+  "name": "workflows",
+  "version": "1.0.0",
+  "private": true,
+  "description": "TypeScript PolyAPI workflow implementations",
+  "main": "index.js",
+  "scripts": {
+    "push": "pnpm --filter flow-cli run build && node ../cli/dist/cli.js push",
+    "push:dry-run": "pnpm --filter flow-cli run build && node ../cli/dist/cli.js push --dry-run",
+    "test": "ava",
+    "test:e2e": "ava --config ava.config.e2e.cjs",
+    "test:all": "ava && ava --config ava.config.e2e.cjs",
+    "train:openapi": "bash src/utilities/scripts/trainOpenApi.sh",
+    "delete:content": "bash src/utilities/scripts/deleteContent.sh"
+  },
+  "ava": {
+    "extensions": [
+      "ts"
+    ],
+    "files": [
+      "src/**/*.test.ts",
+      "!src/**/*.e2e.test.ts"
+    ],
+    "require": [
+      "ts-node/register"
+    ],
+    "timeout": "60s"
+  },
+  "dependencies": {
+    "polyapi": "^0.25.9"
+  },
+  "devDependencies": {
+    "@ava/typescript": "^6.0.0",
+    "@types/node": "^25.0.10",
+    "ava": "^6.4.1",
+    "dotenv": "^17.2.3",
+    "flow-cli": "workspace:*",
+    "swagger2openapi": "^7.0.8",
+    "ts-node": "^10.9.2",
+    "typescript": ">=5.8.3 <5.9.0"
+  }
+}

@@ -1,0 +1,106 @@
+# AGENTS.md
+
+**Generic PolyAPI TypeScript workspace** with workflow code under
+`workflows/` and sync tooling under `cli/`.
+
+Docs: <https://docs.polyapi.io/platform_overview.html>
+
+## Scope
+
+- Applies to all work started from this repo.
+- Covers repo-wide source-of-truth order, runtime model, environment, and task
+  routing.
+- Optional local implementation guidance can live under `./agents/skills/`.
+
+## Source Of Truth
+
+1. This `AGENTS.md` for repo-wide rules
+2. Checked-in executable code and JSON artefacts under `workflows/src/`, plus
+   checked-in tooling under `cli/`
+3. `CONVENTIONS.md`
+4. Relevant installed skills under `./agents/skills/`
+5. `README.md`
+6. Same-folder `OVERVIEW.md` files and maintained project docs
+
+If docs or skills conflict with checked-in code or artefacts, follow the
+checked-in implementation and call out the drift clearly.
+
+## Runtime Model
+
+- PolyAPI runtime flow is: schemas -> webhooks -> triggers -> functions.
+- Keep TypeScript, JSON artefacts, and tests aligned in the same change.
+- `workflows/src/` holds workflows and shared utilities.
+- `cli/` holds Flow CLI validation, generation, and sync tooling.
+- `designs/` holds upstream specs and schema source material.
+- This repo uses the checked-in `artefacts/` folder spelling.
+- `POLYAPI_NAMESPACE` is mandatory. All deployed artefacts must keep a
+  `context` starting with that namespace, for example `example.workflow`.
+
+## Environment And Tooling
+
+- Package manager: `pnpm` workspaces.
+- Formatter and linter: Biome.
+- SDK dependency lives in `workflows/package.json`. Do not upgrade casually.
+- Never commit secrets or log them.
+- Required environment variables:
+
+```env
+POLYAPI_NAMESPACE=example
+BASE_URL=https://eu1.polyapi.io
+API_KEY=replace-with-your-api-key
+```
+
+- Common command path:
+
+```bash
+pnpm install
+pnpm check
+pnpm workflows test
+ENVPATH=workflows/dev.env pnpm workflows push --dry-run
+ENVPATH=workflows/dev.env pnpm workflows push
+```
+
+## Skill Entry Points
+
+This template does not include skills by default. Bring relevant skills from:
+
+<https://github.com/polyapi/poly-skills>
+
+Recommended skill categories:
+
+- TypeScript coding conventions
+- PolyAPI SDK usage
+- Artefact layout and sync
+- Markdown documentation
+- Overview generation
+
+## Change Workflow
+
+1. Inspect a comparable maintained workflow or utility before inventing new
+   patterns.
+2. Edit code, artefacts, and tests together.
+3. Run the relevant checked-in verification path.
+4. Update same-folder `OVERVIEW.md` when runtime behaviour changes.
+5. Keep changes deterministic, reviewable, and easy to verify.
+
+## Repo Guardrails
+
+- Do not loosen schemas or webhook contracts just to make a change pass.
+- Version breaking contract changes instead of silently mutating existing
+  behaviour.
+- Do not add a new workflow without the aligned artefact set and tests.
+- Do not create ad hoc documentation files unless they are useful to maintain.
+  Same-folder `OVERVIEW.md` files are the default workflow documentation.
+- Call out documentation drift when skills or prose no longer match the
+  checked-in implementation.
+
+## Security Constraints
+
+- Never read, copy, commit, or summarize `.env`, `.env.*`, `*.env`, or files
+  containing secrets or credentials.
+- Never access files with extensions such as `.key`, `.pem`, `.p12`, `.pfx`,
+  or `.crt`.
+- Do not log secrets, tokens, API keys, connection strings, or raw credentials.
+- Use placeholder values only in example environment files.
+- Require human approval before changing dependency versions, CI/CD, or
+  production deployment safeguards.

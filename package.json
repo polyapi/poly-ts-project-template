@@ -1,46 +1,27 @@
 {
-  "name": "project-name",
+  "name": "poly-ts-project-template",
   "version": "1.0.0",
-  "description": "project desc",
-  "main": "index.js",
-  "directories": {
-    "test": "tests"
-  },
+  "private": true,
+  "description": "Generic TypeScript PolyAPI project template",
+  "packageManager": "pnpm@10.0.0",
   "scripts": {
-    "test": "jest",
-    "format": "prettier --write .",
-    "format:check": "prettier --check .",
-    "format:ts": "prettier --write \"**/*.{ts,tsx}\"",
-    "format:js": "prettier --write \"**/*.{js,jsx}\"",
-    "lint": "eslint . --ext .ts,.tsx,.js,.jsx",
-    "lint:fix": "eslint . --ext .ts,.tsx,.js,.jsx --fix",
-    "lint:check": "eslint . --ext .ts,.tsx,.js,.jsx --max-warnings 0"
+    "workflows": "pnpm --filter workflows",
+    "flow": "pnpm --filter flow-cli",
+    "format": "biome format --write .",
+    "format:check": "biome format .",
+    "lint": "biome lint .",
+    "lint:fix": "biome lint --write .",
+    "check": "biome check .",
+    "check:fix": "biome check --write ."
   },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/polyapi/poly-ts-project-template.git"
-  },
-  "keywords": [],
+  "keywords": [
+    "polyapi",
+    "typescript",
+    "template"
+  ],
   "author": "PolyAPI",
-  "bugs": {
-    "url": "https://github.com/polyapi/poly-ts-project-template/issues"
-  },
-  "homepage": "https://github.com/polyapi/poly-ts-project-template#readme",
-  "dependencies": {
-    "polyapi": "^0.25.17",
-    "ts-node": "^10.9.2",
-    "typescript": "^5.9.3"
-  },
+  "license": "MIT",
   "devDependencies": {
-    "@types/jest": "^30.0.0",
-    "@types/node": "^24.10.13",
-    "@typescript-eslint/eslint-plugin": "^8.38.0",
-    "@typescript-eslint/parser": "^8.38.0",
-    "eslint": "^9.39.2",
-    "eslint-config-prettier": "^10.1.8",
-    "eslint-plugin-prettier": "^5.5.3",
-    "jest": "^30.2.0",
-    "prettier": "^3.8.1",
-    "ts-jest": "^29.4.6"
+    "@biomejs/biome": "2.4.13"
   }
 }

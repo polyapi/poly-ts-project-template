@@ -1,14 +1,26 @@
 # compiled output
-/dist
+dist
 node_modules
 *.tgz
 
-# data / env
+# generated cli files
+cli/schemas/*.schema.json
+cli/src/generated/*.ts
+!cli/src/generated/.keep
+
+# generated PolyAPI files and caches
+poly-spec.json
+.poly-deploy-cache.json
+
+# data and environment
 examples.jsonl
 .env
-.env*
+.env.*
+*.env
+env/
+!*.env.example
 
-# Logs
+# logs
 logs
 *.log
 npm-debug.log*
@@ -19,8 +31,9 @@ lerna-debug.log*
 
 # OS
 .DS_Store
+Thumbs.db
 
-# Tests
+# tests
 /coverage
 
 # IDEs and editors
@@ -31,17 +44,6 @@ lerna-debug.log*
 *.launch
 .settings/
 *.sublime-workspace
-
-# IDE - VSCode
-*/.vscode
-.vscode/*
-!.vscode/tasks.json
-!.vscode/launch.json
-!.vscode/extensions.json
-
-# pycache
-__pycache__
-.mypy_cache/
 
 # scratchpad files
 scratch/

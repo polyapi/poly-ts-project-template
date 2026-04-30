@@ -1,1 +1,2 @@
-npx poly prepare --lazy
+#!/usr/bin/env sh
+pnpm check
