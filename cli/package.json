@@ -5,7 +5,7 @@
   "description": "Flow CLI for syncing local PolyAPI TypeScript artefacts",
   "main": "dist/cli.js",
   "bin": {
-    "flow": "dist/cli.js"
+    "flow": "bin/flow.js"
   },
   "scripts": {
     "build": "tsc",

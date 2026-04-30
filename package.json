@@ -21,6 +21,11 @@
   ],
   "author": "PolyAPI",
   "license": "MIT",
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
+  },
   "devDependencies": {
     "@biomejs/biome": "2.4.13"
   }
