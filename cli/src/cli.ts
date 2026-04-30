@@ -502,11 +502,88 @@ function runPolyGenerateAfterPush(): boolean {
     return true;
   } catch (error) {
     logger.error(
-      { error },
-      'Post-push generation failed: pnpm workflows exec poly generate'
+      { error: serializeErrorForLog(error) },
+      `Post-push generation failed: ${getErrorMessage(error)}`
     );
     return false;
   }
+}
+
+function getErrorMessage(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message || error.name;
+  }
+
+  if (typeof error === 'string') {
+    return error;
+  }
+
+  try {
+    return JSON.stringify(error);
+  } catch {
+    return String(error);
+  }
+}
+
+function serializeErrorForLog(error: unknown): Record<string, unknown> {
+  if (error instanceof Error) {
+    const errorRecord = error as Error & {
+      cause?: unknown;
+      code?: unknown;
+      response?: {
+        data?: unknown;
+        status?: unknown;
+        statusText?: unknown;
+      };
+      status?: unknown;
+      statusText?: unknown;
+    };
+
+    return {
+      name: error.name,
+      message: error.message,
+      ...(error.stack ? { stack: error.stack } : {}),
+      ...(errorRecord.code !== undefined ? { code: errorRecord.code } : {}),
+      ...(errorRecord.status !== undefined
+        ? { status: errorRecord.status }
+        : {}),
+      ...(errorRecord.statusText !== undefined
+        ? { statusText: errorRecord.statusText }
+        : {}),
+      ...(errorRecord.response
+        ? {
+            response: {
+              status: errorRecord.response.status,
+              statusText: errorRecord.response.statusText,
+              data: errorRecord.response.data,
+            },
+          }
+        : {}),
+      ...(errorRecord.cause !== undefined
+        ? {
+            cause:
+              errorRecord.cause instanceof Error
+                ? {
+                    name: errorRecord.cause.name,
+                    message: errorRecord.cause.message,
+                    ...(errorRecord.cause.stack
+                      ? { stack: errorRecord.cause.stack }
+                      : {}),
+                  }
+                : errorRecord.cause,
+          }
+        : {}),
+    };
+  }
+
+  if (typeof error === 'string') {
+    return { message: error };
+  }
+
+  return {
+    message: getErrorMessage(error),
+    value: error,
+  };
 }
 
 async function promptForConfirmation(prompt: string): Promise<string> {
@@ -1195,7 +1272,10 @@ async function main(): Promise<void> {
       getTotalStats(summary).failed > 0 || !postPushGenerateSuccess ? 1 : 0
     );
   } catch (error) {
-    logger.fatal({ error }, 'Fatal error during synchronization');
+    logger.fatal(
+      { error: serializeErrorForLog(error) },
+      `Fatal error during synchronization: ${getErrorMessage(error)}`
+    );
     process.exit(1);
   }
 }
