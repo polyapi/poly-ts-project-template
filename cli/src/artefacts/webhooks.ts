@@ -12,6 +12,7 @@ type UpdateWebhookHandleDto =
   paths['/webhooks/{id}']['patch']['requestBody']['content']['application/json'];
 
 import { getDeleteHeaders, sleep } from '../utils/apiClient';
+import { validateEndpointPayload } from '../utils/apiSchemaValidation';
 import {
   getSrcPath,
   readJsonFile,
@@ -358,6 +359,16 @@ async function postWebhook(
         return 'updated';
       }
 
+      if (
+        !validateEndpointPayload('UpdateWebhookHandleDto', payload, {
+          artifactType: 'Webhook',
+          artifactName: webhookName,
+          filePath: webhook.filePath,
+        })
+      ) {
+        return 'failed';
+      }
+
       const { error, response } = await client.PATCH('/webhooks/{id}', {
         params: { path: { id: existingWebhook.id } },
         body: payload as UpdateWebhookHandleDto,
@@ -380,6 +391,16 @@ async function postWebhook(
     } else {
       if (dryRun) {
         return 'created';
+      }
+
+      if (
+        !validateEndpointPayload('CreateWebhookHandleDto', payload, {
+          artifactType: 'Webhook',
+          artifactName: webhookName,
+          filePath: webhook.filePath,
+        })
+      ) {
+        return 'failed';
       }
 
       const { error, response } = await client.POST('/webhooks', {

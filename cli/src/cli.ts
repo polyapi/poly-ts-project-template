@@ -12,6 +12,7 @@ import path from 'node:path';
 import { createInterface } from 'node:readline/promises';
 import { parseArgs as parseNodeArgs } from 'node:util';
 import chalk from 'chalk';
+import { findCanopyFiles, syncCanopy } from './artefacts/canopy';
 import { findFunctionFiles, syncFunctions } from './artefacts/functions';
 import { findJobFiles, syncJobs } from './artefacts/jobs';
 import { findSchemaFiles, syncSchemas } from './artefacts/schemas';
@@ -47,6 +48,7 @@ import {
 } from './utils/validation';
 
 type ArtifactType =
+  | 'canopy'
   | 'variables'
   | 'schemas'
   | 'tables'
@@ -62,6 +64,7 @@ type CliArgs = {
   force: boolean;
   verbose: boolean;
   deleteOrphans: boolean;
+  buildSchema: boolean;
   skipInvalid: boolean;
   showConfig: boolean;
   skipGenerate: boolean;
@@ -71,6 +74,7 @@ type CliArgs = {
 };
 
 const DEFAULT_ENABLED_TYPES: ArtifactType[] = [
+  'canopy',
   'variables',
   'schemas',
   'tables',
@@ -81,6 +85,7 @@ const DEFAULT_ENABLED_TYPES: ArtifactType[] = [
 ];
 
 const SUPPORTED_TYPE_SELECTIONS = [
+  'canopy',
   'variables',
   'schemas',
   'tables',
@@ -109,6 +114,25 @@ Examples:
 `);
 }
 
+function installSignalHandlers(): void {
+  let signalCount = 0;
+
+  const handleSignal = (signal: NodeJS.Signals): void => {
+    signalCount += 1;
+
+    if (signalCount === 1) {
+      process.stderr.write(`\nReceived ${signal}. Exiting...\n`);
+      process.exit(130);
+    }
+
+    process.stderr.write(`\nReceived ${signal} again. Force exiting now.\n`);
+    process.exit(130);
+  };
+
+  process.on('SIGINT', handleSignal);
+  process.on('SIGTERM', handleSignal);
+}
+
 function printPushHelp(): void {
   logger.info(`Deploy PolyAPI artefacts from local files with env-driven behavior.
 
@@ -120,7 +144,8 @@ Usage:
   --force             Update existing remote artifacts even when payload is unchanged
   --verbose           Print debug logging while scanning and diffing
   --delete-orphans    Delete remote artefacts that no longer exist locally
-  --types             Comma-separated types: variables,schemas,tables,functions,client-functions,server-functions,webhooks,triggers,jobs
+  --build-schema      Regenerate OpenAPI SDK/schemas before sync
+  --types             Comma-separated types: canopy,variables,schemas,tables,functions,client-functions,server-functions,webhooks,triggers,jobs
   --paths             Comma-separated scope filters, e.g. exampleWorkflow or src/utilities
   --show-config       Print resolved CLI config and exit
   --skip-generate     Skip pnpm workflows exec poly generate after sync
@@ -258,6 +283,7 @@ function parseCliArgs(argv: string[] = process.argv.slice(2)): CliArgs | null {
       force: { type: 'boolean' },
       verbose: { type: 'boolean' },
       'delete-orphans': { type: 'boolean' },
+      'build-schema': { type: 'boolean' },
       'skip-invalid': { type: 'boolean' },
       types: { type: 'string' },
       paths: { type: 'string' },
@@ -284,6 +310,7 @@ function parseCliArgs(argv: string[] = process.argv.slice(2)): CliArgs | null {
     force: Boolean(values.force),
     verbose: Boolean(values.verbose),
     deleteOrphans: Boolean(values['delete-orphans']),
+    buildSchema: Boolean(values['build-schema']),
     skipInvalid: Boolean(values['skip-invalid']),
     showConfig: Boolean(values['show-config']),
     skipGenerate: Boolean(values['skip-generate']),
@@ -319,6 +346,7 @@ function printSummary(
   );
 
   const artifacts = [
+    { name: 'Canopy', data: summary.canopy },
     { name: 'Schemas', data: summary.schemas },
     { name: 'Webhooks', data: summary.webhooks },
     { name: 'Functions', data: summary.functions },
@@ -509,6 +537,34 @@ function runPolyGenerateAfterPush(): boolean {
   }
 }
 
+function runSchemaGenerationBeforePush(): boolean {
+  const cliRoot = path.resolve(__dirname, '..');
+
+  logger.info(
+    chalk.cyan.bold(
+      '[PRE-PUSH] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'
+    )
+  );
+  logger.info(
+    chalk.gray(`Running: pnpm generate (cwd: ${cliRoot})`)
+  );
+
+  try {
+    execFileSync('pnpm', ['generate'], {
+      cwd: cliRoot,
+      stdio: 'inherit',
+    });
+    logger.info(chalk.green('✓ Pre-push schema generation completed\n'));
+    return true;
+  } catch (error) {
+    logger.error(
+      { error: serializeErrorForLog(error) },
+      `Pre-push schema generation failed: ${getErrorMessage(error)}`
+    );
+    return false;
+  }
+}
+
 function getErrorMessage(error: unknown): string {
   if (error instanceof Error) {
     return error.message || error.name;
@@ -638,7 +694,7 @@ function warnForMissingDefaultEnvFile(envFile: {
   }
 
   logger.warn(
-    'No `.env` file was found. Create `.env` or set `ENVPATH` to point to a specific env file.'
+    'No default env file was found at `workflows/.env`. Create it or set `ENVPATH` to point to a specific env file.'
   );
 }
 
@@ -852,6 +908,7 @@ function printConfig(
           force: cliArgs.force,
           verbose: cliArgs.verbose,
           deleteOrphans: cliArgs.deleteOrphans,
+          buildSchema: cliArgs.buildSchema,
           skipInvalid: cliArgs.skipInvalid,
           showConfig: cliArgs.showConfig,
           skipGenerate: cliArgs.skipGenerate,
@@ -897,10 +954,16 @@ async function main(): Promise<void> {
     await maybeConfirmBranchEnvFileMatch(projectRoot, preflight);
     cliArgs = await maybePromptForInitialScope(projectRoot, cliArgs);
     await enforceProductionSafeguards(preflight, cliArgs);
+    if (cliArgs.buildSchema && !runSchemaGenerationBeforePush()) {
+      throw new Error('Schema generation failed before sync.');
+    }
 
     const discoveryOptions = getDiscoveryOptions(cliArgs);
     const variableFiles = cliArgs.enabledTypes.includes('variables')
       ? findVariableFiles(discoveryOptions)
+      : [];
+    const canopyFiles = cliArgs.enabledTypes.includes('canopy')
+      ? findCanopyFiles(discoveryOptions)
       : [];
     const schemaFiles = cliArgs.enabledTypes.includes('schemas')
       ? findSchemaFiles(discoveryOptions)
@@ -925,6 +988,7 @@ async function main(): Promise<void> {
       : [];
 
     await maybePromptForMissingEnvTokens([
+      ...canopyFiles,
       ...schemaFiles,
       ...webhookFiles,
       ...triggerFiles,
@@ -981,6 +1045,13 @@ async function main(): Promise<void> {
         )
       );
     }
+    if (cliArgs.buildSchema) {
+      logger.info(
+        chalk.gray(
+          'Schema Build: enabled (--build-schema)'
+        )
+      );
+    }
     if (cliArgs.pathFilters.length > 0) {
       logger.info(chalk.gray('Orphans: skipped for scoped sync'));
     }
@@ -1001,6 +1072,7 @@ async function main(): Promise<void> {
     logger.info(chalk.gray('Validating selected artifacts before sync...\n'));
 
     let validVariables = 0;
+    let validCanopy = 0;
     let validSchemas = 0;
     let validWebhooks = 0;
     let validFunctions = 0;
@@ -1021,6 +1093,18 @@ async function main(): Promise<void> {
       ) {
         validVariables++;
         totalValidated++;
+      }
+    }
+
+    for (const canopy of canopyFiles) {
+      totalArtifacts++;
+      if (canopy.content && typeof canopy.content === 'object') {
+        validCanopy++;
+        totalValidated++;
+      } else if (!cliArgs.skipInvalid) {
+        throw new Error(
+          `Invalid Canopy artifact structure in ${canopy.filePath}. Expected a JSON object.`
+        );
       }
     }
 
@@ -1111,6 +1195,14 @@ async function main(): Promise<void> {
           )
       );
     }
+    if (canopyFiles.length > 0) {
+      logger.info(
+        chalk.green('✓') +
+          chalk.gray(
+            ` Canopy:     ${validCanopy}/${canopyFiles.length} validated`
+          )
+      );
+    }
     if (schemaFiles.length > 0) {
       logger.info(
         chalk.green('✓') +
@@ -1192,6 +1284,13 @@ async function main(): Promise<void> {
         cliArgs.deleteOrphans,
         cliArgs.skipInvalid,
         syncOptions
+      );
+    }
+    if (cliArgs.enabledTypes.includes('canopy')) {
+      await syncCanopy(
+        summary.canopy,
+        { dryRun: cliArgs.dryRun, force: cliArgs.force },
+        canopyFiles
       );
     }
     if (cliArgs.enabledTypes.includes('schemas')) {
@@ -1281,4 +1380,5 @@ async function main(): Promise<void> {
 }
 
 // Run the CLI
+installSignalHandlers();
 main();

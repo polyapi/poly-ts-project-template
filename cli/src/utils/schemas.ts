@@ -224,6 +224,7 @@ const WebhookTriggerArtifact = Type.Object(
     source: TriggerSource,
     destination: TriggerDestination,
     waitForResponse: Type.Optional(Type.Boolean()),
+    ownerUserId: Type.Optional(Type.String()),
   },
   { $id: 'WebhookTriggerArtifact', additionalProperties: false }
 );
@@ -234,6 +235,7 @@ const ErrorHandlerTriggerArtifact = Type.Object(
     errorHandler: ErrorHandlerSource,
     destination: TriggerDestination,
     enabled: Type.Optional(Type.Boolean()),
+    ownerUserId: Type.Optional(Type.String()),
   },
   { $id: 'ErrorHandlerTriggerArtifact', additionalProperties: false }
 );

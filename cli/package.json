@@ -8,7 +8,10 @@
     "flow": "bin/flow.js"
   },
   "scripts": {
+    "build:no-schema": "tsc",
     "build": "tsc",
+    "build:with-schema": "pnpm generate && tsc",
+    "postinstall": "pnpm generate",
     "generate": "pnpm exec tsx src/codegen/generate.ts"
   },
   "keywords": [
@@ -29,6 +32,7 @@
   },
   "devDependencies": {
     "@types/node": "^25.0.10",
+    "openapi-typescript": "^6.7.3",
     "tsx": "^4.7.0",
     "typescript": ">=5.8.3 <5.9.0",
     "yaml": "^2.8.2"

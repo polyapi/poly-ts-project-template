@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import type {
+  CanopyFile,
   JobFile,
   SchemaFile,
   TableFile,
@@ -13,6 +14,7 @@ import { chalk, logger } from './logger';
 const ENV_ALERT_PATTERN = /\{\{([A-Z_][A-Z0-9_]*)\}\}/g;
 
 type JsonArtifactFile =
+  | CanopyFile
   | SchemaFile
   | WebhookFile
   | TriggerFile

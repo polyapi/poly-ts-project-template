@@ -8,6 +8,7 @@ import type { FunctionFile } from '../types';
 import type { ArtifactSummary, OrphanedResource } from '../types/summary';
 import { getDeleteHeaders, sleep } from '../utils/apiClient';
 import { getProductionExecutionApiKeyOverride } from '../utils/deploymentConfig';
+import { substituteEnvTokens } from '../utils/envSubstitution';
 import {
   getProjectRoot,
   getSrcPath,
@@ -573,7 +574,10 @@ export function findFunctionFiles(
           return;
         }
 
-        const metadata = extractPolyConfigFromTs(source, fullPath);
+        const extractedMetadata = extractPolyConfigFromTs(source, fullPath);
+        const metadata = extractedMetadata
+          ? substituteEnvTokens(extractedMetadata)
+          : null;
         if (!metadata) {
           log.warn(
             { tsFile: file },

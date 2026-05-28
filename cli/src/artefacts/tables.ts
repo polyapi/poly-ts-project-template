@@ -3,6 +3,7 @@ import type { components, paths } from '../sdk/schema';
 import type { TableFile } from '../types';
 import type { ArtifactSummary, OrphanedResource } from '../types/summary';
 import { getDeleteHeaders, sleep } from '../utils/apiClient';
+import { validateEndpointPayload } from '../utils/apiSchemaValidation';
 import {
   getSrcPath,
   readJsonFile,
@@ -310,6 +311,16 @@ async function postTable(
         return 'updated';
       }
 
+      if (
+        !validateEndpointPayload('UpdateTableDto', payload, {
+          artifactType: 'Table',
+          artifactName: tableName,
+          filePath: table.filePath,
+        })
+      ) {
+        return 'failed';
+      }
+
       const { error, response } = await client.PATCH('/tables/{id}', {
         params: { path: { id: existingTable.id } },
         body: {
@@ -336,6 +347,16 @@ async function postTable(
 
     if (dryRun) {
       return 'created';
+    }
+
+    if (
+      !validateEndpointPayload('CreateTableDto', payload, {
+        artifactType: 'Table',
+        artifactName: tableName,
+        filePath: table.filePath,
+      })
+    ) {
+      return 'failed';
     }
 
     const { error, response } = await client.POST('/tables', {

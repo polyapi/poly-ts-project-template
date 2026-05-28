@@ -73,18 +73,14 @@ async function promptForHiddenInput(prompt: string): Promise<string> {
  * @throws Error if required environment variables are missing
  */
 export function loadEnv(): EnvLoadResult {
+  const workspaceRoot = findWorkspaceRoot(process.cwd());
+  const defaultWorkflowEnvPath = path.join(workspaceRoot, 'workflows', '.env');
   const polyEnvPath = resolvePolyEnvPath();
-  const localEnvPath = path.join(__dirname, '../../.env');
   const rootEnvPath = path.join(__dirname, '../../../.env');
 
   // Load root .env first (lowest priority)
   if (fs.existsSync(rootEnvPath)) {
     dotenv.config({ path: rootEnvPath });
-  }
-
-  // Load CLI package .env (can override root)
-  if (fs.existsSync(localEnvPath)) {
-    dotenv.config({ path: localEnvPath, override: true });
   }
 
   // Load Poly CLI config if present (can override previous)
@@ -95,7 +91,7 @@ export function loadEnv(): EnvLoadResult {
   const envPathOverride = process.env.ENVPATH?.trim();
   const selectedEnvPath = envPathOverride
     ? resolveSelectedEnvPath(envPathOverride)
-    : path.join(process.cwd(), '.env');
+    : defaultWorkflowEnvPath;
 
   if (envPathOverride && !fs.existsSync(selectedEnvPath)) {
     throw new Error(
@@ -170,15 +166,15 @@ export function loadEnv(): EnvLoadResult {
     logger.error(chalk.white('  POLYAPI_NAMESPACE=example'));
     logger.error(chalk.gray('\nChecked:'));
     logger.error(chalk.dim(`  - ${rootEnvPath}`));
-    logger.error(chalk.dim(`  - ${localEnvPath}`));
     logger.error(
       chalk.dim(
         `  - ${polyEnvPath ?? 'polyapi config not found (checked pnpm + node_modules/.poly)'}`
       )
     );
-    logger.error(
-      chalk.dim(`  - ${path.join(process.cwd(), '.env')} (current directory)`)
-    );
+    logger.error(chalk.dim(`  - ${defaultWorkflowEnvPath} (default)`));
+    if (envPathOverride) {
+      logger.error(chalk.dim(`  - ${selectedEnvPath} (ENVPATH)`));
+    }
     logger.error(
       chalk.bold.red(
         '\n══════════════════════════════════════════════════════════\n'
@@ -189,7 +185,7 @@ export function loadEnv(): EnvLoadResult {
   }
 
   return {
-    displayPath: envPathOverride || '.env',
+    displayPath: envPathOverride || 'workflows/.env',
     resolvedPath: selectedEnvPath,
     exists: fs.existsSync(selectedEnvPath),
     fromEnvPath: Boolean(envPathOverride),
@@ -197,18 +193,40 @@ export function loadEnv(): EnvLoadResult {
 }
 
 function resolveSelectedEnvPath(envPathOverride: string): string {
+  if (path.isAbsolute(envPathOverride)) {
+    return envPathOverride;
+  }
+
+  const workspaceRoot = findWorkspaceRoot(process.cwd());
+  const normalizedOverride = envPathOverride.replace(/\\/g, '/');
+  const isWorkflowsRelative =
+    normalizedOverride === 'workflows' ||
+    normalizedOverride.startsWith('workflows/');
+
+  if (isWorkflowsRelative) {
+    return path.resolve(workspaceRoot, envPathOverride);
+  }
+
+  const workflowsCandidate = path.resolve(
+    workspaceRoot,
+    'workflows',
+    envPathOverride
+  );
+  if (fs.existsSync(workflowsCandidate)) {
+    return workflowsCandidate;
+  }
+
   const cwdCandidate = path.resolve(process.cwd(), envPathOverride);
   if (fs.existsSync(cwdCandidate)) {
     return cwdCandidate;
   }
 
-  const workspaceRoot = findWorkspaceRoot(process.cwd());
   const workspaceCandidate = path.resolve(workspaceRoot, envPathOverride);
   if (fs.existsSync(workspaceCandidate)) {
     return workspaceCandidate;
   }
 
-  return cwdCandidate;
+  return workflowsCandidate;
 }
 
 function findUp(relativePath: string): string | null {

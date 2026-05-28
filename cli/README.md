@@ -7,10 +7,11 @@ functions and JSON artefacts.
 
 ```bash
 pnpm --filter flow-cli run build
+pnpm --filter flow-cli run generate
 flow push
 flow push --dry-run
 flow push --paths exampleWorkflow
-flow push --types functions,webhooks,triggers
+flow push --types canopy,functions,webhooks,triggers
 flow push --delete-orphans
 ```
 
@@ -31,8 +32,17 @@ BASE_URL=https://eu1.polyapi.io
 API_KEY=replace-with-your-api-key
 ```
 
+Optional values:
+
+```env
+POLYAPI_OPENAPI_SPEC_URL=https://eu1.polyapi.io/swagger-json
+```
+
 Use `ENVPATH` to point Flow at the local environment file for the target
 environment.
+
+`build` and `postinstall` both run `generate`, which refreshes
+`src/sdk/schema.d.ts` from `POLYAPI_OPENAPI_SPEC_URL` (or the default URL above).
 
 ## What Flow Scans
 
@@ -44,8 +54,13 @@ environment.
 - `src/**/artefacts/vari/**/*.json`
 - `src/**/artefacts/tabi/*.json`
 - `src/**/artefacts/jobs/*.json`
+- `src/**/artefacts/canopy/*.json`
 
 Function metadata is read from inline `polyConfig` objects.
+
+All artefact payloads also support `{{ENV_VAR_NAME}}` placeholders. During sync,
+placeholders are substituted from the selected env file values. Missing values are
+left unchanged and reported before sync.
 
 ## Safe Deletion
 

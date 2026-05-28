@@ -7,7 +7,15 @@
   },
   "files": {
     "ignoreUnknown": false,
-    "includes": ["**/*.ts", "**/*.tsx", "**/*.js", "**/*.jsx", "**/*.json"]
+    "includes": [
+      "**/*.ts",
+      "**/*.tsx",
+      "**/*.js",
+      "**/*.jsx",
+      "**/*.json",
+      "!cli/src/sdk/schema.d.ts",
+      "!cli/schemas/openapi/**/*.json"
+    ]
   },
   "json": {
     "parser": {
