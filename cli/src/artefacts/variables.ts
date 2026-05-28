@@ -5,6 +5,7 @@ import type { components, paths } from '../sdk/schema';
 import type { VariableFile } from '../types';
 import type { ArtifactSummary, OrphanedResource } from '../types/summary';
 import { getDeleteHeaders, sleep } from '../utils/apiClient';
+import { validateEndpointPayload } from '../utils/apiSchemaValidation';
 import {
   getRelativePath,
   getSrcPath,
@@ -489,6 +490,16 @@ async function postVariable(
         ? buildSecretVariableUpdatePayload(payload)
         : payload;
 
+      if (
+        !validateEndpointPayload('UpdateVariableDto', updatePayload, {
+          artifactType: 'Variable',
+          artifactName: variableName,
+          filePath: variable.filePath,
+        })
+      ) {
+        return 'failed';
+      }
+
       const { error } = await client.PATCH('/variables/{id}', {
         params: { path: { id: existingVariable.id } },
         body: updatePayload as any,
@@ -548,6 +559,16 @@ async function postVariable(
     } else {
       if (dryRun) {
         return 'created';
+      }
+
+      if (
+        !validateEndpointPayload('CreateVariableDto', payload, {
+          artifactType: 'Variable',
+          artifactName: variableName,
+          filePath: variable.filePath,
+        })
+      ) {
+        return 'failed';
       }
 
       const { error } = await client.POST('/variables', {

@@ -8,6 +8,16 @@ export interface WebhookFile {
   content: any;
 }
 
+export interface CanopyFile {
+  filePath: string;
+  fileName: string;
+  content: {
+    id?: string;
+    name?: string;
+    subpath?: string;
+  } & Record<string, unknown>;
+}
+
 export interface FunctionFile {
   tsFilePath: string;
   type: 'client' | 'server';
@@ -34,6 +44,7 @@ export interface WebhookTriggerFileContent {
     functionContext: string;
   };
   waitForResponse?: boolean;
+  ownerUserId?: string;
 }
 
 export interface ErrorHandlerTriggerFileContent {
@@ -49,6 +60,7 @@ export interface ErrorHandlerTriggerFileContent {
     functionContext: string;
   };
   enabled?: boolean;
+  ownerUserId?: string;
 }
 
 export type TriggerFileContent =

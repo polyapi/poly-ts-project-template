@@ -1,6 +1,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { pathIsExcluded, pathPriorityRank } from './deploymentConfig';
+import { substituteEnvTokens } from './envSubstitution';
 import { logger } from './logger';
 
 export interface WalkDirOptions {
@@ -204,7 +205,7 @@ export function readJsonFile<T = any>(filePath: string): T | null {
   try {
     const content = fs.readFileSync(filePath, 'utf-8');
     const stripped = stripJsonComments(content);
-    return JSON.parse(stripped) as T;
+    return substituteEnvTokens(JSON.parse(stripped)) as T;
   } catch (error) {
     logger.error({ error, filePath }, 'Failed to read JSON file');
     return null;

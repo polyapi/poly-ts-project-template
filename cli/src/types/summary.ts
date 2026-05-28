@@ -26,6 +26,7 @@ export interface OrphanedResource {
 }
 
 export interface SyncSummary {
+  canopy: ArtifactSummary;
   schemas: ArtifactSummary;
   webhooks: ArtifactSummary;
   functions: ArtifactSummary;
@@ -40,6 +41,14 @@ export interface SyncSummary {
 
 export function createSummary(): SyncSummary {
   return {
+    canopy: {
+      created: 0,
+      updated: 0,
+      deleted: 0,
+      failed: 0,
+      skipped: 0,
+      planned: 0,
+    },
     schemas: {
       created: 0,
       updated: 0,
@@ -112,6 +121,7 @@ export function getTotalStats(summary: SyncSummary): ArtifactSummary {
   };
 
   for (const artifact of [
+    'canopy',
     'schemas',
     'webhooks',
     'functions',

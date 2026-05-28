@@ -3,6 +3,7 @@ import type { components, paths } from '../sdk/schema';
 import type { SchemaFile } from '../types';
 import type { ArtifactSummary, OrphanedResource } from '../types/summary';
 import { getDeleteHeaders, sleep } from '../utils/apiClient';
+import { validateEndpointPayload } from '../utils/apiSchemaValidation';
 import {
   getSrcPath,
   readJsonFile,
@@ -201,6 +202,16 @@ async function postSchema(
         return 'updated';
       }
 
+      if (
+        !validateEndpointPayload('UpdateSchemaDto', payload, {
+          artifactType: 'Schema',
+          artifactName: schemaName,
+          filePath: schema.filePath,
+        })
+      ) {
+        return 'failed';
+      }
+
       const { error, response } = await client.PATCH('/schemas/{id}', {
         params: { path: { id: existingSchema.id } },
         body: payload as UpdateSchemaDto,
@@ -223,6 +234,16 @@ async function postSchema(
     } else {
       if (dryRun) {
         return 'created';
+      }
+
+      if (
+        !validateEndpointPayload('CreateSchemaDto', payload, {
+          artifactType: 'Schema',
+          artifactName: schemaName,
+          filePath: schema.filePath,
+        })
+      ) {
+        return 'failed';
       }
 
       const { error, response } = await client.POST('/schemas', {
