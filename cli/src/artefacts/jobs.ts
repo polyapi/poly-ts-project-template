@@ -3,6 +3,7 @@ import type { paths } from '../sdk/schema';
 import type { JobFile } from '../types';
 import type { ArtifactSummary, OrphanedResource } from '../types/summary';
 import { getDeleteHeaders, sleep } from '../utils/apiClient';
+import { validateEndpointPayload } from '../utils/apiSchemaValidation';
 import {
   getSrcPath,
   readJsonFile,
@@ -237,6 +238,16 @@ async function syncJob(
       return 'updated';
     }
 
+    if (
+      !validateEndpointPayload('UpdateJobDto', payload, {
+        artifactType: 'Job',
+        artifactName: name,
+        filePath: jobFile.filePath,
+      })
+    ) {
+      return 'failed';
+    }
+
     try {
       const { error, response } = await client.PATCH('/jobs/{id}', {
         params: { path: { id: existingJob.id } },
@@ -260,6 +271,16 @@ async function syncJob(
 
   if (dryRun) {
     return 'created';
+  }
+
+  if (
+    !validateEndpointPayload('CreateJobDto', payload, {
+      artifactType: 'Job',
+      artifactName: name,
+      filePath: jobFile.filePath,
+    })
+  ) {
+    return 'failed';
   }
 
   try {

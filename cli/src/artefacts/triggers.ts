@@ -7,6 +7,7 @@ import type {
 } from '../types';
 import type { ArtifactSummary, OrphanedResource } from '../types/summary';
 import { getDeleteHeaders, sleep } from '../utils/apiClient';
+import { validateEndpointPayload } from '../utils/apiSchemaValidation';
 import {
   getSrcPath,
   readJsonFile,
@@ -159,7 +160,7 @@ async function postTrigger(
     let existingTrigger: any;
 
     if (isWebhookTrigger(content)) {
-      const { source, destination, waitForResponse } = content;
+      const { source, destination, waitForResponse, ownerUserId } = content;
       // Find webhook ID by name and context
       const webhook = webhooks.find(
         (wh: any) =>
@@ -193,6 +194,7 @@ async function postTrigger(
         source: { webhookHandleId: webhook.id },
         destination: { serverFunctionId: func.id },
         waitForResponse: waitForResponse ?? true,
+        ...(ownerUserId !== undefined ? { ownerUserId } : {}),
       };
       log.debug(
         {
@@ -238,7 +240,7 @@ async function postTrigger(
         }
       }
     } else if (isErrorHandlerTrigger(content)) {
-      const { errorHandler, destination, enabled } = content;
+      const { errorHandler, destination, enabled, ownerUserId } = content;
       // Find function ID by name and context
       func = functions.find(
         (fn: any) =>
@@ -271,6 +273,7 @@ async function postTrigger(
         },
         destination: { serverFunctionId: func.id },
         ...(enabled !== undefined ? { enabled } : {}),
+        ...(ownerUserId !== undefined ? { ownerUserId } : {}),
       };
       log.debug(
         { functionId: func.id, triggerName: payload.name },
@@ -324,6 +327,16 @@ async function postTrigger(
 
     if (dryRun) {
       return existingTrigger ? 'updated' : 'created';
+    }
+
+    if (
+      !validateEndpointPayload('CreateTriggerDto', payload, {
+        artifactType: 'Trigger',
+        artifactName: name ?? trigger.fileName,
+        filePath: trigger.filePath,
+      })
+    ) {
+      return 'failed';
     }
 
     const { error, response } = await client.POST('/triggers', {

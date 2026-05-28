@@ -5,6 +5,7 @@ import type { components, paths } from '../sdk/schema';
 import type { VariableFile } from '../types';
 import type { ArtifactSummary, OrphanedResource } from '../types/summary';
 import { getDeleteHeaders, sleep } from '../utils/apiClient';
+import { validateEndpointPayload } from '../utils/apiSchemaValidation';
 import {
   getRelativePath,
   getSrcPath,
@@ -372,6 +373,21 @@ function buildSecretVariableUpdatePayload(
   return metadataPayload;
 }
 
+function buildVariableEndpointValidationPayload(
+  payload: Record<string, unknown>
+): Record<string, unknown> {
+  const value = payload.value;
+  const isPlainObject =
+    value !== null && typeof value === 'object' && !Array.isArray(value);
+
+  if (value !== undefined && !isPlainObject) {
+    // OpenAPI currently types variable.value as object, but runtime accepts scalars/arrays.
+    return { ...payload, value: {} };
+  }
+
+  return payload;
+}
+
 async function getExistingVariableDetails(
   client: ReturnType<typeof createClient<paths>>,
   variableId: string
@@ -488,6 +504,18 @@ async function postVariable(
       const updatePayload = isSecret
         ? buildSecretVariableUpdatePayload(payload)
         : payload;
+      const updateValidationPayload =
+        buildVariableEndpointValidationPayload(updatePayload);
+
+      if (
+        !validateEndpointPayload('UpdateVariableDto', updateValidationPayload, {
+          artifactType: 'Variable',
+          artifactName: variableName,
+          filePath: variable.filePath,
+        })
+      ) {
+        return 'failed';
+      }
 
       const { error } = await client.PATCH('/variables/{id}', {
         params: { path: { id: existingVariable.id } },
@@ -548,6 +576,20 @@ async function postVariable(
     } else {
       if (dryRun) {
         return 'created';
+      }
+
+      if (
+        !validateEndpointPayload(
+          'CreateVariableDto',
+          buildVariableEndpointValidationPayload(payload),
+          {
+            artifactType: 'Variable',
+            artifactName: variableName,
+            filePath: variable.filePath,
+          }
+        )
+      ) {
+        return 'failed';
       }
 
       const { error } = await client.POST('/variables', {
