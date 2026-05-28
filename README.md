@@ -60,6 +60,41 @@ API_KEY=replace-with-your-api-key
 
 Do not commit real environment files or secrets.
 
+## Add Or Update The Flow CLI In Your Project
+
+If your project already uses this template structure and you want to add the
+latest workspace-local Flow CLI, sync it from the current
+`poly-ts-project-template` repository.
+
+1. Clone the template repository, or update your existing local copy so you have
+  the latest `poly-ts-project-template` code.
+2. Remove the `cli/` folder from your target project.
+3. Copy the `cli/` folder from `poly-ts-project-template` into your target
+  project.
+4. Replace the target project's `pnpm-lock.yaml` with the one from
+  `poly-ts-project-template`.
+5. Copy `package.json` from `poly-ts-project-template` into your target
+  project.
+6. Remove `package-lock.json`.
+7. Remove installed dependencies and reinstall everything so the CLI and its
+  generated files are rebuilt cleanly.
+8. Push the changes. Use a normal push for regular updates, or `--force` when
+   you need to fully overwrite the deployed state.
+
+```bash
+rm -rf node_modules
+rm -rf cli/node_modules
+pnpm install
+pnpm --filter flow-cli build
+pnpm workflows push
+# or force a full update
+pnpm workflows push --force
+```
+
+If your project did not originally come from this template, also make sure it
+still includes the root workspace configuration and scripts that reference the
+`flow-cli` package.
+
 ## Commands
 
 Root commands:
