@@ -373,6 +373,21 @@ function buildSecretVariableUpdatePayload(
   return metadataPayload;
 }
 
+function buildVariableEndpointValidationPayload(
+  payload: Record<string, unknown>
+): Record<string, unknown> {
+  const value = payload.value;
+  const isPlainObject =
+    value !== null && typeof value === 'object' && !Array.isArray(value);
+
+  if (value !== undefined && !isPlainObject) {
+    // OpenAPI currently types variable.value as object, but runtime accepts scalars/arrays.
+    return { ...payload, value: {} };
+  }
+
+  return payload;
+}
+
 async function getExistingVariableDetails(
   client: ReturnType<typeof createClient<paths>>,
   variableId: string
@@ -489,9 +504,11 @@ async function postVariable(
       const updatePayload = isSecret
         ? buildSecretVariableUpdatePayload(payload)
         : payload;
+      const updateValidationPayload =
+        buildVariableEndpointValidationPayload(updatePayload);
 
       if (
-        !validateEndpointPayload('UpdateVariableDto', updatePayload, {
+        !validateEndpointPayload('UpdateVariableDto', updateValidationPayload, {
           artifactType: 'Variable',
           artifactName: variableName,
           filePath: variable.filePath,
@@ -562,11 +579,15 @@ async function postVariable(
       }
 
       if (
-        !validateEndpointPayload('CreateVariableDto', payload, {
-          artifactType: 'Variable',
-          artifactName: variableName,
-          filePath: variable.filePath,
-        })
+        !validateEndpointPayload(
+          'CreateVariableDto',
+          buildVariableEndpointValidationPayload(payload),
+          {
+            artifactType: 'Variable',
+            artifactName: variableName,
+            filePath: variable.filePath,
+          }
+        )
       ) {
         return 'failed';
       }

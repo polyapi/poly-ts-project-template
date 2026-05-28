@@ -7298,9 +7298,7 @@
           "description": {
             "type": "string"
           },
-          "value": {
-            "type": "object"
-          },
+          "value": true,
           "secret": {
             "type": "boolean"
           },

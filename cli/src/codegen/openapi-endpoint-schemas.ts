@@ -138,12 +138,38 @@ function patchTableDefaultSchema(
   }
 }
 
+function patchVariableValueSchema(
+  schemaDocument: Record<string, unknown>,
+  schemaName: 'CreateVariableDto' | 'UpdateVariableDto'
+): void {
+  const components = schemaDocument.components as
+    | Record<string, unknown>
+    | undefined;
+  const schemas = components?.schemas as Record<string, unknown> | undefined;
+  const variableDto = schemas?.[schemaName] as Record<string, unknown> | undefined;
+  const properties = variableDto?.properties as
+    | Record<string, unknown>
+    | undefined;
+
+  if (properties?.value !== undefined) {
+    // Accept scalar env placeholders like "{{COMPANY_DOMAIN}}" and any JSON value.
+    properties.value = true;
+  }
+}
+
 function patchKnownSchemaQuirks(
   schemaName: string,
   schemaDocument: Record<string, unknown>
 ): void {
   if (schemaName === 'CreateTableDto' || schemaName === 'UpdateTableDto') {
     patchTableDefaultSchema(schemaDocument);
+  }
+
+  if (schemaName === 'CreateVariableDto' || schemaName === 'UpdateVariableDto') {
+    patchVariableValueSchema(
+      schemaDocument,
+      schemaName as 'CreateVariableDto' | 'UpdateVariableDto'
+    );
   }
 }
 
