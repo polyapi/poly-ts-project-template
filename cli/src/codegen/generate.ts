@@ -132,7 +132,7 @@ function findOpenApiSpecPaths(searchDir: string): string[] {
   return specPaths.sort();
 }
 
-function discoverOpenApiSpecPath(searchDir: string): string {
+function discoverOpenApiSpecPath(searchDir: string): string | null {
   if (!fs.existsSync(searchDir)) {
     throw new Error(`Designs directory not found: ${searchDir}`);
   }
@@ -156,7 +156,11 @@ function discoverOpenApiSpecPath(searchDir: string): string {
     return openApiSpecPaths[0];
   }
 
-  throw new Error(`No OpenAPI specs found under ${searchDir}`);
+  if (openApiSpecPaths.length === 0) {
+    return null;
+  }
+
+  return null;
 }
 
 async function main() {
@@ -195,15 +199,22 @@ async function main() {
     } else {
       logger.info(`Scanning for OpenAPI spec in: ${designsDir}`);
       const specPath = discoverOpenApiSpecPath(designsDir);
-      logger.info(`Using OpenAPI spec: ${specPath}`);
-      const outputPath = path.join(
-        __dirname,
-        '..',
-        'generated',
-        'openapi-schemas.ts'
-      );
-      await generateTypeBox({ specPath, outputPath });
-      logger.info('TypeBox schemas generated\n');
+      if (!specPath) {
+        logger.warn(
+          `No OpenAPI spec found under ${designsDir}; skipping local OpenAPI schema generation`
+        );
+        logger.info('');
+      } else {
+        logger.info(`Using OpenAPI spec: ${specPath}`);
+        const outputPath = path.join(
+          __dirname,
+          '..',
+          'generated',
+          'openapi-schemas.ts'
+        );
+        await generateTypeBox({ specPath, outputPath });
+        logger.info('TypeBox schemas generated\n');
+      }
     }
 
     // Step 4: Generate JSON Schema files from TypeBox
