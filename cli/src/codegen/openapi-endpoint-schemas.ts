@@ -157,6 +157,31 @@ function patchVariableValueSchema(
   }
 }
 
+function patchWebhookTemplateBodyRequirement(
+  schemaDocument: Record<string, unknown>,
+  schemaName: 'CreateWebhookHandleDto' | 'UpdateWebhookHandleDto'
+): void {
+  const components = schemaDocument.components as
+    | Record<string, unknown>
+    | undefined;
+  const schemas = components?.schemas as Record<string, unknown> | undefined;
+  const webhookDto = schemas?.[schemaName] as Record<string, unknown> | undefined;
+
+  if (!webhookDto || !Array.isArray(webhookDto.required)) {
+    return;
+  }
+
+  webhookDto.required = webhookDto.required.filter(
+    entry => String(entry).trim() !== 'templateBody'
+  );
+
+  if (Array.isArray(schemaDocument.required)) {
+    schemaDocument.required = schemaDocument.required.filter(
+      entry => String(entry).trim() !== 'templateBody'
+    );
+  }
+}
+
 function patchKnownSchemaQuirks(
   schemaName: string,
   schemaDocument: Record<string, unknown>
@@ -169,6 +194,16 @@ function patchKnownSchemaQuirks(
     patchVariableValueSchema(
       schemaDocument,
       schemaName as 'CreateVariableDto' | 'UpdateVariableDto'
+    );
+  }
+
+  if (
+    schemaName === 'CreateWebhookHandleDto' ||
+    schemaName === 'UpdateWebhookHandleDto'
+  ) {
+    patchWebhookTemplateBodyRequirement(
+      schemaDocument,
+      schemaName as 'CreateWebhookHandleDto' | 'UpdateWebhookHandleDto'
     );
   }
 }
@@ -190,6 +225,16 @@ export async function generateEndpointSchemas(
       buildSchemaDocument(requestBodySchema, spec)
     ) as Record<string, unknown>;
     patchKnownSchemaQuirks(schemaName, schemaDocument);
+
+    // Safety net: OpenAPI currently marks this as required in some specs, but
+    // existing webhook artefacts and API behavior do not require it for updates.
+    if (schemaName === 'UpdateWebhookHandleDto') {
+      patchWebhookTemplateBodyRequirement(
+        schemaDocument,
+        'UpdateWebhookHandleDto'
+      );
+    }
+
     const outputPath = path.join(outputDir, `${schemaName}.schema.json`);
     fs.writeFileSync(
       outputPath,

@@ -6463,9 +6463,7 @@
             "type": "string"
           }
         },
-        "required": [
-          "templateBody"
-        ]
+        "required": []
       },
       "ExecuteWebhookHandleDescriptionGenerationDto": {
         "type": "object",
