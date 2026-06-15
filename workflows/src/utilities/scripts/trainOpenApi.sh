@@ -26,6 +26,46 @@ require_workflows_binary() {
   fi
 }
 
+absolute_path() {
+  local target_path="$1"
+  local target_dir
+  local target_name
+
+  target_dir="$(cd "$(dirname "$target_path")" && pwd)"
+  target_name="$(basename "$target_path")"
+
+  echo "$target_dir/$target_name"
+}
+
+resolve_target_path() {
+  local target_path="$1"
+  local candidate
+
+  if [[ "$target_path" = /* ]]; then
+    echo "$target_path"
+    return
+  fi
+
+  for candidate in "$PWD/$target_path" "$ROOT_DIR/$target_path" "$WORKFLOWS_DIR/$target_path"; do
+    if [ -f "$candidate" ] || [ -d "$candidate" ]; then
+      absolute_path "$candidate"
+      return
+    fi
+  done
+
+  echo "$ROOT_DIR/$target_path"
+}
+
+list_generated_model_files_since() {
+  local marker="$1"
+
+  find "$WORKFLOWS_DIR" -maxdepth 1 -type f -name "*.json" -newer "$marker" \
+    ! -name "package.json" \
+    ! -name "pnpm-exec-summary.json" \
+    | sed "s|$WORKFLOWS_DIR/||" \
+    | sort
+}
+
 normalise_to_json() {
   local file_path="$1"
 
@@ -72,7 +112,7 @@ train_spec() {
   local raw_spec_path="$1"
   local context_pattern="$2"
   local spec_path
-  spec_path="$(normalise_to_json "$raw_spec_path")"
+  spec_path="$(normalise_to_json "$(absolute_path "$raw_spec_path")")"
 
   if ! is_oas2 "$spec_path" && ! is_oas3 "$spec_path"; then
     require_workflows_binary \
@@ -100,24 +140,54 @@ train_spec() {
   context_value="$(context_for_file "$context_pattern" "$base_name")"
 
   echo "Generating Poly model for $spec_path with context $context_value"
-  "${PNPM_WORKFLOWS_EXEC[@]}" poly model generate "$spec_path" \
+  local generate_output
+  local generate_status
+  local marker
+  marker="$(mktemp)"
+  touch "$marker"
+  set +e
+  generate_output="$("${PNPM_WORKFLOWS_EXEC[@]}" poly model generate "$spec_path" \
     --context "$context_value" \
-    --hostUrlAsArgument
-
-  local generated_file
-  generated_file="$WORKFLOWS_DIR/$base_name-api.json"
-  if [ -f "$generated_file" ]; then
-    mv -f "$generated_file" "$spec_dir/$base_name-api.json"
-    generated_file="$spec_dir/$base_name-api.json"
+    --hostUrlAsArgument 2>&1)"
+  generate_status=$?
+  set -e
+  printf '%s\n' "$generate_output"
+  if [ "$generate_status" -ne 0 ]; then
+    rm -f "$marker"
+    return "$generate_status"
   fi
 
-  if [ ! -f "$generated_file" ]; then
+  local generated_files=()
+  local generated_name
+  while IFS= read -r generated_name; do
+    [ -z "$generated_name" ] && continue
+    generated_files+=("$generated_name")
+  done < <(list_generated_model_files_since "$marker")
+  rm -f "$marker"
+
+  if [ "${#generated_files[@]}" -eq 0 ]; then
     echo "WARNING: Could not find generated model JSON for $spec_path" >&2
     return
   fi
 
-  echo "Training Poly model from $generated_file"
-  "${PNPM_WORKFLOWS_EXEC[@]}" poly model train "$generated_file"
+  local generated_file
+  local training_file
+  for generated_name in "${generated_files[@]}"; do
+    generated_file="$WORKFLOWS_DIR/$generated_name"
+    training_file="$spec_dir/$generated_name"
+
+    if [ -f "$generated_file" ]; then
+      mv -f "$generated_file" "$training_file"
+    fi
+
+    if [ ! -f "$training_file" ]; then
+      echo "WARNING: Could not find generated model JSON $generated_name for $spec_path" >&2
+      continue
+    fi
+
+    echo "Training Poly model from $training_file"
+    "${PNPM_WORKFLOWS_EXEC[@]}" poly model train "$training_file"
+  done
 }
 
 echo "Enter the path to an OpenAPI spec file or a folder of specs:"
@@ -131,13 +201,15 @@ if [ -z "$TARGET_PATH" ] || [ -z "$CONTEXT_PATTERN" ]; then
   exit 1
 fi
 
-if [ -f "$TARGET_PATH" ]; then
-  train_spec "$TARGET_PATH" "$CONTEXT_PATTERN"
-elif [ -d "$TARGET_PATH" ]; then
+RESOLVED_TARGET_PATH="$(resolve_target_path "$TARGET_PATH")"
+
+if [ -f "$RESOLVED_TARGET_PATH" ]; then
+  train_spec "$RESOLVED_TARGET_PATH" "$CONTEXT_PATTERN"
+elif [ -d "$RESOLVED_TARGET_PATH" ]; then
   while IFS= read -r spec_path; do
     train_spec "$spec_path" "$CONTEXT_PATTERN"
   done < <(
-    find "$TARGET_PATH" -maxdepth 1 -type f \
+    find "$RESOLVED_TARGET_PATH" -maxdepth 1 -type f \
       \( -name "*.json" -o -name "*.yaml" -o -name "*.yml" \) | sort
   )
 else
