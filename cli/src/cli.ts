@@ -141,7 +141,7 @@ Usage:
 
   Options:
   --dry-run           Show planned actions without changing anything remotely
-  --force             Update existing remote artifacts even when payload is unchanged
+  --force             Update existing remote artifacts even when unchanged; allow obscured variable updates
   --verbose           Print debug logging while scanning and diffing
   --delete-orphans    Delete remote artefacts that no longer exist locally
   --build-schema      Regenerate OpenAPI SDK/schemas before sync
@@ -545,9 +545,7 @@ function runSchemaGenerationBeforePush(): boolean {
       '[PRE-PUSH] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'
     )
   );
-  logger.info(
-    chalk.gray(`Running: pnpm generate (cwd: ${cliRoot})`)
-  );
+  logger.info(chalk.gray(`Running: pnpm generate (cwd: ${cliRoot})`));
 
   try {
     execFileSync('pnpm', ['generate'], {
@@ -1046,11 +1044,7 @@ async function main(): Promise<void> {
       );
     }
     if (cliArgs.buildSchema) {
-      logger.info(
-        chalk.gray(
-          'Schema Build: enabled (--build-schema)'
-        )
-      );
+      logger.info(chalk.gray('Schema Build: enabled (--build-schema)'));
     }
     if (cliArgs.pathFilters.length > 0) {
       logger.info(chalk.gray('Orphans: skipped for scoped sync'));

@@ -134,11 +134,17 @@ function findOpenApiSpecPaths(searchDir: string): string[] {
 
 function discoverOpenApiSpecPath(searchDir: string): string | null {
   if (!fs.existsSync(searchDir)) {
-    throw new Error(`Designs directory not found: ${searchDir}`);
+    logger.warn(
+      `Designs directory not found: ${searchDir}; skipping local OpenAPI schema generation`
+    );
+    return null;
   }
 
   if (!fs.statSync(searchDir).isDirectory()) {
-    throw new Error(`Designs directory is not a directory: ${searchDir}`);
+    logger.warn(
+      `Designs path is not a directory: ${searchDir}; skipping local OpenAPI schema generation`
+    );
+    return null;
   }
 
   const openApiSpecPaths = findOpenApiSpecPaths(searchDir);
@@ -157,6 +163,9 @@ function discoverOpenApiSpecPath(searchDir: string): string | null {
   }
 
   if (openApiSpecPaths.length === 0) {
+    logger.warn(
+      `No OpenAPI spec found under ${searchDir}; skipping local OpenAPI schema generation`
+    );
     return null;
   }
 
@@ -200,9 +209,6 @@ async function main() {
       logger.info(`Scanning for OpenAPI spec in: ${designsDir}`);
       const specPath = discoverOpenApiSpecPath(designsDir);
       if (!specPath) {
-        logger.warn(
-          `No OpenAPI spec found under ${designsDir}; skipping local OpenAPI schema generation`
-        );
         logger.info('');
       } else {
         logger.info(`Using OpenAPI spec: ${specPath}`);

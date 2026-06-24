@@ -386,6 +386,8 @@ export const JobArtifactSchema = Type.Object(
       Type.Literal('parallel'),
     ]),
     enabled: Type.Boolean(),
+    maxConcurrentJobs: Type.Optional(Type.Number()),
+    maxExecutionTime: Type.Optional(Type.Number()),
     functions: Type.Array(JobFunctionRefSchema),
     ownerUserId: Type.Optional(Type.String()),
   },

@@ -22,6 +22,10 @@ type CreateJobDto =
   paths['/jobs']['post']['requestBody']['content']['application/json'];
 type UpdateJobDto =
   paths['/jobs/{id}']['patch']['requestBody']['content']['application/json'];
+type JobPayload = CreateJobDto & {
+  maxConcurrentJobs?: number;
+  maxExecutionTime?: number;
+};
 
 /**
  * Find all job JSON files in the project (artefacts/jobs/*.json)
@@ -154,18 +158,37 @@ function buildJobPayload(
     headersPayload: object;
     paramsPayload: object;
   }[]
-): CreateJobDto {
-  const { name, schedule, executionType, enabled, ownerUserId } =
-    jobFile.content;
+): JobPayload {
+  const {
+    name,
+    schedule,
+    executionType,
+    enabled,
+    maxConcurrentJobs,
+    maxExecutionTime,
+    ownerUserId,
+  } = jobFile.content;
 
   return {
     name,
     schedule,
     executionType,
     enabled,
+    ...(maxConcurrentJobs !== undefined ? { maxConcurrentJobs } : {}),
+    ...(maxExecutionTime !== undefined ? { maxExecutionTime } : {}),
     functions: resolvedFunctions as CreateJobDto['functions'],
     ...(ownerUserId !== undefined ? { ownerUserId } : {}),
   };
+}
+
+function buildJobEndpointValidationPayload(payload: JobPayload): CreateJobDto {
+  const {
+    maxConcurrentJobs: _maxConcurrentJobs,
+    maxExecutionTime: _maxExecutionTime,
+    ...validationPayload
+  } = payload;
+
+  return validationPayload;
 }
 
 function buildRemoteJobPayload(
@@ -196,6 +219,14 @@ function buildRemoteJobPayload(
 
   if (localPayload.ownerUserId !== undefined) {
     payload.ownerUserId = existingJob.ownerUserId ?? null;
+  }
+
+  if (localPayload.maxConcurrentJobs !== undefined) {
+    payload.maxConcurrentJobs = existingJob.maxConcurrentJobs;
+  }
+
+  if (localPayload.maxExecutionTime !== undefined) {
+    payload.maxExecutionTime = existingJob.maxExecutionTime;
   }
 
   return payload;
@@ -239,11 +270,15 @@ async function syncJob(
     }
 
     if (
-      !validateEndpointPayload('UpdateJobDto', payload, {
-        artifactType: 'Job',
-        artifactName: name,
-        filePath: jobFile.filePath,
-      })
+      !validateEndpointPayload(
+        'UpdateJobDto',
+        buildJobEndpointValidationPayload(payload),
+        {
+          artifactType: 'Job',
+          artifactName: name,
+          filePath: jobFile.filePath,
+        }
+      )
     ) {
       return 'failed';
     }
@@ -274,11 +309,15 @@ async function syncJob(
   }
 
   if (
-    !validateEndpointPayload('CreateJobDto', payload, {
-      artifactType: 'Job',
-      artifactName: name,
-      filePath: jobFile.filePath,
-    })
+    !validateEndpointPayload(
+      'CreateJobDto',
+      buildJobEndpointValidationPayload(payload),
+      {
+        artifactType: 'Job',
+        artifactName: name,
+        filePath: jobFile.filePath,
+      }
+    )
   ) {
     return 'failed';
   }

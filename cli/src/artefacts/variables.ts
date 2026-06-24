@@ -186,17 +186,51 @@ function isSecretVariable(
   variableContent: VariableFile['content'],
   existingVariable?: any
 ): boolean {
+  const localSecrecy = variableContent.secrecy?.toUpperCase();
+  const existingSecrecy =
+    typeof existingVariable?.secrecy === 'string'
+      ? existingVariable.secrecy.toUpperCase()
+      : undefined;
   const localIsSecret =
     variableContent.secret === true ||
-    (typeof variableContent.secrecy === 'string' &&
-      variableContent.secrecy !== 'NONE');
+    localSecrecy === 'SECRET' ||
+    localSecrecy === 'OBSCURED';
 
   const existingIsSecret =
     existingVariable?.secret === true ||
-    (typeof existingVariable?.secrecy === 'string' &&
-      existingVariable.secrecy !== 'NONE');
+    existingSecrecy === 'SECRET' ||
+    existingSecrecy === 'OBSCURED';
 
   return localIsSecret || existingIsSecret;
+}
+
+function isObscuredVariable(
+  variableContent: VariableFile['content'],
+  existingVariable?: any
+): boolean {
+  const localSecrecy = variableContent.secrecy?.toUpperCase();
+  const existingSecrecy =
+    typeof existingVariable?.secrecy === 'string'
+      ? existingVariable.secrecy.toUpperCase()
+      : undefined;
+
+  return localSecrecy === 'OBSCURED' || existingSecrecy === 'OBSCURED';
+}
+
+function isEmptyVariableValue(value: unknown): boolean {
+  if (value === undefined || value === null || value === '') {
+    return true;
+  }
+
+  if (Array.isArray(value)) {
+    return value.length === 0;
+  }
+
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    Object.keys(value).length === 0
+  );
 }
 
 /**
@@ -286,7 +320,6 @@ async function deleteVariable(
 
 /**
  * POST or PATCH a variable to the API
- * Returns: 'created' | 'updated' | 'noop' | 'failed'
  */
 async function buildVariablePayload(
   variable: VariableFile,
@@ -298,15 +331,18 @@ async function buildVariablePayload(
 ): Promise<{
   payload: Record<string, unknown>;
   isSecret: boolean;
+  isObscured: boolean;
 }> {
   const variableName = resolvedIdentity.name;
   const variableContext = resolvedIdentity.context;
   const isSecret = isSecretVariable(variable.content, existingVariable);
+  const isObscured = isObscuredVariable(variable.content, existingVariable);
   const hasValue = variable.content.value !== undefined;
 
-  let processedValue = {};
+  let processedValue: unknown = {};
+  let includeValue = true;
 
-  if (hasValue && isSecret) {
+  if (hasValue && isSecret && !isObscured) {
     const fileRef = chalk.cyan(getRelativePath(variable.filePath));
     log.error(
       chalk.hex('#FF8C00').bold('WARN: ') +
@@ -324,7 +360,7 @@ async function buildVariablePayload(
         chalk.yellow('The value will be ignored and set to empty object.')
     );
     processedValue = {};
-  } else if (hasValue && !isSecret) {
+  } else if (hasValue) {
     processedValue = processValueWithEnvVars(
       variable.content.value,
       variableName,
@@ -339,24 +375,34 @@ async function buildVariablePayload(
         variableContext
       );
     }
+    if (isObscured && isEmptyVariableValue(processedValue)) {
+      includeValue = false;
+    }
   } else {
     processedValue = {};
+    includeValue = !isObscured;
+  }
+
+  const payload: Record<string, unknown> = {
+    name: variableName,
+    context: variableContext,
+    description: variable.content.description,
+    secret: variable.content.secret,
+    secrecy: variable.content.secrecy,
+    visibility: variable.content.visibility,
+    state: variable.content.state,
+    expiresAt: variable.content.expiresAt,
+    ownerUserId: variable.content.ownerUserId,
+  };
+
+  if (includeValue) {
+    payload.value = processedValue;
   }
 
   return {
     isSecret,
-    payload: {
-      name: variableName,
-      context: variableContext,
-      description: variable.content.description,
-      value: processedValue,
-      secret: variable.content.secret,
-      secrecy: variable.content.secrecy,
-      visibility: variable.content.visibility,
-      state: variable.content.state,
-      expiresAt: variable.content.expiresAt,
-      ownerUserId: variable.content.ownerUserId,
-    },
+    isObscured,
+    payload,
   };
 }
 
@@ -460,21 +506,31 @@ async function postVariable(
   },
   dryRun: boolean = false,
   force: boolean = false
-): Promise<'created' | 'updated' | 'noop' | 'failed'> {
+): Promise<'created' | 'updated' | 'noop' | 'skipped' | 'failed'> {
   try {
     const variableName = resolvedIdentity.name;
     const variableContext = resolvedIdentity.context;
     const existingVariable = existingVariables.find(
       (v: any) => v.name === variableName && v.context === variableContext
     );
-    const { payload, isSecret } = await buildVariablePayload(
+    const { payload, isSecret, isObscured } = await buildVariablePayload(
       variable,
       resolvedIdentity,
       existingVariable
     );
 
     if (existingVariable) {
-      const comparisonPayload = isSecret
+      if (isObscured && !force) {
+        log.warn(
+          chalk.hex('#FF8C00')(
+            'WARN: Existing obscured variable requires --force to update'
+          )
+        );
+        return 'skipped';
+      }
+
+      const isProtectedSecret = isSecret && !isObscured;
+      const comparisonPayload = isProtectedSecret
         ? buildSecretVariableUpdatePayload(payload)
         : payload;
       const existingVariableDetails = await getExistingVariableDetails(
@@ -490,7 +546,7 @@ async function postVariable(
           buildRemoteVariablePayload(
             comparisonPayload,
             existingVariableDetails,
-            !isSecret
+            !isProtectedSecret
           )
         )
       ) {
@@ -501,7 +557,7 @@ async function postVariable(
         return 'updated';
       }
 
-      const updatePayload = isSecret
+      const updatePayload = isProtectedSecret
         ? buildSecretVariableUpdatePayload(payload)
         : payload;
       const updateValidationPayload =
@@ -811,6 +867,9 @@ export async function syncVariables(
       }
     } else if (result === 'noop') {
       log.info(chalk.gray('    [SKIP] Unchanged'));
+      summary.skipped++;
+    } else if (result === 'skipped') {
+      log.info(chalk.gray('    [SKIP] Skipped'));
       summary.skipped++;
     } else {
       log.info(chalk.red('    [FAIL] Failed'));

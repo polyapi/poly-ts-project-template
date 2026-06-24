@@ -141,6 +141,8 @@ export interface JobFile {
     schedule: JobSchedule;
     executionType: 'sequential' | 'parallel';
     enabled: boolean;
+    maxConcurrentJobs?: number;
+    maxExecutionTime?: number;
     functions: JobFunctionRef[];
     ownerUserId?: string;
   };
