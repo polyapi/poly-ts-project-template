@@ -6,6 +6,10 @@ The template keeps deployable workflow code under `workflows/src/` and uses a
 workspace-local Flow CLI under `cli/` to validate and sync TypeScript functions
 and JSON artefacts to PolyAPI.
 
+New to PolyAPI? Start with the sample integration tutorial:
+[workflows/src/sampleIntegration/README.md](workflows/src/sampleIntegration/README.md).
+It walks through the core runtime flow from webhook to trigger to functions.
+
 ## Structure
 
 ```text
@@ -17,6 +21,8 @@ poly-ts-project-template/
         client/
         server/
         types/
+      sampleIntegration/
+        README.md
       utilities/
         artefacts/
         client/
@@ -24,7 +30,7 @@ poly-ts-project-template/
         scripts/
   cli/
   designs/
-  agents/
+  .agents/
 ```
 
 Use one folder under `workflows/src/` per workflow. Shared reusable code belongs
@@ -166,10 +172,13 @@ name.
 
 ## Agent Skills
 
-This template does not vendor agent skills. Bring relevant skills into
-`agents/skills/` from:
+This template does not include agent skills. Bring relevant skills into
+`.agents/skills/` from:
 
 <https://github.com/polyapi/poly-skills>
+
+For a TypeScript PolyAPI project, see the recommended skill setup in the
+[sample integration tutorial](workflows/src/sampleIntegration/README.md#recommended-agent-skills).
 
 See [AGENTS.md](AGENTS.md) and [CONVENTIONS.md](CONVENTIONS.md) before making
 workflow or tooling changes.

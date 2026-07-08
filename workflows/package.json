@@ -10,8 +10,8 @@
     "test": "ava",
     "test:e2e": "ava --config ava.config.e2e.cjs",
     "test:all": "ava && ava --config ava.config.e2e.cjs",
-    "train:openapi": "bash src/utilities/scripts/trainOpenApi.sh",
-    "delete:content": "bash src/utilities/scripts/deleteContent.sh"
+    "train:openapi": "bash src/utilities/common/scripts/trainOpenApi.sh",
+    "delete:content": "bash src/utilities/common/scripts/deleteContent.sh"
   },
   "ava": {
     "extensions": [

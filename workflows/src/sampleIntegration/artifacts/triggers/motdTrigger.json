@@ -1,0 +1,12 @@
+{
+  "name": "motdTrigger",
+  "source": {
+    "webhookName": "motdWebhook",
+    "webhookContext": "covetrus.sampleIntegration"
+  },
+  "destination": {
+    "functionName": "motdServer",
+    "functionContext": "covetrus.sampleIntegration"
+  },
+  "waitForResponse": true
+}

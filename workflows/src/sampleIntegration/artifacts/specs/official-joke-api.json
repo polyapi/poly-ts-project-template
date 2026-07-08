@@ -1,0 +1,62 @@
+{
+  "functions": [
+    {
+      "name": "getRandomJoke",
+      "context": "covetrus.sampleIntegration",
+      "description": "Fetch a random joke from the jokes API. Sends a GET request to /random_joke and returns a randomly selected joke payload for display, testing, or humor content retrieval.",
+      "arguments": [
+        {
+          "name": "hostUrl",
+          "type": "string",
+          "required": true,
+          "description": "Specifies the host URL for the service. It should be a fully qualified URL string that provides the base address of the service endpoint.",
+          "removeIfNotPresentOnExecute": false
+        }
+      ],
+      "returnType": "object",
+      "returnTypeSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "required": [
+          "id",
+          "type",
+          "setup",
+          "punchline"
+        ],
+        "properties": {
+          "id": {
+            "type": "number"
+          },
+          "type": {
+            "type": "string"
+          },
+          "setup": {
+            "type": "string"
+          },
+          "punchline": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "otherReturnTypes": [],
+      "source": {
+        "auth": {
+          "type": "noauth"
+        },
+        "method": "GET",
+        "body": {
+          "mode": "empty"
+        },
+        "url": "{{hostUrl}}/random_joke",
+        "headers": []
+      }
+    }
+  ],
+  "webhooks": [
+    
+  ],
+  "schemas": [
+    
+  ]
+}

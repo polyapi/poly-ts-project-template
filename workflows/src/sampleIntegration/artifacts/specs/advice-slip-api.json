@@ -1,0 +1,63 @@
+{
+  "functions": [
+    {
+      "name": "getRandomAdvice",
+      "context": "covetrus.sampleIntegration",
+      "description": "Retrieve advice data via GET /advice endpoint. Returns advice resource response payload (empty object). Useful for fetching guidance, tips, or advisory content from the API.",
+      "arguments": [
+        {
+          "name": "hostUrl",
+          "type": "string",
+          "required": true,
+          "description": "Specifies the host URL for the service. It should be a fully qualified URL string that provides the base address of the service endpoint.",
+          "removeIfNotPresentOnExecute": false
+        }
+      ],
+      "returnType": "object",
+      "returnTypeSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "required": [
+          "slip"
+        ],
+        "properties": {
+          "slip": {
+            "type": "object",
+            "required": [
+              "id",
+              "advice"
+            ],
+            "properties": {
+              "id": {
+                "type": "number"
+              },
+              "advice": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      },
+      "otherReturnTypes": [],
+      "source": {
+        "auth": {
+          "type": "noauth"
+        },
+        "method": "GET",
+        "body": {
+          "mode": "empty"
+        },
+        "url": "{{hostUrl}}/advice",
+        "headers": []
+      }
+    }
+  ],
+  "webhooks": [
+    
+  ],
+  "schemas": [
+    
+  ]
+}

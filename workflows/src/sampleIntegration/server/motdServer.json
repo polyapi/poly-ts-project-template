@@ -1,0 +1,7 @@
+{
+  "name": "motdServer",
+  "context": "covetrus.sampleIntegration",
+  "description": "Greets the caller by name, adding a message of the day chosen by motdClient based on mood.",
+  "logsEnabled": true,
+  "serverSideAsync": false
+}

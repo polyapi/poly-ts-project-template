@@ -1,0 +1,6 @@
+{
+  "name": "validateMotdPayload",
+  "context": "covetrus.sampleIntegration",
+  "description": "Validates the motd webhook payload for required fields and correct values.",
+  "logsEnabled": true
+}
