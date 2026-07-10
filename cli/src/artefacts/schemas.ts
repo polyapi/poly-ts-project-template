@@ -11,7 +11,7 @@ import {
   type WalkDirOptions,
   walkDir,
 } from '../utils/fileSystem';
-import { chalk, createHeader, createLogger } from '../utils/logger';
+import { chalk, createHeader, createLogger, warningColor } from '../utils/logger';
 import { getRequiredNamespaces, matchesAnyRequiredNamespace, validateNamespace } from '../utils/namespace';
 import { filterOrphansByContext } from '../utils/orphans';
 import { areComparisonPayloadsEqual } from '../utils/payloadComparison';
@@ -298,7 +298,9 @@ export async function syncSchemas(
 
   if (schemaFiles.length === 0) {
     log.warn(
-      'No schema JSON files found in src/**/artefacts/schemas/ (legacy src/**/artifacts/schemas/ is also supported)'
+      warningColor(
+        'No schema JSON files found in src/**/artefacts/schemas/ (legacy src/**/artifacts/schemas/ is also supported)'
+      )
     );
     return;
   }
@@ -341,7 +343,7 @@ export async function syncSchemas(
     if (schemasToDelete.length > 0) {
       if (deleteOrphans) {
         log.info(
-          chalk.yellow(
+          warningColor(
             `${options.dryRun ? 'Planning deletion of' : 'Deleting'} ${schemasToDelete.length} schema(s) not in local files...`
           )
         );

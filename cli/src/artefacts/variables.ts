@@ -14,7 +14,7 @@ import {
   type WalkDirOptions,
   walkDir,
 } from '../utils/fileSystem';
-import { chalk, createHeader, createLogger } from '../utils/logger';
+import { chalk, createHeader, createLogger, warningColor } from '../utils/logger';
 import { getRequiredNamespaces, matchesAnyRequiredNamespace, validateNamespace } from '../utils/namespace';
 import { filterOrphansByContext } from '../utils/orphans';
 import { areComparisonPayloadsEqual } from '../utils/payloadComparison';
@@ -66,7 +66,7 @@ function processValueWithEnvVars(
             : chalk.cyan(relativePath);
         }
         log.warn(
-          chalk.hex('#FF8C00')(
+          warningColor(
             `WARN: Environment variable {{${envVar}}} not found, leaving as-is`
           ) + (fileRef ? ` ${fileRef}` : '')
         );
@@ -142,7 +142,7 @@ function validateVariableValue(
     if (!valid) {
       log.error(
         { name: variableName, context: variableContext },
-        chalk.hex('#FF8C00').bold('SCHEMA VALIDATION FAILED: ') +
+        warningColor.bold('SCHEMA VALIDATION FAILED: ') +
           chalk.red('Value does not match schema')
       );
 
@@ -152,14 +152,14 @@ function validateVariableValue(
           const message = error.message || 'unknown error';
           log.error(
             { name: variableName, path, message },
-            chalk.yellow(`  → ${path}: ${message}`)
+            warningColor(`  → ${path}: ${message}`)
           );
         }
       }
 
       log.error(
         { name: variableName },
-        chalk.hex('#FF8C00')('Validation failed but processing will continue')
+        warningColor('Validation failed but processing will continue')
       );
       return false;
     }
@@ -175,7 +175,7 @@ function validateVariableValue(
     );
     log.error(
       { name: variableName },
-      chalk.hex('#FF8C00')(
+      warningColor(
         'Schema validation error, but processing will continue'
       )
     );
@@ -318,19 +318,19 @@ async function buildVariablePayload(
   if (hasValue && isSecret) {
     const fileRef = chalk.cyan(getRelativePath(variable.filePath));
     log.error(
-      chalk.hex('#FF8C00').bold('WARN: ') +
+      warningColor.bold('WARN: ') +
         chalk.red.bold('Secret variable has a value defined in JSON file! ') +
         fileRef
     );
     log.error(
-      chalk.hex('#FF8C00').bold('WARN: ') +
+      warningColor.bold('WARN: ') +
         chalk.red(
           'Secret values should ONLY be set in PolyAPI Canopy, not in source files.'
         )
     );
     log.error(
-      chalk.hex('#FF8C00').bold('WARN: ') +
-        chalk.yellow('The value will be ignored and set to empty object.')
+      warningColor.bold('WARN: ') +
+        warningColor('The value will be ignored and set to empty object.')
     );
     processedValue = {};
   } else if (hasValue && !isSecret) {
@@ -551,7 +551,7 @@ async function postVariable(
         const errorMessage = (error as any)?.message || '';
         if (!isSecret && errorMessage.includes('Cannot change secrecy level')) {
           log.warn(
-            chalk.hex('#FF8C00')(
+            warningColor(
               `WARN: Cannot change secrecy level - deleting and recreating variable ${fileRef}`
             )
           );
@@ -679,7 +679,9 @@ export async function syncVariables(
 
   if (variableFiles.length === 0) {
     log.warn(
-      'No variable JSON files found in src/**/artefacts/vari/ (legacy src/**/artifacts/vari/ is also supported)'
+      warningColor(
+        'No variable JSON files found in src/**/artefacts/vari/ (legacy src/**/artifacts/vari/ is also supported)'
+      )
     );
     return createdVariables;
   }
@@ -725,7 +727,7 @@ export async function syncVariables(
     if (variablesToDelete.length > 0) {
       if (deleteOrphans) {
         log.info(
-          chalk.yellow(
+          warningColor(
             `${options.dryRun ? 'Planning deletion of' : 'Deleting'} ${variablesToDelete.length} variable(s) not in local files...`
           )
         );

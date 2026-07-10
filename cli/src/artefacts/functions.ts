@@ -16,7 +16,7 @@ import {
     type WalkDirOptions,
     walkDir,
 } from "../utils/fileSystem";
-import { chalk, createHeader, createLogger } from "../utils/logger";
+import { chalk, createHeader, createLogger, warningColor } from "../utils/logger";
 import { getRequiredNamespaces, matchesAnyRequiredNamespace, validateNamespace } from "../utils/namespace";
 import { filterOrphansByContext } from "../utils/orphans";
 import { validateFunctionArtifact } from "../utils/validation";
@@ -750,7 +750,7 @@ export async function syncFunctions(
     log.info(chalk.cyan(createHeader("FUNCTIONS")));
 
     if (functionFiles.length === 0) {
-        log.warn("No function TypeScript files with polyConfig found in src/**/server/ or src/**/client/");
+        log.warn(warningColor("No function TypeScript files with polyConfig found in src/**/server/ or src/**/client/"));
         return;
     }
 
@@ -795,7 +795,7 @@ export async function syncFunctions(
         if (functionsToDelete.length > 0) {
             if (deleteOrphans) {
                 log.info(
-                    chalk.yellow(
+                    warningColor(
                         `${options.dryRun ? "Planning deletion of" : "Deleting"} ${
                             functionsToDelete.length
                         } function(s) not in local files...`,
@@ -890,7 +890,7 @@ export async function syncFunctions(
                 },
                 "Failed to compare function payload; falling back to deploy",
             );
-            log.info(chalk.yellow("    [WARN] Compare failed, deploying"));
+            log.info(warningColor("    [WARN] Compare failed, deploying"));
             decision = { action: "update" };
         }
 

@@ -15,7 +15,7 @@ import {
   type WalkDirOptions,
   walkDir,
 } from '../utils/fileSystem';
-import { chalk, createHeader, createLogger } from '../utils/logger';
+import { chalk, createHeader, createLogger, warningColor } from '../utils/logger';
 import { getRequiredNamespaces, matchesAnyRequiredNamespace, validateNamespace } from '../utils/namespace';
 import { filterOrphansByContext } from '../utils/orphans';
 import { validateTriggerArtifact } from '../utils/validation';
@@ -389,7 +389,9 @@ export async function syncTriggers(
 
   if (triggerFiles.length === 0) {
     log.warn(
-      'No trigger files found in src/**/artefacts/triggers/ (legacy src/**/artifacts/triggers/ is also supported)'
+      warningColor(
+        'No trigger files found in src/**/artefacts/triggers/ (legacy src/**/artifacts/triggers/ is also supported)'
+      )
     );
     return;
   }
@@ -506,7 +508,7 @@ export async function syncTriggers(
     if (triggersToDelete.length > 0) {
       if (deleteOrphans) {
         log.info(
-          chalk.yellow(
+          warningColor(
             `${options.dryRun ? 'Planning deletion of' : 'Deleting'} ${triggersToDelete.length} trigger(s) not in local files...`
           )
         );

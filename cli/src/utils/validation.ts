@@ -6,7 +6,7 @@
 
 import type { TSchema } from '@sinclair/typebox';
 import { TypeCompiler } from '@sinclair/typebox/compiler';
-import { chalk, createLogger } from './logger';
+import { chalk, createLogger, warningColor } from './logger';
 import {
   FunctionArtifactSchema,
   GraphQLSubscriptionArtifactSchema,
@@ -107,7 +107,7 @@ function logValidationErrors(
     const path = error.path || '(root)';
     log.error(
       { name: artifactName, path },
-      chalk.yellow(`  → ${path}: `) + chalk.red(error.message)
+      warningColor(`  → ${path}: `) + chalk.red(error.message)
     );
 
     if (error.value !== undefined) {
@@ -121,7 +121,7 @@ function logValidationErrors(
   if (skipInvalid) {
     log.error(
       { name: artifactName },
-      chalk.hex('#FF8C00')(
+      warningColor(
         '\nThis artifact will be skipped. Please fix the validation errors.\n'
       )
     );

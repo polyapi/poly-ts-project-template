@@ -1,3 +1,4 @@
+import { createInterface } from 'node:readline/promises';
 import type createClient from 'openapi-fetch';
 import type { paths } from '../sdk/schema';
 import type { GraphQLSubscriptionFile } from '../types';
@@ -11,22 +12,19 @@ import {
   type WalkDirOptions,
   walkDir,
 } from '../utils/fileSystem';
-import { chalk, createHeader, createLogger } from '../utils/logger';
+import { chalk, createHeader, createLogger, warningColor } from '../utils/logger';
 import {
   getRequiredNamespaces,
   matchesAnyRequiredNamespace,
   validateNamespace,
 } from '../utils/namespace';
 import { filterOrphansByContext } from '../utils/orphans';
-import { areComparisonPayloadsEqual } from '../utils/payloadComparison';
 import { validateGraphQLSubscriptionArtifact } from '../utils/validation';
 import { getExistingServerFunctions } from './functions';
 import { getExistingVariables } from './variables';
 
 type CreateGraphQLSubscriptionDto =
   paths['/subscriptions/graphql']['post']['requestBody']['content']['application/json'];
-type UpdateGraphQLSubscriptionDto =
-  paths['/subscriptions/graphql/{id}']['patch']['requestBody']['content']['application/json'];
 
 type GraphQLSubscriptionRecord = Record<string, unknown> & {
   id?: string;
@@ -108,36 +106,6 @@ export async function getExistingGraphQLSubscriptions(
   } catch (error) {
     log.warn({ error }, 'Failed to fetch GraphQL subscriptions from API');
     return [];
-  }
-}
-
-async function getExistingGraphQLSubscriptionDetails(
-  client: ReturnType<typeof createClient<paths>>,
-  subscriptionId: string
-): Promise<GraphQLSubscriptionRecord | null> {
-  try {
-    const { data, error, response } = await (client.GET as any)(
-      '/subscriptions/graphql/{id}',
-      {
-        params: { path: { id: subscriptionId } },
-      }
-    );
-
-    if (error || !data || !isRecord(data)) {
-      log.warn(
-        { subscriptionId, status: (response as any)?.status, error },
-        'Failed to fetch GraphQL subscription details'
-      );
-      return null;
-    }
-
-    return data as GraphQLSubscriptionRecord;
-  } catch (error) {
-    log.warn(
-      { error, subscriptionId },
-      'Error fetching GraphQL subscription details'
-    );
-    return null;
   }
 }
 
@@ -224,36 +192,6 @@ function findDestinationFunction(
         fn.name === subscription.content.destination.functionName &&
         fn.context === subscription.content.destination.functionContext
     ) ?? null
-  );
-}
-
-function getNestedString(
-  value: unknown,
-  path: readonly string[]
-): string | undefined {
-  let current: unknown = value;
-
-  for (const key of path) {
-    if (!isRecord(current)) {
-      return undefined;
-    }
-    current = current[key];
-  }
-
-  return typeof current === 'string' ? current : undefined;
-}
-
-function getRemoteFunctionId(
-  subscription: GraphQLSubscriptionRecord | null | undefined
-): string | undefined {
-  return (
-    getNestedString(subscription, ['functionId']) ??
-    getNestedString(subscription, ['function', 'id']) ??
-    getNestedString(subscription, ['serverFunction', 'id']) ??
-    getNestedString(subscription, ['destination', 'functionId']) ??
-    getNestedString(subscription, ['destination', 'serverFunctionId']) ??
-    getNestedString(subscription, ['destination', 'function', 'id']) ??
-    getNestedString(subscription, ['destination', 'serverFunction', 'id'])
   );
 }
 
@@ -448,51 +386,77 @@ function buildGraphQLSubscriptionPayload(
   return payload as CreateGraphQLSubscriptionDto;
 }
 
-function buildUpdatePayload(
-  payload: CreateGraphQLSubscriptionDto,
-  subscription: GraphQLSubscriptionFile
-): UpdateGraphQLSubscriptionDto {
-  const updatePayload: Record<string, unknown> = { ...payload };
-
-  delete updatePayload.ohipOffset;
-  if (updatePayload.ohipOffsetSelection === 'SPECIFIC') {
+async function confirmGraphQLSubscriptionRecreate(
+  name: string,
+  context: string
+): Promise<boolean> {
+  if (!process.stdin.isTTY || !process.stdout.isTTY) {
     log.warn(
-      {
-        name: subscription.content.name,
-        context: subscription.content.context,
-      },
-      'ohipOffsetSelection=SPECIFIC is only valid on create; omitting it from update payload'
+      { name, context },
+      warningColor(
+        'Cannot prompt to recreate GraphQL subscription without an interactive terminal; skipping'
+      )
     );
-    delete updatePayload.ohipOffsetSelection;
+    return false;
   }
 
-  return updatePayload as UpdateGraphQLSubscriptionDto;
+  const readline = createInterface({
+    input: process.stdin,
+    output: process.stdout,
+  });
+
+  try {
+    const answer = (
+      await readline.question(
+        warningColor(
+          `GraphQL subscriptions cannot be updated right now; they can only be re-created. Type YES to delete and re-create ${context}.${name}, or press Enter to skip: `
+        )
+      )
+    ).trim();
+    return answer === 'YES';
+  } finally {
+    readline.close();
+  }
 }
 
-function buildRemoteSubscriptionPayload(
-  localPayload: Record<string, unknown>,
-  remoteSubscription: GraphQLSubscriptionRecord | null,
-  existingSubscription: GraphQLSubscriptionRecord
-): Record<string, unknown> {
-  const payload: Record<string, unknown> = {};
-
-  for (const key of Object.keys(localPayload)) {
-    if (key === 'functionId') {
-      payload.functionId =
-        getRemoteFunctionId(remoteSubscription) ??
-        getRemoteFunctionId(existingSubscription);
-      continue;
-    }
-
-    if (remoteSubscription && key in remoteSubscription) {
-      payload[key] = remoteSubscription[key];
-      continue;
-    }
-
-    payload[key] = existingSubscription[key];
+async function createGraphQLSubscription(
+  client: ReturnType<typeof createClient<paths>>,
+  payload: CreateGraphQLSubscriptionDto,
+  subscription: GraphQLSubscriptionFile,
+  subscriptionName: string,
+  subscriptionContext: string
+): Promise<boolean> {
+  if (
+    !validateEndpointPayload('GraphQLSubscriptionCreateDto', payload, {
+      artifactType: 'GraphQL Subscription',
+      artifactName: subscriptionName,
+      filePath: subscription.filePath,
+    })
+  ) {
+    return false;
   }
 
-  return payload;
+  const { error, response } = await (client.POST as any)(
+    '/subscriptions/graphql',
+    {
+      body: payload,
+    }
+  );
+
+  if (error) {
+    log.error(
+      {
+        name: subscriptionName,
+        context: subscriptionContext,
+        status: (response as any)?.status,
+        error,
+      },
+      'Failed to create GraphQL subscription'
+    );
+    return false;
+  }
+
+  return true;
 }
 
 async function postGraphQLSubscription(
@@ -503,7 +467,14 @@ async function postGraphQLSubscription(
   variables: any[],
   dryRun: boolean = false,
   force: boolean = false
-): Promise<'created' | 'updated' | 'noop' | 'failed'> {
+): Promise<
+  | 'created'
+  | 'recreated'
+  | 'recreate-planned'
+  | 'skipped-unsupported'
+  | 'noop'
+  | 'failed'
+> {
   try {
     const subscriptionName = subscription.content.name || 'N/A';
     const subscriptionContext = subscription.content.context || '';
@@ -536,31 +507,22 @@ async function postGraphQLSubscription(
         return 'failed';
       }
 
-      const updatePayload = buildUpdatePayload(payload, subscription);
-      const subscriptionDetails = await getExistingGraphQLSubscriptionDetails(
-        client,
-        existingSubscription.id
-      );
-      if (
-        !force &&
-        areComparisonPayloadsEqual(
-          updatePayload,
-          buildRemoteSubscriptionPayload(
-            updatePayload as Record<string, unknown>,
-            subscriptionDetails,
-            existingSubscription
+      if (!force) {
+        log.warn(
+          { name: subscriptionName, context: subscriptionContext },
+          warningColor(
+            'GraphQL streaming subscription updates are not supported right now; skipping existing subscription. Use --force to delete and re-create it.'
           )
-        )
-      ) {
-        return 'noop';
+        );
+        return 'skipped-unsupported';
       }
 
       if (dryRun) {
-        return 'updated';
+        return 'recreate-planned';
       }
 
       if (
-        !validateEndpointPayload('GraphQLSubscriptionUpdateDto', updatePayload, {
+        !validateEndpointPayload('GraphQLSubscriptionCreateDto', payload, {
           artifactType: 'GraphQL Subscription',
           artifactName: subscriptionName,
           filePath: subscription.filePath,
@@ -569,65 +531,47 @@ async function postGraphQLSubscription(
         return 'failed';
       }
 
-      const { error, response } = await (client.PATCH as any)(
-        '/subscriptions/graphql/{id}',
-        {
-          params: { path: { id: existingSubscription.id } },
-          body: updatePayload,
-        }
+      const confirmed = await confirmGraphQLSubscriptionRecreate(
+        subscriptionName,
+        subscriptionContext
       );
+      if (!confirmed) {
+        return 'noop';
+      }
 
-      if (error) {
-        log.error(
-          {
-            name: subscriptionName,
-            context: subscriptionContext,
-            status: (response as any)?.status,
-            error,
-          },
-          'Failed to update GraphQL subscription'
-        );
+      const deleted = await deleteGraphQLSubscription(
+        client,
+        existingSubscription.id,
+        subscriptionName,
+        subscriptionContext
+      );
+      if (!deleted) {
         return 'failed';
       }
 
-      return 'updated';
+      await sleep(500);
+      const created = await createGraphQLSubscription(
+        client,
+        payload,
+        subscription,
+        subscriptionName,
+        subscriptionContext
+      );
+      return created ? 'recreated' : 'failed';
     }
 
     if (dryRun) {
       return 'created';
     }
 
-    if (
-      !validateEndpointPayload('GraphQLSubscriptionCreateDto', payload, {
-        artifactType: 'GraphQL Subscription',
-        artifactName: subscriptionName,
-        filePath: subscription.filePath,
-      })
-    ) {
-      return 'failed';
-    }
-
-    const { error, response } = await (client.POST as any)(
-      '/subscriptions/graphql',
-      {
-        body: payload,
-      }
+    const created = await createGraphQLSubscription(
+      client,
+      payload,
+      subscription,
+      subscriptionName,
+      subscriptionContext
     );
-
-    if (error) {
-      log.error(
-        {
-          name: subscriptionName,
-          context: subscriptionContext,
-          status: (response as any)?.status,
-          error,
-        },
-        'Failed to create GraphQL subscription'
-      );
-      return 'failed';
-    }
-
-    return 'created';
+    return created ? 'created' : 'failed';
   } catch (error) {
     log.error({ error }, 'Error processing GraphQL subscription');
     return 'failed';
@@ -659,7 +603,9 @@ export async function syncGraphQLSubscriptions(
 
   if (subscriptionFiles.length === 0) {
     log.warn(
-      'No GraphQL subscription JSON files found in src/**/artefacts/subscriptions/ (legacy src/**/artifacts/subscriptions/ is also supported)'
+      warningColor(
+        'No GraphQL subscription JSON files found in src/**/artefacts/subscriptions/ (legacy src/**/artifacts/subscriptions/ is also supported)'
+      )
     );
     return;
   }
@@ -731,7 +677,7 @@ export async function syncGraphQLSubscriptions(
     if (subscriptionsToDelete.length > 0) {
       if (deleteOrphans) {
         log.info(
-          chalk.yellow(
+          warningColor(
             `${options.dryRun ? 'Planning deletion of' : 'Deleting'} ${subscriptionsToDelete.length} GraphQL subscription(s) not in local files...`
           )
         );
@@ -845,16 +791,18 @@ export async function syncGraphQLSubscriptions(
         log.info(chalk.green('    [OK] Created'));
         summary.created++;
       }
-    } else if (result === 'updated') {
-      if (options.dryRun) {
-        log.info(chalk.blue('    [PLAN] Update'));
-        summary.planned++;
-      } else {
-        log.info(chalk.green('    [OK] Updated'));
-        summary.updated++;
-      }
+    } else if (result === 'recreate-planned') {
+      log.info(chalk.blue('    [PLAN] Delete and recreate'));
+      summary.planned++;
+    } else if (result === 'recreated') {
+      log.info(chalk.green('    [OK] Recreated'));
+      summary.deleted++;
+      summary.created++;
+    } else if (result === 'skipped-unsupported') {
+      log.info(chalk.gray('    [SKIP] Update unsupported'));
+      summary.skipped++;
     } else if (result === 'noop') {
-      log.info(chalk.gray('    [SKIP] Unchanged'));
+      log.info(chalk.gray('    [SKIP] Skipped'));
       summary.skipped++;
     } else {
       log.info(chalk.red('    [FAIL] Failed'));

@@ -10,7 +10,7 @@ import type {
   WebhookFile,
 } from '../types';
 import { getRelativePath } from './fileSystem';
-import { chalk, logger } from './logger';
+import { chalk, logger, warningColor } from './logger';
 
 const ENV_ALERT_PATTERN = /\{\{([A-Z_][A-Z0-9_]*)\}\}/g;
 
@@ -127,7 +127,7 @@ export function printMissingEnvTokenWarning(refs: MissingEnvTokenRef[]): void {
     chalk.bold('═══════════════════════════════════════════════════════════')
   );
   logger.info(
-    chalk.yellow.bold('Missing env-file values for deploy placeholders')
+    warningColor.bold('Missing env-file values for deploy placeholders')
   );
   logger.info(
     chalk.gray(
@@ -142,7 +142,7 @@ export function printMissingEnvTokenWarning(refs: MissingEnvTokenRef[]): void {
   logger.info('');
 
   for (const envName of [...groupedRefs.keys()].sort()) {
-    logger.info(chalk.yellow.bold(`  • ${envName}`));
+    logger.info(warningColor.bold(`  • ${envName}`));
     for (const ref of groupedRefs.get(envName) ?? []) {
       const fileRef =
         ref.lineNumber === null

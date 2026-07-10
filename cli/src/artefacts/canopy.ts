@@ -9,7 +9,7 @@ import {
   type WalkDirOptions,
   walkDir,
 } from '../utils/fileSystem';
-import { chalk, createHeader, createLogger } from '../utils/logger';
+import { chalk, createHeader, createLogger, warningColor } from '../utils/logger';
 
 type FindCanopyFileOptions = WalkDirOptions;
 
@@ -314,7 +314,9 @@ export async function syncCanopy(
   const canopyFiles = files ?? findCanopyFiles();
   if (canopyFiles.length === 0) {
     log.warn(
-      'No canopy JSON files found in src/**/artefacts/canopy/ (legacy src/**/artifacts/canopy/ is also supported)'
+      warningColor(
+        'No canopy JSON files found in src/**/artefacts/canopy/ (legacy src/**/artifacts/canopy/ is also supported)'
+      )
     );
     return;
   }

@@ -32,7 +32,7 @@ import {
 } from "./utils/deploymentConfig";
 import { collectMissingEnvTokenRefs, printMissingEnvTokenWarning } from "./utils/envPreflight";
 import { findWorkspaceRoot, type WalkDirOptions } from "./utils/fileSystem";
-import { logger } from "./utils/logger";
+import { logger, warningColor } from "./utils/logger";
 import { printFlowLogo } from "./utils/logo";
 import { printNamespaceBanner } from "./utils/namespace";
 import {
@@ -143,7 +143,7 @@ Usage:
 
   Options:
   --dry-run           Show planned actions without changing anything remotely
-  --force             Update existing remote artifacts even when payload is unchanged
+  --force             Update existing remote artifacts even when unchanged; subscriptions prompt to delete/re-create
   --verbose           Print debug logging while scanning and diffing
   --delete-orphans    Delete remote artefacts that no longer exist locally
   --build-schema      Regenerate OpenAPI SDK/schemas before sync
@@ -340,7 +340,7 @@ function printSummary(
             logger.info(chalk.bold(`${name}:`));
             if (data.created > 0) logger.info(`  ${chalk.green("[+]")} Created:  ${chalk.green(data.created)}`);
             if (data.updated > 0) logger.info(`  ${chalk.blue("[~]")} Updated:  ${chalk.blue(data.updated)}`);
-            if (data.deleted > 0) logger.info(`  ${chalk.yellow("[-]")} Deleted:  ${chalk.yellow(data.deleted)}`);
+            if (data.deleted > 0) logger.info(`  ${warningColor("[-]")} Deleted:  ${warningColor(data.deleted)}`);
             if (data.failed > 0) logger.info(`  ${chalk.red("[X]")} Failed:   ${chalk.red(data.failed)}`);
             if (data.skipped > 0) logger.info(`  ${chalk.gray("[=]")} Skipped:  ${chalk.gray(data.skipped)}`);
             if (data.planned > 0) logger.info(`  ${chalk.blue("[?]")} Planned:  ${chalk.blue(data.planned)}`);
@@ -351,7 +351,7 @@ function printSummary(
     logger.info(chalk.bold("Total:"));
     if (totals.created > 0) logger.info(`  ${chalk.green("[+]")} Created:  ${chalk.green(totals.created)}`);
     if (totals.updated > 0) logger.info(`  ${chalk.blue("[~]")} Updated:  ${chalk.blue(totals.updated)}`);
-    if (totals.deleted > 0) logger.info(`  ${chalk.yellow("[-]")} Deleted:  ${chalk.yellow(totals.deleted)}`);
+    if (totals.deleted > 0) logger.info(`  ${warningColor("[-]")} Deleted:  ${warningColor(totals.deleted)}`);
     if (totals.failed > 0) logger.info(`  ${chalk.red("[X]")} Failed:   ${chalk.red(totals.failed)}`);
     if (totals.skipped > 0) logger.info(`  ${chalk.gray("[=]")} Skipped:  ${chalk.gray(totals.skipped)}`);
     if (totals.planned > 0) logger.info(`  ${chalk.blue("[?]")} Planned:  ${chalk.blue(totals.planned)}`);
@@ -361,7 +361,7 @@ function printSummary(
 
     // Show orphaned resources if any were found
     if (summary.orphans.length > 0) {
-        logger.info(chalk.yellow.bold("\n[ORPHANED RESOURCES DETECTED]"));
+        logger.info(warningColor.bold("\n[ORPHANED RESOURCES DETECTED]"));
         logger.info(chalk.gray("The following resources exist remotely but not locally:\n"));
 
         // Group orphans by type
@@ -386,14 +386,14 @@ function printSummary(
             }
         }
 
-        logger.info(chalk.yellow("To delete these orphaned resources, run with:"));
+        logger.info(warningColor("To delete these orphaned resources, run with:"));
         logger.info(chalk.cyan("  pnpm workflows push --delete-orphans\n"));
         logger.info(chalk.bold("═══════════════════════════════════════════════════════════"));
     }
 
     // Show reminder for newly created variables
     if (createdVariables.length > 0) {
-        logger.info(chalk.yellow.bold("\n[REMINDER] Variables Created - Values Must Be Set"));
+        logger.info(warningColor.bold("\n[REMINDER] Variables Created - Values Must Be Set"));
         logger.info(chalk.gray("The following variables were created and need values set in PolyAPI Canopy:\n"));
 
         for (const variable of createdVariables) {
@@ -571,7 +571,9 @@ function warnForMissingDefaultEnvFile(envFile: { exists: boolean; fromEnvPath: b
     }
 
     logger.warn(
-        "No default env file was found at `workflows/dev.env`. Create it or set `ENVPATH` to point to a specific env file.",
+        warningColor(
+            "No default env file was found at `workflows/dev.env`. Create it or set `ENVPATH` to point to a specific env file.",
+        ),
     );
 }
 
@@ -594,7 +596,7 @@ async function maybeConfirmBranchEnvFileMatch(
 
     const warningMessage = buildBranchEnvMismatchWarning(projectRoot, preflight, expectedEnvPath);
 
-    process.stdout.write(chalk.yellow(`WARN: ${warningMessage}\n`));
+    process.stdout.write(warningColor(`WARN: ${warningMessage}\n`));
 
     if (!process.stdin.isTTY || !process.stdout.isTTY) {
         throw new Error(`${warningMessage} Run interactively to confirm or update ENVPATH.`);
@@ -836,14 +838,14 @@ async function main(): Promise<void> {
         logger.info(chalk.gray(`Production Branch: ${chalk.cyan(preflight.productionBranch)}`));
         logger.info(
             productionSafeguardsTriggered(preflight, cliArgs)
-                ? chalk.yellow(`Production Safeguards: ${describeProductionSafeguards(preflight, cliArgs)}`)
+                ? warningColor(`Production Safeguards: ${describeProductionSafeguards(preflight, cliArgs)}`)
                 : chalk.gray(`Production Safeguards: ${describeProductionSafeguards(preflight, cliArgs)}`),
         );
         logger.info(
             cliArgs.dryRun
-                ? chalk.yellow("Mode: Dry run")
+                ? warningColor("Mode: Dry run")
                 : cliArgs.deleteOrphans
-                ? chalk.yellow("Mode: Delete orphaned resources")
+                ? warningColor("Mode: Delete orphaned resources")
                 : chalk.gray("Mode: Safe sync (orphans will be reported)"),
         );
         logger.info(chalk.gray(`Types: ${chalk.cyan(cliArgs.enabledTypes.join(", "))}`));
@@ -852,7 +854,11 @@ async function main(): Promise<void> {
         }
         logger.info(chalk.gray(`Scope: ${chalk.cyan(describeScope(cliArgs, projectRoot))}`));
         if (cliArgs.force) {
-            logger.info(chalk.gray("Force: enabled (existing remote artifacts will be updated even if unchanged)"));
+            logger.info(
+                chalk.gray(
+                    "Force: enabled (existing remote artifacts will be updated even if unchanged; subscriptions require delete/re-create confirmation)",
+                ),
+            );
         }
         if (cliArgs.buildSchema) {
             logger.info(chalk.gray("Schema Build: enabled (--build-schema)"));
@@ -862,7 +868,7 @@ async function main(): Promise<void> {
         }
         logger.info(
             cliArgs.skipInvalid
-                ? chalk.yellow("Validation: Skip invalid artifacts (--skip-invalid)")
+                ? warningColor("Validation: Skip invalid artifacts (--skip-invalid)")
                 : chalk.gray("Validation: Stop on invalid artifacts (use --skip-invalid to continue)"),
         );
         logger.info("");

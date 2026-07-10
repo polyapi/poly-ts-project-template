@@ -20,6 +20,7 @@ export const logger = pino({
 });
 
 export { chalk };
+export const warningColor = chalk.hex(BRAND_COLORS.orange);
 
 /**
  * Create a multicolored decorative line for headers

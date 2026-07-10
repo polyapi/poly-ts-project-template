@@ -11,7 +11,7 @@ import {
   type WalkDirOptions,
   walkDir,
 } from '../utils/fileSystem';
-import { chalk, createHeader, createLogger } from '../utils/logger';
+import { chalk, createHeader, createLogger, warningColor } from '../utils/logger';
 import { getRequiredNamespaces, matchesAnyRequiredNamespace } from '../utils/namespace';
 import { areComparisonPayloadsEqual } from '../utils/payloadComparison';
 import { validateJobArtifact } from '../utils/validation';
@@ -369,7 +369,7 @@ export async function syncJobs(
     if (orphanCandidates.length > 0) {
       if (deleteOrphans) {
         log.info(
-          chalk.yellow(
+          warningColor(
             `${options.dryRun ? 'Planning deletion of' : 'Deleting'} ${orphanCandidates.length} job(s) not in local files...`
           )
         );

@@ -20,7 +20,7 @@ import {
   type WalkDirOptions,
   walkDir,
 } from '../utils/fileSystem';
-import { chalk, createHeader, createLogger } from '../utils/logger';
+import { chalk, createHeader, createLogger, warningColor } from '../utils/logger';
 import { getRequiredNamespaces, matchesAnyRequiredNamespace, validateNamespace } from '../utils/namespace';
 import { filterOrphansByContext } from '../utils/orphans';
 import { validateWebhookArtifact } from '../utils/validation';
@@ -455,7 +455,9 @@ export async function syncWebhooks(
 
   if (webhookFiles.length === 0) {
     log.warn(
-      'No webhook JSON files found in src/**/artefacts/webhooks/ (legacy src/**/artifacts/webhooks/ is also supported)'
+      warningColor(
+        'No webhook JSON files found in src/**/artefacts/webhooks/ (legacy src/**/artifacts/webhooks/ is also supported)'
+      )
     );
     return;
   }
@@ -511,7 +513,7 @@ export async function syncWebhooks(
     if (webhooksToDelete.length > 0) {
       if (deleteOrphans) {
         log.info(
-          chalk.yellow(
+          warningColor(
             `${options.dryRun ? 'Planning deletion of' : 'Deleting'} ${webhooksToDelete.length} webhook(s) not in local files...`
           )
         );

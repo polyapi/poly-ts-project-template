@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import Ajv, { type ValidateFunction } from 'ajv';
-import { chalk, logger } from './logger';
+import { chalk, logger, warningColor } from './logger';
 
 type EndpointSchemaName =
   | 'CreateSchemaDto'
@@ -54,7 +54,9 @@ function loadValidator(
   const schemaPath = getEndpointSchemaPath(schemaName);
   if (!fs.existsSync(schemaPath)) {
     logger.warn(
-      `Schema file not found for ${schemaName} at ${schemaPath}. Run \`pnpm --filter flow-cli run generate\`.`
+      warningColor(
+        `Schema file not found for ${schemaName} at ${schemaPath}. Run \`pnpm --filter flow-cli run generate\`.`
+      )
     );
     return null;
   }
@@ -92,7 +94,7 @@ export function validateEndpointPayload(
 
   for (const error of validator.errors ?? []) {
     const errorPath = error.instancePath || '(root)';
-    logger.error(chalk.yellow(`  → ${errorPath}: ${error.message}`));
+    logger.error(warningColor(`  → ${errorPath}: ${error.message}`));
   }
 
   return false;

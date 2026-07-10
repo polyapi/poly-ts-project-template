@@ -2,14 +2,13 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { createInterface } from "node:readline/promises";
 import { Writable } from "node:stream";
-import chalk from "chalk";
 import * as dotenv from "dotenv";
 import createClient from "openapi-fetch";
 import type { paths } from "../sdk/schema";
 import type { EnvLoadResult } from "./deploymentConfig";
 import { parseBooleanEnv } from "./deploymentConfig";
 import { findWorkspaceRoot } from "./fileSystem";
-import { logger } from "./logger";
+import { chalk, logger, warningColor } from "./logger";
 
 class OtpManager {
     private cachedOtp?: string;
@@ -135,7 +134,7 @@ export function loadEnv(): EnvLoadResult {
         logger.error(chalk.bold.red("             CONFIGURATION ERROR                          "));
         logger.error(chalk.bold.red("══════════════════════════════════════════════════════════"));
         logger.error(
-            chalk.yellow("\n[!] Missing required environment variable: ") +
+            warningColor("\n[!] Missing required environment variable: ") +
                 chalk.bold("POLYAPI_NAMESPACE (or POLYAPI_NAMESPACES)"),
         );
         logger.error(chalk.gray("\nAll artifacts must be namespaced for proper organization."));
