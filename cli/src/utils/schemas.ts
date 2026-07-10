@@ -251,6 +251,81 @@ export type ErrorHandlerTriggerArtifact = Static<
 >;
 export type TriggerArtifact = Static<typeof TriggerArtifactSchema>;
 
+const GraphQLSubscriptionType = Type.Union([
+  Type.Literal('CUSTOM'),
+  Type.Literal('OHIP'),
+]);
+
+const GraphQLSubscriptionTransportProtocol = Type.Union([
+  Type.Literal('WS'),
+  Type.Literal('HTTP'),
+]);
+
+const GraphQLSubscriptionOffsetSelection = Type.Union([
+  Type.Literal('PROVIDER_HIGHEST'),
+  Type.Literal('SPECIFIC'),
+  Type.Literal('PERSISTED'),
+]);
+
+const GraphQLSubscriptionDestination = Type.Object(
+  {
+    functionName: Type.String(),
+    functionContext: Type.String(),
+  },
+  { additionalProperties: false }
+);
+
+/**
+ * GraphQL Subscription Artifact (GraphQLSubscriptionCreateDto with
+ * destination referenced by function name and context instead of function ID)
+ */
+export const GraphQLSubscriptionArtifactSchema = Type.Object(
+  {
+    name: Type.String(),
+    context: Type.String(),
+    description: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+    ownerUserId: Type.Optional(Type.String()),
+    visibility: Type.Optional(
+      Type.Union([Type.Literal('ENVIRONMENT'), Type.Literal('TENANT')])
+    ),
+    type: GraphQLSubscriptionType,
+    transportProtocol: Type.Optional(GraphQLSubscriptionTransportProtocol),
+    websocketUrl: Type.String(),
+    query: Type.String(),
+    paramsVariableId: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+    paramsSfxId: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+    paramsObject: Type.Optional(
+      Type.Union([Type.Record(Type.String(), Type.Any()), Type.Null()])
+    ),
+    destination: GraphQLSubscriptionDestination,
+    functionParams: Type.Optional(
+      Type.Union([
+        Type.Record(Type.String(), Type.Any()),
+        Type.Array(Type.Any()),
+        Type.Null(),
+      ])
+    ),
+    enabled: Type.Optional(Type.Boolean()),
+    ohipOffsetSelection: Type.Optional(GraphQLSubscriptionOffsetSelection),
+    ohipOffset: Type.Optional(Type.String({ maxLength: 256 })),
+    ohipMaintainOffset: Type.Optional(Type.Boolean()),
+    eventInactivityThresholdMs: Type.Optional(
+      Type.Union([
+        Type.Number({ minimum: 60000, maximum: 86400000 }),
+        Type.Null(),
+      ])
+    ),
+  },
+  {
+    $id: 'GraphQLSubscriptionArtifact',
+    additionalProperties: false,
+  }
+);
+
+export type GraphQLSubscriptionArtifact = Static<
+  typeof GraphQLSubscriptionArtifactSchema
+>;
+
 /**
  * Variable Artifact (ConfigVariableDto with CLI extensions)
  *
@@ -386,8 +461,6 @@ export const JobArtifactSchema = Type.Object(
       Type.Literal('parallel'),
     ]),
     enabled: Type.Boolean(),
-    maxConcurrentJobs: Type.Optional(Type.Number()),
-    maxExecutionTime: Type.Optional(Type.Number()),
     functions: Type.Array(JobFunctionRefSchema),
     ownerUserId: Type.Optional(Type.String()),
   },

@@ -214,6 +214,10 @@
               "SUPER_ADMIN"
             ],
             "type": "string"
+          },
+          "ip": {
+            "type": "string",
+            "nullable": true
           }
         },
         "required": [
@@ -223,7 +227,8 @@
           "status",
           "timestamp",
           "userId",
-          "userRole"
+          "userRole",
+          "ip"
         ]
       },
       "UpdateTenantIdentityProvider": {
@@ -1656,6 +1661,9 @@
           },
           "signUp": {
             "$ref": "#/components/schemas/SignUpConfig"
+          },
+          "tenantId": {
+            "type": "string"
           }
         },
         "required": [
@@ -5276,6 +5284,9 @@
               "$ref": "#/components/schemas/KnativeFunctionInfo"
             }
           },
+          "revision": {
+            "type": "number"
+          },
           "environmentId": {
             "type": "string"
           },
@@ -5308,7 +5319,8 @@
           "sleepCycleInterval",
           "limitTime",
           "cachePolyLibrary",
-          "instances"
+          "instances",
+          "revision"
         ]
       },
       "UpdateServerCustomFunctionDto": {
@@ -8828,10 +8840,17 @@
             "type": "string"
           },
           "ohipOffset": {
-            "type": "string"
+            "type": "string",
+            "maxLength": 256
           },
           "ohipMaintainOffset": {
             "type": "boolean"
+          },
+          "eventInactivityThresholdMs": {
+            "type": "number",
+            "nullable": true,
+            "minimum": 60000,
+            "maximum": 86400000
           }
         },
         "required": [
@@ -8917,8 +8936,72 @@
           },
           "ohipMaintainOffset": {
             "type": "boolean"
+          },
+          "eventInactivityThresholdMs": {
+            "type": "number",
+            "nullable": true,
+            "minimum": 60000,
+            "maximum": 86400000
           }
         }
+      },
+      "GraphQLSubscriptionRecoverDto": {
+        "type": "object",
+        "properties": {
+          "reason": {
+            "type": "string",
+            "maxLength": 500
+          },
+          "restart": {
+            "type": "boolean"
+          },
+          "ohipOffsetSelection": {
+            "enum": [
+              "PROVIDER_HIGHEST",
+              "PERSISTED"
+            ],
+            "type": "string"
+          },
+          "waitForCloseMs": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 60000
+          }
+        }
+      },
+      "GraphQLSubscriptionRecoverResponseDto": {
+        "type": "object",
+        "properties": {
+          "requestId": {
+            "type": "string"
+          },
+          "subscriptionId": {
+            "type": "string"
+          },
+          "previousClientId": {
+            "type": "string"
+          },
+          "forceCloseRequested": {
+            "type": "boolean"
+          },
+          "closed": {
+            "type": "boolean"
+          },
+          "restarted": {
+            "type": "boolean"
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "requestId",
+          "subscriptionId",
+          "forceCloseRequested",
+          "closed",
+          "restarted",
+          "message"
+        ]
       },
       "SnippetDto": {
         "type": "object",
@@ -10429,10 +10512,59 @@
           "schemas"
         ]
       },
+      "CreateSavedRequestDto": {
+        "type": "object",
+        "properties": {
+          "resourceType": {
+            "enum": [
+              "publicServerFunction",
+              "serverFunction",
+              "publicApiFunction",
+              "apiFunction",
+              "webhookHandle",
+              "table"
+            ],
+            "type": "string"
+          },
+          "resourceId": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "executionId": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "request": {
+            "type": "object"
+          },
+          "response": {
+            "type": "object",
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "ownerUserId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "resourceType",
+          "id",
+          "name"
+        ]
+      },
       "SavedRequestDto": {
         "type": "object",
         "properties": {
-          "traceId": {
+          "id": {
             "type": "string"
           },
           "executionId": {
@@ -10474,10 +10606,13 @@
           },
           "environment": {
             "type": "object"
+          },
+          "executePath": {
+            "type": "string"
           }
         },
         "required": [
-          "traceId",
+          "id",
           "executionId",
           "name",
           "description",
@@ -10490,17 +10625,46 @@
           "environmentId"
         ]
       },
-      "CreateSavedRequestDto": {
+      "UpdateSavedRequestDto": {
         "type": "object",
         "properties": {
+          "id": {
+            "type": "string"
+          },
+          "executionId": {
+            "type": "string"
+          },
           "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "resourceType": {
+            "type": "string"
+          },
+          "resourceId": {
+            "type": "string"
+          },
+          "request": {
+            "type": "object"
+          },
+          "response": {
+            "type": "object",
+            "nullable": true
+          },
+          "createdAt": {
             "type": "string"
           },
           "ownerUserId": {
             "type": "string"
+          },
+          "environmentId": {
+            "type": "string"
           }
         },
         "required": [
+          "id",
           "name"
         ]
       }

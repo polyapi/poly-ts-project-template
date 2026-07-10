@@ -309,13 +309,7 @@ export interface paths {
     post: operations["WebhookController_generateDescriptionForWebhook"];
   };
   "/webhooks/{idOrSlug}": {
-    get: operations["WebhookController_triggerWebhookHandle_get"];
-    put: operations["WebhookController_triggerWebhookHandle_put"];
-    post: operations["WebhookController_triggerWebhookHandle_post"];
-    delete: operations["WebhookController_triggerWebhookHandle_delete"];
-    options: operations["WebhookController_triggerWebhookHandle_options"];
-    head: operations["WebhookController_triggerWebhookHandle_head"];
-    patch: operations["WebhookController_triggerWebhookHandle_patch"];
+    post: operations["WebhookController_triggerWebhookHandle"];
   };
   "/webhooks/{idOrSlug}/{subpath}": {
     get: operations["WebhookController_triggerWebhookHandleWithSubpath_get"];
@@ -469,6 +463,12 @@ export interface paths {
   "/metrics": {
     get: operations["MetricsController_getMetrics"];
   };
+  "/metrics/functions/server/{id}/usage": {
+    get: operations["MetricsController_getServerFunctionUsage"];
+  };
+  "/metrics/functions/api/{id}/usage": {
+    get: operations["MetricsController_getApiFunctionUsage"];
+  };
   "/subscriptions/graphql": {
     get: operations["GraphQLController_getSubscriptions"];
     post: operations["GraphQLController_createSubscription"];
@@ -477,6 +477,9 @@ export interface paths {
     get: operations["GraphQLController_getSubscription"];
     delete: operations["GraphQLController_deleteSubscription"];
     patch: operations["GraphQLController_updateSubscription"];
+  };
+  "/subscriptions/graphql/{id}/recover": {
+    post: operations["GraphQLController_recoverSubscription"];
   };
   "/snippets/public": {
     get: operations["SnippetController_listPublic"];
@@ -651,7 +654,7 @@ export interface paths {
     get: operations["SavedRequestController_list"];
     post: operations["SavedRequestController_create"];
   };
-  "/saved-requests/{traceId}": {
+  "/saved-requests/{id}": {
     get: operations["SavedRequestController_get"];
     delete: operations["SavedRequestController_delete"];
     patch: operations["SavedRequestController_update"];
@@ -714,6 +717,7 @@ export interface components {
       userId: string | null;
       /** @enum {string|null} */
       userRole: "USER" | "ADMIN" | "SUPER_ADMIN" | null;
+      ip: string | null;
     };
     UpdateTenantIdentityProvider: {
       identityProviderId: string;
@@ -1136,6 +1140,7 @@ export interface components {
       icon?: string;
       login?: components["schemas"]["LoginConfig"];
       signUp?: components["schemas"]["SignUpConfig"];
+      tenantId?: string;
     };
     ActivityListDto: {
       id: string;
@@ -2001,6 +2006,7 @@ export interface components {
       maxExecutionTime?: number | null;
       cachePolyLibrary: boolean;
       instances: components["schemas"]["KnativeFunctionInfo"][];
+      revision: number;
       environmentId?: string;
       environmentName?: string;
       tenantId?: string;
@@ -2961,6 +2967,7 @@ export interface components {
       ohipOffsetSelection?: "PROVIDER_HIGHEST" | "SPECIFIC";
       ohipOffset?: string;
       ohipMaintainOffset?: boolean;
+      eventInactivityThresholdMs?: number | null;
     };
     GraphQLSubscriptionUpdateDto: {
       name?: string;
@@ -2984,6 +2991,23 @@ export interface components {
       /** @enum {string} */
       ohipOffsetSelection?: "PROVIDER_HIGHEST" | "PERSISTED";
       ohipMaintainOffset?: boolean;
+      eventInactivityThresholdMs?: number | null;
+    };
+    GraphQLSubscriptionRecoverDto: {
+      reason?: string;
+      restart?: boolean;
+      /** @enum {string} */
+      ohipOffsetSelection?: "PROVIDER_HIGHEST" | "PERSISTED";
+      waitForCloseMs?: number;
+    };
+    GraphQLSubscriptionRecoverResponseDto: {
+      requestId: string;
+      subscriptionId: string;
+      previousClientId?: string;
+      forceCloseRequested: boolean;
+      closed: boolean;
+      restarted: boolean;
+      message: string;
     };
     SnippetDto: {
       id: string;
@@ -3405,8 +3429,21 @@ export interface components {
       webhooks: components["schemas"]["CreateWebhookHandleDtoForSpecificationInput"][];
       schemas: components["schemas"]["CreateSchemaDtoForSpecificationInput"][];
     };
+    CreateSavedRequestDto: {
+      /** @enum {string} */
+      resourceType: "publicServerFunction" | "serverFunction" | "publicApiFunction" | "apiFunction" | "webhookHandle" | "table";
+      resourceId?: string;
+      id: string;
+      executionId?: string;
+      name: string;
+      description?: string;
+      request?: Record<string, never>;
+      response?: Record<string, unknown> | null;
+      createdAt?: string;
+      ownerUserId?: string;
+    };
     SavedRequestDto: {
-      traceId: string;
+      id: string;
       executionId: string | null;
       name: string;
       description: string | null;
@@ -3420,10 +3457,20 @@ export interface components {
       ownerUser?: Record<string, never>;
       environmentId: string;
       environment?: Record<string, never>;
+      executePath?: string;
     };
-    CreateSavedRequestDto: {
+    UpdateSavedRequestDto: {
+      id: string;
+      executionId?: string;
       name: string;
+      description?: string;
+      resourceType?: string;
+      resourceId?: string;
+      request?: Record<string, never>;
+      response?: Record<string, unknown> | null;
+      createdAt?: string;
       ownerUserId?: string;
+      environmentId?: string;
     };
   };
   responses: never;
@@ -5373,86 +5420,14 @@ export interface operations {
       };
     };
   };
-  WebhookController_triggerWebhookHandle_get: {
+  WebhookController_triggerWebhookHandle: {
     parameters: {
       path: {
         idOrSlug: string;
       };
     };
     responses: {
-      200: {
-        content: never;
-      };
-    };
-  };
-  WebhookController_triggerWebhookHandle_put: {
-    parameters: {
-      path: {
-        idOrSlug: string;
-      };
-    };
-    responses: {
-      200: {
-        content: never;
-      };
-    };
-  };
-  WebhookController_triggerWebhookHandle_post: {
-    parameters: {
-      path: {
-        idOrSlug: string;
-      };
-    };
-    responses: {
-      200: {
-        content: never;
-      };
-    };
-  };
-  WebhookController_triggerWebhookHandle_delete: {
-    parameters: {
-      path: {
-        idOrSlug: string;
-      };
-    };
-    responses: {
-      200: {
-        content: never;
-      };
-    };
-  };
-  WebhookController_triggerWebhookHandle_options: {
-    parameters: {
-      path: {
-        idOrSlug: string;
-      };
-    };
-    responses: {
-      200: {
-        content: never;
-      };
-    };
-  };
-  WebhookController_triggerWebhookHandle_head: {
-    parameters: {
-      path: {
-        idOrSlug: string;
-      };
-    };
-    responses: {
-      200: {
-        content: never;
-      };
-    };
-  };
-  WebhookController_triggerWebhookHandle_patch: {
-    parameters: {
-      path: {
-        idOrSlug: string;
-      };
-    };
-    responses: {
-      200: {
+      201: {
         content: never;
       };
     };
@@ -6515,6 +6490,30 @@ export interface operations {
       };
     };
   };
+  MetricsController_getServerFunctionUsage: {
+    parameters: {
+      path: {
+        id: string;
+      };
+    };
+    responses: {
+      200: {
+        content: never;
+      };
+    };
+  };
+  MetricsController_getApiFunctionUsage: {
+    parameters: {
+      path: {
+        id: string;
+      };
+    };
+    responses: {
+      200: {
+        content: never;
+      };
+    };
+  };
   GraphQLController_getSubscriptions: {
     responses: {
       200: {
@@ -6582,6 +6581,30 @@ export interface operations {
       200: {
         content: {
           "application/json": components["schemas"]["GraphQLSubscriptionDetailDto"];
+        };
+      };
+    };
+  };
+  GraphQLController_recoverSubscription: {
+    parameters: {
+      path: {
+        id: string;
+      };
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["GraphQLSubscriptionRecoverDto"];
+      };
+    };
+    responses: {
+      200: {
+        content: {
+          "application/json": components["schemas"]["GraphQLSubscriptionRecoverResponseDto"];
+        };
+      };
+      201: {
+        content: {
+          "application/json": components["schemas"]["GraphQLSubscriptionRecoverResponseDto"];
         };
       };
     };
@@ -7515,10 +7538,17 @@ export interface operations {
     };
   };
   SavedRequestController_list: {
+    parameters: {
+      query: {
+        environmentId: string;
+        resourceType: string;
+        resourceId: string;
+      };
+    };
     responses: {
       200: {
         content: {
-          "application/json": components["schemas"]["SavedRequestDto"][];
+          "application/json": Record<string, never>;
         };
       };
     };
@@ -7540,7 +7570,7 @@ export interface operations {
   SavedRequestController_get: {
     parameters: {
       path: {
-        traceId: string;
+        id: string;
       };
     };
     responses: {
@@ -7554,7 +7584,7 @@ export interface operations {
   SavedRequestController_delete: {
     parameters: {
       path: {
-        traceId: string;
+        id: string;
       };
     };
     responses: {
@@ -7568,12 +7598,12 @@ export interface operations {
   SavedRequestController_update: {
     parameters: {
       path: {
-        traceId: string;
+        id: string;
       };
     };
     requestBody: {
       content: {
-        "application/json": components["schemas"]["CreateSavedRequestDto"];
+        "application/json": components["schemas"]["UpdateSavedRequestDto"];
       };
     };
     responses: {

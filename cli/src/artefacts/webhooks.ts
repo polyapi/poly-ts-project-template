@@ -15,12 +15,13 @@ import { getDeleteHeaders, sleep } from '../utils/apiClient';
 import { validateEndpointPayload } from '../utils/apiSchemaValidation';
 import {
   getSrcPath,
+  isInArtefactDirectory,
   readJsonFile,
   type WalkDirOptions,
   walkDir,
 } from '../utils/fileSystem';
 import { chalk, createHeader, createLogger } from '../utils/logger';
-import { getRequiredNamespace, validateNamespace } from '../utils/namespace';
+import { getRequiredNamespaces, matchesAnyRequiredNamespace, validateNamespace } from '../utils/namespace';
 import { filterOrphansByContext } from '../utils/orphans';
 import { validateWebhookArtifact } from '../utils/validation';
 
@@ -43,7 +44,7 @@ export function findWebhookFiles(
         file.endsWith('.json') &&
         !file.endsWith('.test.json') &&
         fullPath.includes('/webhooks/') &&
-        fullPath.includes('/artefacts/')
+        isInArtefactDirectory(fullPath)
       ) {
         const content = readJsonFile(fullPath);
         if (content) {
@@ -453,21 +454,23 @@ export async function syncWebhooks(
   log.info(chalk.cyan(createHeader('WEBHOOKS')));
 
   if (webhookFiles.length === 0) {
-    log.warn('No webhook JSON files found in src/**/artefacts/webhooks/');
+    log.warn(
+      'No webhook JSON files found in src/**/artefacts/webhooks/ (legacy src/**/artifacts/webhooks/ is also supported)'
+    );
     return;
   }
 
   log.info(chalk.gray(`Found ${webhookFiles.length} local webhook file(s)`));
 
   // Step 1: Get existing webhooks from API (filtered by namespace)
-  const namespace = getRequiredNamespace();
+  const namespaces = getRequiredNamespaces();
   const allWebhooks = await getExistingWebhooks(client);
   const existingWebhooks = allWebhooks.filter(webhook =>
-    webhook.context?.startsWith(namespace)
+    matchesAnyRequiredNamespace(webhook.context)
   );
   log.info(
     chalk.gray(
-      `Fetched ${existingWebhooks.length} webhook(s) from API in namespace "${namespace}"`
+      `Fetched ${existingWebhooks.length} webhook(s) from API in namespace(s) "${namespaces.join(", ")}"`
     )
   );
 
@@ -475,11 +478,11 @@ export async function syncWebhooks(
   const { getExistingServerFunctions } = await import('./functions');
   const allFunctions = await getExistingServerFunctions(client);
   const functionsInNamespace = allFunctions.filter((fn: any) =>
-    fn.context?.startsWith(namespace)
+    matchesAnyRequiredNamespace(fn.context)
   );
   log.info(
     chalk.gray(
-      `Fetched ${functionsInNamespace.length} function(s) from API in namespace "${namespace}"`
+      `Fetched ${functionsInNamespace.length} function(s) from API in namespace(s) "${namespaces.join(", ")}"`
     )
   );
 

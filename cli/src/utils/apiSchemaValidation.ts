@@ -9,6 +9,8 @@ type EndpointSchemaName =
   | 'CreateWebhookHandleDto'
   | 'UpdateWebhookHandleDto'
   | 'CreateTriggerDto'
+  | 'GraphQLSubscriptionCreateDto'
+  | 'GraphQLSubscriptionUpdateDto'
   | 'CreateVariableDto'
   | 'UpdateVariableDto'
   | 'CreateTableDto'
@@ -28,7 +30,6 @@ const validatorCache = new Map<EndpointSchemaName, ValidateFunction>();
 const ajv = new Ajv({
   allErrors: true,
   strict: false,
-  validateFormats: false,
 });
 
 function getEndpointSchemaPath(schemaName: EndpointSchemaName): string {

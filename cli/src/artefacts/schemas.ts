@@ -6,12 +6,13 @@ import { getDeleteHeaders, sleep } from '../utils/apiClient';
 import { validateEndpointPayload } from '../utils/apiSchemaValidation';
 import {
   getSrcPath,
+  isInArtefactDirectory,
   readJsonFile,
   type WalkDirOptions,
   walkDir,
 } from '../utils/fileSystem';
 import { chalk, createHeader, createLogger } from '../utils/logger';
-import { getRequiredNamespace, validateNamespace } from '../utils/namespace';
+import { getRequiredNamespaces, matchesAnyRequiredNamespace, validateNamespace } from '../utils/namespace';
 import { filterOrphansByContext } from '../utils/orphans';
 import { areComparisonPayloadsEqual } from '../utils/payloadComparison';
 import { validateSchemaArtifact } from '../utils/validation';
@@ -42,7 +43,7 @@ export function findSchemaFiles(
         file.endsWith('.json') &&
         !file.endsWith('.test.json') &&
         fullPath.includes('/schemas/') &&
-        fullPath.includes('/artefacts/')
+        isInArtefactDirectory(fullPath)
       ) {
         const content = readJsonFile(fullPath);
         if (content) {
@@ -296,21 +297,23 @@ export async function syncSchemas(
   log.info(chalk.cyan(createHeader('SCHEMAS')));
 
   if (schemaFiles.length === 0) {
-    log.warn('No schema JSON files found in src/**/artefacts/schemas/');
+    log.warn(
+      'No schema JSON files found in src/**/artefacts/schemas/ (legacy src/**/artifacts/schemas/ is also supported)'
+    );
     return;
   }
 
   log.info(chalk.gray(`Found ${schemaFiles.length} local schema file(s)`));
 
   // Step 1: Get existing schemas from API (filtered by namespace)
-  const namespace = getRequiredNamespace();
+  const namespaces = getRequiredNamespaces();
   const allSchemas = await getExistingSchemas(client);
   const existingSchemas = allSchemas.filter(schema =>
-    schema.context?.startsWith(namespace)
+    matchesAnyRequiredNamespace(schema.context)
   );
   log.info(
     chalk.gray(
-      `Fetched ${existingSchemas.length} schema(s) from API in namespace "${namespace}"`
+      `Fetched ${existingSchemas.length} schema(s) from API in namespace(s) "${namespaces.join(", ")}"`
     )
   );
 

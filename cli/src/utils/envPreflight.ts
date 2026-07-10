@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import type {
   CanopyFile,
+  GraphQLSubscriptionFile,
   JobFile,
   SchemaFile,
   TableFile,
@@ -18,6 +19,7 @@ type JsonArtifactFile =
   | SchemaFile
   | WebhookFile
   | TriggerFile
+  | GraphQLSubscriptionFile
   | TableFile
   | VariableFile
   | JobFile;

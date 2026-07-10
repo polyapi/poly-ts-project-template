@@ -73,6 +73,35 @@ export interface TriggerFile {
   content: TriggerFileContent;
 }
 
+export interface GraphQLSubscriptionFile {
+  filePath: string;
+  fileName: string;
+  content: {
+    name: string;
+    context: string;
+    description?: string | null;
+    ownerUserId?: string;
+    visibility?: 'ENVIRONMENT' | 'TENANT';
+    type: 'CUSTOM' | 'OHIP';
+    transportProtocol?: 'WS' | 'HTTP';
+    websocketUrl: string;
+    query: string;
+    paramsVariableId?: string | null;
+    paramsSfxId?: string | null;
+    paramsObject?: Record<string, unknown> | null;
+    destination: {
+      functionName: string;
+      functionContext: string;
+    };
+    functionParams?: Record<string, unknown> | unknown[] | null;
+    enabled?: boolean;
+    ohipOffsetSelection?: 'PROVIDER_HIGHEST' | 'SPECIFIC' | 'PERSISTED';
+    ohipOffset?: string;
+    ohipMaintainOffset?: boolean;
+    eventInactivityThresholdMs?: number | null;
+  };
+}
+
 export interface SchemaFile {
   filePath: string;
   fileName: string;
@@ -141,8 +170,6 @@ export interface JobFile {
     schedule: JobSchedule;
     executionType: 'sequential' | 'parallel';
     enabled: boolean;
-    maxConcurrentJobs?: number;
-    maxExecutionTime?: number;
     functions: JobFunctionRef[];
     ownerUserId?: string;
   };

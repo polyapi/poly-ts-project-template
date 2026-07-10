@@ -6,12 +6,13 @@ import { getDeleteHeaders, sleep } from '../utils/apiClient';
 import { validateEndpointPayload } from '../utils/apiSchemaValidation';
 import {
   getSrcPath,
+  isInArtefactDirectory,
   readJsonFile,
   type WalkDirOptions,
   walkDir,
 } from '../utils/fileSystem';
 import { chalk, createHeader, createLogger } from '../utils/logger';
-import { getRequiredNamespace, validateNamespace } from '../utils/namespace';
+import { getRequiredNamespaces, matchesAnyRequiredNamespace, validateNamespace } from '../utils/namespace';
 import { filterOrphansByContext } from '../utils/orphans';
 import { areComparisonPayloadsEqual } from '../utils/payloadComparison';
 import { validateTableArtifact } from '../utils/validation';
@@ -44,7 +45,7 @@ export function findTableFiles(
         file.endsWith('.json') &&
         !file.endsWith('.test.json') &&
         fullPath.includes('/tabi/') &&
-        fullPath.includes('/artefacts/')
+        isInArtefactDirectory(fullPath)
       ) {
         const content = readJsonFile(fullPath);
         if (content) {
@@ -411,21 +412,20 @@ export async function syncTables(
   log.info(chalk.cyan(createHeader('TABLES')));
 
   if (tableFiles.length === 0) {
-    log.warn('No table JSON files found in src/**/artefacts/tabi/');
+    log.warn(
+      'No table JSON files found in src/**/artefacts/tabi/ (legacy src/**/artifacts/tabi/ is also supported)'
+    );
     return;
   }
 
   log.info(chalk.gray(`Found ${tableFiles.length} local table file(s)`));
 
-  const namespace = getRequiredNamespace();
+  const namespaces = getRequiredNamespaces();
   const allTables = await getExistingTables(client);
-  const existingTables = allTables.filter(table => {
-    const context = table.context;
-    return context === namespace || context?.startsWith(`${namespace}.`);
-  });
+  const existingTables = allTables.filter(table => matchesAnyRequiredNamespace(table.context));
   log.info(
     chalk.gray(
-      `Fetched ${existingTables.length} table(s) from API in namespace "${namespace}"`
+      `Fetched ${existingTables.length} table(s) from API in namespace(s) "${namespaces.join(", ")}"`
     )
   );
 

@@ -6,12 +6,13 @@ import { getDeleteHeaders, sleep } from '../utils/apiClient';
 import { validateEndpointPayload } from '../utils/apiSchemaValidation';
 import {
   getSrcPath,
+  isInArtefactDirectory,
   readJsonFile,
   type WalkDirOptions,
   walkDir,
 } from '../utils/fileSystem';
 import { chalk, createHeader, createLogger } from '../utils/logger';
-import { getRequiredNamespace } from '../utils/namespace';
+import { getRequiredNamespaces, matchesAnyRequiredNamespace } from '../utils/namespace';
 import { areComparisonPayloadsEqual } from '../utils/payloadComparison';
 import { validateJobArtifact } from '../utils/validation';
 import { getExistingServerFunctions } from './functions';
@@ -22,10 +23,6 @@ type CreateJobDto =
   paths['/jobs']['post']['requestBody']['content']['application/json'];
 type UpdateJobDto =
   paths['/jobs/{id}']['patch']['requestBody']['content']['application/json'];
-type JobPayload = CreateJobDto & {
-  maxConcurrentJobs?: number;
-  maxExecutionTime?: number;
-};
 
 /**
  * Find all job JSON files in the project (artefacts/jobs/*.json)
@@ -41,7 +38,7 @@ export function findJobFiles(options: FindJobFileOptions = {}): JobFile[] {
         file.endsWith('.json') &&
         !file.endsWith('.test.json') &&
         fullPath.includes('/jobs/') &&
-        fullPath.includes('/artefacts/')
+        isInArtefactDirectory(fullPath)
       ) {
         const content = readJsonFile(fullPath);
         if (content) {
@@ -158,37 +155,18 @@ function buildJobPayload(
     headersPayload: object;
     paramsPayload: object;
   }[]
-): JobPayload {
-  const {
-    name,
-    schedule,
-    executionType,
-    enabled,
-    maxConcurrentJobs,
-    maxExecutionTime,
-    ownerUserId,
-  } = jobFile.content;
+): CreateJobDto {
+  const { name, schedule, executionType, enabled, ownerUserId } =
+    jobFile.content;
 
   return {
     name,
     schedule,
     executionType,
     enabled,
-    ...(maxConcurrentJobs !== undefined ? { maxConcurrentJobs } : {}),
-    ...(maxExecutionTime !== undefined ? { maxExecutionTime } : {}),
     functions: resolvedFunctions as CreateJobDto['functions'],
     ...(ownerUserId !== undefined ? { ownerUserId } : {}),
   };
-}
-
-function buildJobEndpointValidationPayload(payload: JobPayload): CreateJobDto {
-  const {
-    maxConcurrentJobs: _maxConcurrentJobs,
-    maxExecutionTime: _maxExecutionTime,
-    ...validationPayload
-  } = payload;
-
-  return validationPayload;
 }
 
 function buildRemoteJobPayload(
@@ -219,14 +197,6 @@ function buildRemoteJobPayload(
 
   if (localPayload.ownerUserId !== undefined) {
     payload.ownerUserId = existingJob.ownerUserId ?? null;
-  }
-
-  if (localPayload.maxConcurrentJobs !== undefined) {
-    payload.maxConcurrentJobs = existingJob.maxConcurrentJobs;
-  }
-
-  if (localPayload.maxExecutionTime !== undefined) {
-    payload.maxExecutionTime = existingJob.maxExecutionTime;
   }
 
   return payload;
@@ -270,15 +240,11 @@ async function syncJob(
     }
 
     if (
-      !validateEndpointPayload(
-        'UpdateJobDto',
-        buildJobEndpointValidationPayload(payload),
-        {
-          artifactType: 'Job',
-          artifactName: name,
-          filePath: jobFile.filePath,
-        }
-      )
+      !validateEndpointPayload('UpdateJobDto', payload, {
+        artifactType: 'Job',
+        artifactName: name,
+        filePath: jobFile.filePath,
+      })
     ) {
       return 'failed';
     }
@@ -309,15 +275,11 @@ async function syncJob(
   }
 
   if (
-    !validateEndpointPayload(
-      'CreateJobDto',
-      buildJobEndpointValidationPayload(payload),
-      {
-        artifactType: 'Job',
-        artifactName: name,
-        filePath: jobFile.filePath,
-      }
-    )
+    !validateEndpointPayload('CreateJobDto', payload, {
+      artifactType: 'Job',
+      artifactName: name,
+      filePath: jobFile.filePath,
+    })
   ) {
     return 'failed';
   }
@@ -367,21 +329,25 @@ export async function syncJobs(
   log.info(chalk.cyan(createHeader('JOBS')));
 
   if (jobFiles.length === 0) {
-    log.info(chalk.gray('No job files found in src/**/artefacts/jobs/'));
+    log.info(
+      chalk.gray(
+        'No job files found in src/**/artefacts/jobs/ (legacy src/**/artifacts/jobs/ is also supported)'
+      )
+    );
     return;
   }
 
   log.info(chalk.gray(`Found ${jobFiles.length} local job file(s)`));
 
   // Resolve all server functions (jobs reference functions by name+context)
-  const namespace = getRequiredNamespace();
+  const namespaces = getRequiredNamespaces();
   const allFunctions = await getExistingServerFunctions(client);
   const functionsInNamespace = allFunctions.filter((fn: any) =>
-    fn.context?.startsWith(namespace)
+    matchesAnyRequiredNamespace(fn.context)
   );
   log.info(
     chalk.gray(
-      `Resolved ${functionsInNamespace.length} server function(s) in namespace "${namespace}"`
+      `Resolved ${functionsInNamespace.length} server function(s) in namespace(s) "${namespaces.join(", ")}"`
     )
   );
 

@@ -10,12 +10,13 @@ import { getDeleteHeaders, sleep } from '../utils/apiClient';
 import { validateEndpointPayload } from '../utils/apiSchemaValidation';
 import {
   getSrcPath,
+  isInArtefactDirectory,
   readJsonFile,
   type WalkDirOptions,
   walkDir,
 } from '../utils/fileSystem';
 import { chalk, createHeader, createLogger } from '../utils/logger';
-import { getRequiredNamespace, validateNamespace } from '../utils/namespace';
+import { getRequiredNamespaces, matchesAnyRequiredNamespace, validateNamespace } from '../utils/namespace';
 import { filterOrphansByContext } from '../utils/orphans';
 import { validateTriggerArtifact } from '../utils/validation';
 import { getExistingServerFunctions } from './functions';
@@ -72,7 +73,7 @@ export function findTriggerFiles(
       if (
         file.endsWith('.json') &&
         fullPath.includes('/triggers/') &&
-        fullPath.includes('/artefacts/')
+        isInArtefactDirectory(fullPath)
       ) {
         const content = readJsonFile(fullPath);
         if (content) {
@@ -387,25 +388,27 @@ export async function syncTriggers(
   log.info(chalk.cyan(createHeader('TRIGGERS')));
 
   if (triggerFiles.length === 0) {
-    log.warn('No trigger files found in src/**/artefacts/triggers/');
+    log.warn(
+      'No trigger files found in src/**/artefacts/triggers/ (legacy src/**/artifacts/triggers/ is also supported)'
+    );
     return;
   }
 
   log.info(chalk.gray(`Found ${triggerFiles.length} local trigger file(s)`));
 
   // Get fresh lists of webhooks and functions for ID resolution
-  const namespace = getRequiredNamespace();
+  const namespaces = getRequiredNamespaces();
   const webhooksForTriggers = await getExistingWebhooks(client);
   const functionsForTriggers = await getExistingServerFunctions(client);
   const webhooksInNamespace = webhooksForTriggers.filter((webhook: any) =>
-    webhook.context?.startsWith(namespace)
+    matchesAnyRequiredNamespace(webhook.context)
   );
   const functionsInNamespace = functionsForTriggers.filter((fn: any) =>
-    fn.context?.startsWith(namespace)
+    matchesAnyRequiredNamespace(fn.context)
   );
   log.info(
     chalk.gray(
-      `Resolved ${webhooksInNamespace.length} webhook(s) and ${functionsInNamespace.length} function(s) in namespace "${namespace}"`
+      `Resolved ${webhooksInNamespace.length} webhook(s) and ${functionsInNamespace.length} function(s) in namespace(s) "${namespaces.join(", ")}"`
     )
   );
 
@@ -427,7 +430,7 @@ export async function syncTriggers(
   });
   log.info(
     chalk.gray(
-      `Fetched ${existingTriggers.length} trigger(s) from API in namespace "${namespace}"`
+      `Fetched ${existingTriggers.length} trigger(s) from API in namespace(s) "${namespaces.join(", ")}"`
     )
   );
 

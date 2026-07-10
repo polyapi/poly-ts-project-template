@@ -9,12 +9,13 @@ import { validateEndpointPayload } from '../utils/apiSchemaValidation';
 import {
   getRelativePath,
   getSrcPath,
+  isInArtefactDirectory,
   readJsonFile,
   type WalkDirOptions,
   walkDir,
 } from '../utils/fileSystem';
 import { chalk, createHeader, createLogger } from '../utils/logger';
-import { getRequiredNamespace, validateNamespace } from '../utils/namespace';
+import { getRequiredNamespaces, matchesAnyRequiredNamespace, validateNamespace } from '../utils/namespace';
 import { filterOrphansByContext } from '../utils/orphans';
 import { areComparisonPayloadsEqual } from '../utils/payloadComparison';
 import { validateVariableArtifact } from '../utils/validation';
@@ -186,20 +187,13 @@ function isSecretVariable(
   variableContent: VariableFile['content'],
   existingVariable?: any
 ): boolean {
-  const localSecrecy = variableContent.secrecy?.toUpperCase();
-  const existingSecrecy =
-    typeof existingVariable?.secrecy === 'string'
-      ? existingVariable.secrecy.toUpperCase()
-      : undefined;
   const localIsSecret =
     variableContent.secret === true ||
-    localSecrecy === 'SECRET' ||
-    localSecrecy === 'OBSCURED';
+    variableContent.secrecy === 'SECRET';
 
   const existingIsSecret =
     existingVariable?.secret === true ||
-    existingSecrecy === 'SECRET' ||
-    existingSecrecy === 'OBSCURED';
+    existingVariable?.secrecy === 'SECRET';
 
   return localIsSecret || existingIsSecret;
 }
@@ -208,29 +202,10 @@ function isObscuredVariable(
   variableContent: VariableFile['content'],
   existingVariable?: any
 ): boolean {
-  const localSecrecy = variableContent.secrecy?.toUpperCase();
-  const existingSecrecy =
-    typeof existingVariable?.secrecy === 'string'
-      ? existingVariable.secrecy.toUpperCase()
-      : undefined;
+  const localIsObscured = variableContent.secrecy === 'OBSCURED';
+  const existingIsObscured = existingVariable?.secrecy === 'OBSCURED';
 
-  return localSecrecy === 'OBSCURED' || existingSecrecy === 'OBSCURED';
-}
-
-function isEmptyVariableValue(value: unknown): boolean {
-  if (value === undefined || value === null || value === '') {
-    return true;
-  }
-
-  if (Array.isArray(value)) {
-    return value.length === 0;
-  }
-
-  return (
-    typeof value === 'object' &&
-    value !== null &&
-    Object.keys(value).length === 0
-  );
+  return localIsObscured || existingIsObscured;
 }
 
 /**
@@ -249,7 +224,7 @@ export function findVariableFiles(
         file.endsWith('.json') &&
         !file.endsWith('.test.json') &&
         fullPath.includes('/vari/') &&
-        fullPath.includes('/artefacts/')
+        isInArtefactDirectory(fullPath)
       ) {
         const content = readJsonFile(fullPath);
         if (content) {
@@ -320,6 +295,7 @@ async function deleteVariable(
 
 /**
  * POST or PATCH a variable to the API
+ * Returns: 'created' | 'updated' | 'noop' | 'failed'
  */
 async function buildVariablePayload(
   variable: VariableFile,
@@ -331,18 +307,15 @@ async function buildVariablePayload(
 ): Promise<{
   payload: Record<string, unknown>;
   isSecret: boolean;
-  isObscured: boolean;
 }> {
   const variableName = resolvedIdentity.name;
   const variableContext = resolvedIdentity.context;
   const isSecret = isSecretVariable(variable.content, existingVariable);
-  const isObscured = isObscuredVariable(variable.content, existingVariable);
   const hasValue = variable.content.value !== undefined;
 
-  let processedValue: unknown = {};
-  let includeValue = true;
+  let processedValue = {};
 
-  if (hasValue && isSecret && !isObscured) {
+  if (hasValue && isSecret) {
     const fileRef = chalk.cyan(getRelativePath(variable.filePath));
     log.error(
       chalk.hex('#FF8C00').bold('WARN: ') +
@@ -360,7 +333,7 @@ async function buildVariablePayload(
         chalk.yellow('The value will be ignored and set to empty object.')
     );
     processedValue = {};
-  } else if (hasValue) {
+  } else if (hasValue && !isSecret) {
     processedValue = processValueWithEnvVars(
       variable.content.value,
       variableName,
@@ -375,34 +348,24 @@ async function buildVariablePayload(
         variableContext
       );
     }
-    if (isObscured && isEmptyVariableValue(processedValue)) {
-      includeValue = false;
-    }
   } else {
     processedValue = {};
-    includeValue = !isObscured;
-  }
-
-  const payload: Record<string, unknown> = {
-    name: variableName,
-    context: variableContext,
-    description: variable.content.description,
-    secret: variable.content.secret,
-    secrecy: variable.content.secrecy,
-    visibility: variable.content.visibility,
-    state: variable.content.state,
-    expiresAt: variable.content.expiresAt,
-    ownerUserId: variable.content.ownerUserId,
-  };
-
-  if (includeValue) {
-    payload.value = processedValue;
   }
 
   return {
     isSecret,
-    isObscured,
-    payload,
+    payload: {
+      name: variableName,
+      context: variableContext,
+      description: variable.content.description,
+      value: processedValue,
+      secret: variable.content.secret,
+      secrecy: variable.content.secrecy,
+      visibility: variable.content.visibility,
+      state: variable.content.state,
+      expiresAt: variable.content.expiresAt,
+      ownerUserId: variable.content.ownerUserId,
+    },
   };
 }
 
@@ -415,6 +378,14 @@ function buildSecretVariableUpdatePayload(
     secrecy: _secrecy,
     ...metadataPayload
   } = payload;
+
+  return metadataPayload;
+}
+
+function buildObscuredVariableUpdatePayload(
+  payload: Record<string, unknown>
+): Record<string, unknown> {
+  const { value: _value, ...metadataPayload } = payload;
 
   return metadataPayload;
 }
@@ -506,32 +477,25 @@ async function postVariable(
   },
   dryRun: boolean = false,
   force: boolean = false
-): Promise<'created' | 'updated' | 'noop' | 'skipped' | 'failed'> {
+): Promise<'created' | 'updated' | 'noop' | 'failed'> {
   try {
     const variableName = resolvedIdentity.name;
     const variableContext = resolvedIdentity.context;
     const existingVariable = existingVariables.find(
       (v: any) => v.name === variableName && v.context === variableContext
     );
-    const { payload, isSecret, isObscured } = await buildVariablePayload(
+    const { payload, isSecret } = await buildVariablePayload(
       variable,
       resolvedIdentity,
       existingVariable
     );
+    const isObscured = isObscuredVariable(variable.content, existingVariable);
 
     if (existingVariable) {
-      if (isObscured && !force) {
-        log.warn(
-          chalk.hex('#FF8C00')(
-            'WARN: Existing obscured variable requires --force to update'
-          )
-        );
-        return 'skipped';
-      }
-
-      const isProtectedSecret = isSecret && !isObscured;
-      const comparisonPayload = isProtectedSecret
+      const comparisonPayload = isSecret
         ? buildSecretVariableUpdatePayload(payload)
+        : isObscured
+          ? buildObscuredVariableUpdatePayload(payload)
         : payload;
       const existingVariableDetails = await getExistingVariableDetails(
         client,
@@ -546,7 +510,7 @@ async function postVariable(
           buildRemoteVariablePayload(
             comparisonPayload,
             existingVariableDetails,
-            !isProtectedSecret
+            !isSecret && !isObscured
           )
         )
       ) {
@@ -557,8 +521,10 @@ async function postVariable(
         return 'updated';
       }
 
-      const updatePayload = isProtectedSecret
+      const updatePayload = isSecret
         ? buildSecretVariableUpdatePayload(payload)
+        : isObscured
+          ? buildObscuredVariableUpdatePayload(payload)
         : payload;
       const updateValidationPayload =
         buildVariableEndpointValidationPayload(updatePayload);
@@ -712,21 +678,23 @@ export async function syncVariables(
   log.info(chalk.cyan(createHeader('VARIABLES')));
 
   if (variableFiles.length === 0) {
-    log.warn('No variable JSON files found in src/**/artefacts/vari/');
+    log.warn(
+      'No variable JSON files found in src/**/artefacts/vari/ (legacy src/**/artifacts/vari/ is also supported)'
+    );
     return createdVariables;
   }
 
   log.info(chalk.gray(`Found ${variableFiles.length} local variable file(s)`));
 
   // Step 1: Get existing variables from API (filtered by namespace)
-  const namespace = getRequiredNamespace();
+  const namespaces = getRequiredNamespaces();
   const allVariables = await getExistingVariables(client);
   const existingVariables = allVariables.filter((variable: any) =>
-    variable.context?.startsWith(namespace)
+    matchesAnyRequiredNamespace(variable.context)
   );
   log.info(
     chalk.gray(
-      `Fetched ${existingVariables.length} variable(s) from API in namespace "${namespace}"`
+      `Fetched ${existingVariables.length} variable(s) from API in namespace(s) "${namespaces.join(", ")}"`
     )
   );
 
@@ -851,11 +819,13 @@ export async function syncVariables(
       } else {
         log.info(chalk.green('    [OK] Created'));
         summary.created++;
-        createdVariables.push({
-          name: identity.name,
-          context: identity.context,
-          instruction: variable.content.instruction,
-        });
+        if (isSecretVariable(variable.content)) {
+          createdVariables.push({
+            name: identity.name,
+            context: identity.context,
+            instruction: variable.content.instruction,
+          });
+        }
       }
     } else if (result === 'updated') {
       if (options.dryRun) {
@@ -867,9 +837,6 @@ export async function syncVariables(
       }
     } else if (result === 'noop') {
       log.info(chalk.gray('    [SKIP] Unchanged'));
-      summary.skipped++;
-    } else if (result === 'skipped') {
-      log.info(chalk.gray('    [SKIP] Skipped'));
       summary.skipped++;
     } else {
       log.info(chalk.red('    [FAIL] Failed'));

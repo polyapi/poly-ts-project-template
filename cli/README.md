@@ -11,7 +11,7 @@ pnpm --filter flow-cli run generate
 flow push
 flow push --dry-run
 flow push --paths exampleWorkflow
-flow push --types canopy,functions,webhooks,triggers
+flow push --types canopy,functions,webhooks,triggers,subscriptions
 flow push --delete-orphans
 ```
 
@@ -51,10 +51,13 @@ environment.
 - `src/**/artefacts/schemas/*.json`
 - `src/**/artefacts/webhooks/*.json`
 - `src/**/artefacts/triggers/*.json`
+- `src/**/artefacts/subscriptions/*.json`
 - `src/**/artefacts/vari/**/*.json`
 - `src/**/artefacts/tabi/*.json`
 - `src/**/artefacts/jobs/*.json`
 - `src/**/artefacts/canopy/*.json`
+
+The legacy `artifacts/` spelling is also supported for the same artefact folders.
 
 Function metadata is read from inline `polyConfig` objects.
 

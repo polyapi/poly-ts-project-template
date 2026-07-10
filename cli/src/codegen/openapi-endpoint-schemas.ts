@@ -27,6 +27,14 @@ const ENDPOINT_SCHEMA_TARGETS: Record<string, EndpointSchemaTarget> = {
   CreateWebhookHandleDto: { path: '/webhooks', method: 'post' },
   UpdateWebhookHandleDto: { path: '/webhooks/{id}', method: 'patch' },
   CreateTriggerDto: { path: '/triggers', method: 'post' },
+  GraphQLSubscriptionCreateDto: {
+    path: '/subscriptions/graphql',
+    method: 'post',
+  },
+  GraphQLSubscriptionUpdateDto: {
+    path: '/subscriptions/graphql/{id}',
+    method: 'patch',
+  },
   CreateVariableDto: { path: '/variables', method: 'post' },
   UpdateVariableDto: { path: '/variables/{id}', method: 'patch' },
   CreateTableDto: { path: '/tables', method: 'post' },

@@ -9,6 +9,7 @@ import { TypeCompiler } from '@sinclair/typebox/compiler';
 import { chalk, createLogger } from './logger';
 import {
   FunctionArtifactSchema,
+  GraphQLSubscriptionArtifactSchema,
   JobArtifactSchema,
   SchemaArtifactSchema,
   TableArtifactSchema,
@@ -251,6 +252,25 @@ export function validateTriggerArtifact(
     data,
     name,
     'Trigger',
+    filePath,
+    skipInvalid
+  );
+}
+
+/**
+ * Validate a GraphQL subscription artifact
+ */
+export function validateGraphQLSubscriptionArtifact(
+  data: unknown,
+  filePath?: string,
+  skipInvalid: boolean = false
+): boolean {
+  const name = (data as any)?.name || 'unknown';
+  return validateAndLog(
+    GraphQLSubscriptionArtifactSchema,
+    data,
+    name,
+    'GraphQL Subscription',
     filePath,
     skipInvalid
   );

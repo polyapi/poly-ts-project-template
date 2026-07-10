@@ -118,6 +118,14 @@ export function getSrcPath(): string {
 }
 
 /**
+ * Check whether a path is inside the canonical artefacts directory or the
+ * legacy artifacts compatibility alias.
+ */
+export function isInArtefactDirectory(filePath: string): boolean {
+  return filePath.includes('/artefacts/') || filePath.includes('/artifacts/');
+}
+
+/**
  * Get relative path from project root
  */
 export function getRelativePath(filePath: string): string {

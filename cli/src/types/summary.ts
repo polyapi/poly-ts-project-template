@@ -17,6 +17,7 @@ export interface OrphanedResource {
     | 'webhook'
     | 'function'
     | 'trigger'
+    | 'subscription'
     | 'variable'
     | 'table'
     | 'job';
@@ -31,6 +32,7 @@ export interface SyncSummary {
   webhooks: ArtifactSummary;
   functions: ArtifactSummary;
   triggers: ArtifactSummary;
+  subscriptions: ArtifactSummary;
   variables: ArtifactSummary;
   tables: ArtifactSummary;
   jobs: ArtifactSummary;
@@ -74,6 +76,14 @@ export function createSummary(): SyncSummary {
       planned: 0,
     },
     triggers: {
+      created: 0,
+      updated: 0,
+      deleted: 0,
+      failed: 0,
+      skipped: 0,
+      planned: 0,
+    },
+    subscriptions: {
       created: 0,
       updated: 0,
       deleted: 0,
@@ -126,6 +136,7 @@ export function getTotalStats(summary: SyncSummary): ArtifactSummary {
     'webhooks',
     'functions',
     'triggers',
+    'subscriptions',
     'variables',
     'tables',
     'jobs',

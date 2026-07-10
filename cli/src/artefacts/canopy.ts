@@ -4,6 +4,7 @@ import type { ArtifactSummary } from '../types/summary';
 import { getBaseUrl } from '../utils/apiClient';
 import {
   getSrcPath,
+  isInArtefactDirectory,
   readJsonFile,
   type WalkDirOptions,
   walkDir,
@@ -283,7 +284,7 @@ export function findCanopyFiles(
       if (
         file.endsWith('.json') &&
         !file.endsWith('.test.json') &&
-        fullPath.includes('/artefacts/') &&
+        isInArtefactDirectory(fullPath) &&
         fullPath.includes('/canopy/')
       ) {
         const content = readJsonFile<CanopyFile['content']>(fullPath);
@@ -312,7 +313,9 @@ export async function syncCanopy(
 
   const canopyFiles = files ?? findCanopyFiles();
   if (canopyFiles.length === 0) {
-    log.warn('No canopy JSON files found in src/**/artefacts/canopy/');
+    log.warn(
+      'No canopy JSON files found in src/**/artefacts/canopy/ (legacy src/**/artifacts/canopy/ is also supported)'
+    );
     return;
   }
 
