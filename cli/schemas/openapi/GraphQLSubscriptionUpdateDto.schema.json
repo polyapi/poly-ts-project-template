@@ -1,0 +1,50 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "name": { "type": "string" },
+    "context": { "type": "string" },
+    "description": {
+      "type": ["string", "null"]
+    },
+    "visibility": {
+      "enum": ["ENVIRONMENT", "TENANT"],
+      "type": "string"
+    },
+    "ownerUserId": { "type": "string" },
+    "type": {
+      "enum": ["CUSTOM", "OHIP"],
+      "type": "string"
+    },
+    "transportProtocol": {
+      "enum": ["WS", "HTTP"],
+      "type": "string"
+    },
+    "websocketUrl": { "type": "string" },
+    "query": { "type": "string" },
+    "paramsVariableId": {
+      "type": ["string", "null"]
+    },
+    "paramsSfxId": {
+      "type": ["string", "null"]
+    },
+    "paramsObject": {
+      "type": ["object", "null"]
+    },
+    "functionId": { "type": "string" },
+    "functionParams": {
+      "type": ["object", "array", "null"]
+    },
+    "enabled": { "type": "boolean" },
+    "ohipOffsetSelection": {
+      "enum": ["PROVIDER_HIGHEST", "PERSISTED"],
+      "type": "string"
+    },
+    "ohipMaintainOffset": { "type": "boolean" },
+    "eventInactivityThresholdMs": {
+      "type": ["number", "null"],
+      "minimum": 60000,
+      "maximum": 86400000
+    }
+  }
+}
