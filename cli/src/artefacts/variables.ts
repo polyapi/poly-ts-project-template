@@ -295,7 +295,7 @@ async function deleteVariable(
 
 /**
  * POST or PATCH a variable to the API
- * Returns: 'created' | 'updated' | 'noop' | 'failed'
+ * Returns: 'created' | 'updated' | 'secret-metadata-updated' | 'noop' | 'failed'
  */
 async function buildVariablePayload(
   variable: VariableFile,
@@ -477,7 +477,9 @@ async function postVariable(
   },
   dryRun: boolean = false,
   force: boolean = false
-): Promise<'created' | 'updated' | 'noop' | 'failed'> {
+): Promise<
+  'created' | 'updated' | 'secret-metadata-updated' | 'noop' | 'failed'
+> {
   try {
     const variableName = resolvedIdentity.name;
     const variableContext = resolvedIdentity.context;
@@ -518,7 +520,7 @@ async function postVariable(
       }
 
       if (dryRun) {
-        return 'updated';
+        return isSecret ? 'secret-metadata-updated' : 'updated';
       }
 
       const updatePayload = isSecret
@@ -593,7 +595,7 @@ async function postVariable(
         log.error(`Failed to update variable ${fileRef}`);
         return 'failed';
       } else {
-        return 'updated';
+        return isSecret ? 'secret-metadata-updated' : 'updated';
       }
     } else {
       if (dryRun) {
@@ -835,6 +837,18 @@ export async function syncVariables(
         summary.planned++;
       } else {
         log.info(chalk.green('    [OK] Updated'));
+        summary.updated++;
+      }
+    } else if (result === 'secret-metadata-updated') {
+      if (options.dryRun) {
+        log.info(
+          chalk.blue('    [PLAN] Update metadata (secret value unchanged)')
+        );
+        summary.planned++;
+      } else {
+        log.info(
+          chalk.green('    [OK] Updated metadata (secret value unchanged)')
+        );
         summary.updated++;
       }
     } else if (result === 'noop') {

@@ -51,6 +51,7 @@ type PolyVariableReference = {
 const log = createLogger('subscriptions');
 const INVALID_FUNCTION_PARAMS = Symbol('INVALID_FUNCTION_PARAMS');
 const INVALID_PARAMS_OBJECT = Symbol('INVALID_PARAMS_OBJECT');
+const GRAPHQL_SUBSCRIPTION_RECREATE_WAIT_SECONDS = 30;
 
 export function findGraphQLSubscriptionFiles(
   options: FindGraphQLSubscriptionFileOptions = {}
@@ -419,6 +420,30 @@ async function confirmGraphQLSubscriptionRecreate(
   }
 }
 
+async function waitForGraphQLSubscriptionStreamingConnectionDeletion(
+  name: string,
+  context: string
+): Promise<void> {
+  log.info(
+    warningColor(
+      `Waiting ${GRAPHQL_SUBSCRIPTION_RECREATE_WAIT_SECONDS}s for ${context}.${name} streaming connection to be gracefully deleted before re-creating...`
+    )
+  );
+
+  for (
+    let secondsRemaining = GRAPHQL_SUBSCRIPTION_RECREATE_WAIT_SECONDS;
+    secondsRemaining > 0;
+    secondsRemaining -= 1
+  ) {
+    log.info(
+      chalk.gray(
+        `    [WAIT] ${secondsRemaining}s remaining before GraphQL subscription re-create`
+      )
+    );
+    await sleep(1000);
+  }
+}
+
 async function createGraphQLSubscription(
   client: ReturnType<typeof createClient<paths>>,
   payload: CreateGraphQLSubscriptionDto,
@@ -549,7 +574,10 @@ async function postGraphQLSubscription(
         return 'failed';
       }
 
-      await sleep(500);
+      await waitForGraphQLSubscriptionStreamingConnectionDeletion(
+        subscriptionName,
+        subscriptionContext
+      );
       const created = await createGraphQLSubscription(
         client,
         payload,
