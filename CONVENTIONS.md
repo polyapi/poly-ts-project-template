@@ -110,8 +110,8 @@ Use `vari` for configuration and `tabi` for persisted workflow state.
 - Log useful identifiers and redacted context.
 - Never log secrets.
 - Keep global error handlers best-effort and non-throwing.
-- Add project-specific alerting integrations only in project code, not in this
-  generic template.
+- Use the common template alerting utilities as the default; customize alert
+  names or transports in project code when a workflow needs different routing.
 
 ## Scripts And Tooling
 

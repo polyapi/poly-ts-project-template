@@ -54,8 +54,12 @@ API_KEY=replace-with-your-api-key
 
 ```bash
 pnpm install
+pnpm workflows exec poly setup
+pnpm workflows exec poly generate
 pnpm check
 pnpm workflows test
+ENVPATH=workflows/dev.env pnpm workflows test:integration
+ENVPATH=workflows/dev.env RUN_MUTATING_INTEGRATION=true pnpm workflows test:integration:mutating
 ENVPATH=workflows/dev.env pnpm workflows push --dry-run
 ENVPATH=workflows/dev.env pnpm workflows push
 ```
@@ -71,6 +75,7 @@ Recommended skill categories:
 - TypeScript coding conventions
 - PolyAPI SDK usage
 - Artefact layout and sync
+- PolyAPI runtime testing
 - Markdown documentation
 - Overview generation
 
@@ -80,6 +85,10 @@ Recommended skill categories:
    patterns.
 2. Edit code, artefacts, and tests together.
 3. Run the relevant checked-in verification path.
+   - Use local unit tests for branch logic.
+   - Use deployed integration tests for platform runtime behavior.
+   - Gate integration tests that mutate external systems behind an explicit
+     environment flag.
 4. Update same-folder `OVERVIEW.md` when runtime behaviour changes.
 5. Keep changes deterministic, reviewable, and easy to verify.
 

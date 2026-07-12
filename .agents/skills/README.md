@@ -9,6 +9,7 @@ Recommended starting points for a TypeScript PolyAPI project are skills for:
 - TypeScript coding conventions
 - PolyAPI SDK usage
 - Artefact layout and sync
+- PolyAPI runtime testing
 - Markdown documentation
 - Overview generation
 

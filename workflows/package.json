@@ -8,8 +8,9 @@
     "push": "pnpm --filter flow-cli run build && node ../cli/dist/cli.js push",
     "push:dry-run": "pnpm --filter flow-cli run build && node ../cli/dist/cli.js push --dry-run",
     "test": "ava",
-    "test:e2e": "ava --config ava.config.e2e.cjs",
-    "test:all": "ava && ava --config ava.config.e2e.cjs",
+    "test:integration": "ava --config ava.config.integration.cjs",
+    "test:integration:mutating": "RUN_MUTATING_INTEGRATION=true ava --config ava.config.integration.cjs",
+    "test:all": "ava && ava --config ava.config.integration.cjs",
     "train:openapi": "bash src/utilities/common/scripts/trainOpenApi.sh",
     "delete:content": "bash src/utilities/common/scripts/deleteContent.sh"
   },
@@ -19,7 +20,7 @@
     ],
     "files": [
       "src/**/*.test.ts",
-      "!src/**/*.e2e.test.ts"
+      "!src/**/*.integration.test.ts"
     ],
     "require": [
       "ts-node/register"

@@ -1,0 +1,8 @@
+{
+  "name": "channelId",
+  "context": "example.configurations.slack",
+  "description": "Slack community channel identifier used for workflow alerts.",
+  "value": "{{SLACK_CHANNEL_ID}}",
+  "secrecy": "NONE",
+  "visibility": "ENVIRONMENT"
+}

@@ -2,13 +2,13 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ROOT_DIR="$(cd "$SCRIPT_DIR/../../../.." && pwd)"
+ROOT_DIR="$(cd "$SCRIPT_DIR/../../../../.." && pwd)"
 WORKFLOWS_DIR="$ROOT_DIR/workflows"
 
 usage() {
   cat <<'EOF'
 Usage:
-  ENVPATH=workflows/dev.env ./workflows/src/utilities/scripts/getFunctionLogs.sh <function-id> [options]
+  ENVPATH=workflows/dev.env ./workflows/src/utilities/common/scripts/getFunctionLogs.sh <function-id> [options]
 
 Options:
   --logs-page <number>       Logs page to fetch. Defaults to 1.
@@ -19,9 +19,9 @@ Options:
   -h, --help                 Show this help.
 
 Examples:
-  ENVPATH=workflows/dev.env ./workflows/src/utilities/scripts/getFunctionLogs.sh fn_123
-  ENVPATH=workflows/dev.env ./workflows/src/utilities/scripts/getFunctionLogs.sh fn_123 --keyword error
-  ENVPATH=workflows/dev.env ./workflows/src/utilities/scripts/getFunctionLogs.sh fn_123 --logs-page 1 --logs-page-size 1000 --limit 1000
+  ENVPATH=workflows/dev.env ./workflows/src/utilities/common/scripts/getFunctionLogs.sh fn_123
+  ENVPATH=workflows/dev.env ./workflows/src/utilities/common/scripts/getFunctionLogs.sh fn_123 --keyword error
+  ENVPATH=workflows/dev.env ./workflows/src/utilities/common/scripts/getFunctionLogs.sh fn_123 --logs-page 1 --logs-page-size 1000 --limit 1000
 EOF
 }
 
@@ -419,7 +419,11 @@ if [ ! -f "$SELECTED_ENV_PATH" ]; then
 fi
 
 BASE_URL="$(read_env_value "$SELECTED_ENV_PATH" "BASE_URL")"
+BASE_URL="${BASE_URL:-$(read_env_value "$SELECTED_ENV_PATH" "POLYAPI_BASE_URL")}"
+BASE_URL="${BASE_URL:-$(read_env_value "$SELECTED_ENV_PATH" "POLY_API_BASE_URL")}"
 API_KEY="$(read_env_value "$SELECTED_ENV_PATH" "API_KEY")"
+API_KEY="${API_KEY:-$(read_env_value "$SELECTED_ENV_PATH" "POLYAPI_API_KEY")}"
+API_KEY="${API_KEY:-$(read_env_value "$SELECTED_ENV_PATH" "POLY_API_KEY")}"
 
 if [ -z "$BASE_URL" ]; then
   echo "BASE_URL is required in ENVPATH." >&2

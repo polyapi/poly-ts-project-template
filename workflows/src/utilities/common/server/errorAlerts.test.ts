@@ -1,41 +1,62 @@
 import test from 'ava';
-import errorAlerts from './errorAlerts';
+import { clearMockFunctions, fn, mockModule, resetModules } from '../test/ava';
 
-test.serial('logs a sanitized error event', async t => {
-  const originalError = console.error;
-  const messages: string[] = [];
-  console.error = (message?: unknown) => {
-    messages.push(String(message));
-  };
+const mocks = { sendAlert: fn() };
 
-  t.teardown(() => {
-    console.error = originalError;
-  });
-
-  await errorAlerts({
-    message: 'Something failed',
-    status: 500,
-    data: {
-      requestId: 'req-123',
-      token: 'secret-token',
+function installPolyapiMock(): void {
+  mockModule('polyapi', {
+    __esModule: true,
+    default: {
+      example: {
+        utilities: {
+          slack: { sendAlert: mocks.sendAlert },
+        },
+      },
     },
   });
+}
 
-  t.is(messages.length, 1);
-  t.true(messages[0].includes('Something failed'));
-  t.true(messages[0].includes('[REDACTED]'));
-  t.false(messages[0].includes('secret-token'));
+test.beforeEach(() => {
+  resetModules();
+  clearMockFunctions(mocks);
+  installPolyapiMock();
+  mocks.sendAlert.mockResolvedValue(undefined);
 });
 
-test.serial('does not throw when console logging fails', async t => {
-  const originalError = console.error;
-  console.error = () => {
-    throw new Error('console unavailable');
+test.afterEach(resetModules);
+
+test.serial(
+  'errorAlerts delegates application errors to sendAlert',
+  async t => {
+    const { default: errorAlerts } = require('./errorAlerts') as {
+      default: (error: { message: string }) => Promise<void>;
+    };
+
+    await errorAlerts({ message: 'Serialized error payload' });
+
+    t.deepEqual(mocks.sendAlert.calls, [
+      [
+        {
+          message: JSON.stringify(
+            { message: 'Serialized error payload' },
+            null,
+            2
+          ),
+        },
+      ],
+    ]);
+  }
+);
+
+test.serial('errorAlerts propagates sendAlert failures', async t => {
+  const expectedError = new Error('alerting unavailable');
+  mocks.sendAlert.mockRejectedValue(expectedError);
+  const { default: errorAlerts } = require('./errorAlerts') as {
+    default: (error: { message: string }) => Promise<void>;
   };
 
-  t.teardown(() => {
-    console.error = originalError;
-  });
-
-  await t.notThrowsAsync(() => errorAlerts({ message: 'Failure' }));
+  await t.throwsAsync(
+    () => errorAlerts({ message: 'Serialized error payload' }),
+    { is: expectedError }
+  );
 });

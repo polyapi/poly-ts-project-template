@@ -44,6 +44,13 @@ Install dependencies:
 pnpm install
 ```
 
+Set up PolyAPI environment
+
+```bash
+pnpm workflows exec poly setup
+pnpm workflows exec poly generate
+```
+
 Create a local environment file from the sample:
 
 ```bash
@@ -59,9 +66,34 @@ ENVPATH=workflows/dev.env pnpm workflows push --dry-run
 The required environment variables are:
 
 ```env
-POLYAPI_NAMESPACE=example
+POLYAPI_NAMESPACE=mycustomer
 BASE_URL=https://eu1.polyapi.io
 API_KEY=replace-with-your-api-key
+```
+
+Choose a single root context for the project, usually the customer name, such
+as `mycustomer`. The checked-in template uses `example` as a placeholder. After
+setting `POLYAPI_NAMESPACE=mycustomer`, replace the `example` root everywhere
+under `workflows/src/`, including:
+
+- TypeScript `polyConfig.context` values and `poly.example` / `vari.example`
+  SDK paths
+- JSON `context` and `functionContext` values
+- trigger `errorHandler.path` values
+
+For example, `example.utilities` becomes `mycustomer.utilities`, and
+`example.configurations.logging` becomes
+`mycustomer.configurations.logging`. The environment namespace, SDK paths,
+function contexts, and artefact contexts must all use the same root.
+This is a required source-code replacement; changing only
+`POLYAPI_NAMESPACE` is not sufficient. See
+`workflows/src/utilities/common/OVERVIEW.md` for the complete utilities file
+checklist.
+
+Find any placeholders that remain before the first deployment:
+
+```bash
+rg -n '\bexample\b' workflows/src
 ```
 
 Do not commit real environment files or secrets.
@@ -109,13 +141,16 @@ Root commands:
 pnpm check
 pnpm format
 pnpm lint
+pnpm test
+ENVPATH=workflows/dev.env pnpm test:integration
 ```
 
 Workflow commands:
 
 ```bash
 pnpm workflows test
-pnpm workflows test:e2e
+ENVPATH=workflows/dev.env pnpm workflows test:integration
+ENVPATH=workflows/dev.env RUN_MUTATING_INTEGRATION=true pnpm workflows test:integration:mutating
 pnpm workflows test:all
 pnpm workflows push
 pnpm workflows push:dry-run
@@ -133,12 +168,18 @@ pnpm flow generate
 ## Adding A Workflow
 
 1. Copy `workflows/src/exampleWorkflow/` to a new workflow folder.
-2. Replace placeholder contexts such as `example.workflow`.
+2. Replace the `example` root in all context values, SDK paths, and trigger
+   paths with the project's `POLYAPI_NAMESPACE` (for example,
+   `mycustomer.workflow`).
 3. Add TypeScript server or client functions with inline `polyConfig`.
 4. Add matching JSON artefacts under `artefacts/`.
-5. Add focused tests beside the code they verify.
-6. Run `pnpm check` and `pnpm workflows test`.
-7. Run `ENVPATH=workflows/dev.env pnpm workflows push --dry-run`.
+5. Add focused unit tests beside the code they verify.
+6. Add `.integration.test.ts` coverage for deployed function behavior when the
+   change depends on PolyAPI runtime state.
+7. Run `pnpm check` and `pnpm workflows test`.
+8. Run `ENVPATH=workflows/dev.env pnpm workflows test:integration` after the
+   required dev artefacts/functions are deployed.
+9. Run `ENVPATH=workflows/dev.env pnpm workflows push --dry-run`.
 
 ## Flow CLI
 

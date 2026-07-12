@@ -5,6 +5,10 @@
   "description": "Generic TypeScript PolyAPI project template",
   "packageManager": "pnpm@10.0.0",
   "scripts": {
+    "test": "pnpm --filter workflows test",
+    "test:watch": "pnpm --filter workflows test -- --watch",
+    "test:integration": "pnpm --filter workflows test:integration",
+    "test:integration:mutating": "pnpm --filter workflows test:integration:mutating",
     "workflows": "pnpm --filter workflows",
     "flow": "pnpm --filter flow-cli",
     "format": "biome format --write .",
