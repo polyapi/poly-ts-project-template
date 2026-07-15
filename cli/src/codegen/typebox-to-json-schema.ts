@@ -13,6 +13,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { TSchema } from '@sinclair/typebox';
 import { logger } from '../utils/logger';
+import { pathToFileURL } from "node:url";
 
 interface GeneratorOptions {
   typeboxFilePath: string;
@@ -48,7 +49,7 @@ async function extractSchemas(
   const absolutePath = path.resolve(filePath);
 
   // Dynamic import to load the module
-  const module = await import(absolutePath);
+  const module = await import(pathToFileURL(absolutePath).href);
 
   const schemas: Record<string, TSchema> = {};
 
