@@ -105,7 +105,26 @@ Windows 11 and recent Windows 10 updates. If it's not recognized, install the
 Then, from PowerShell or Command Prompt:
 
 ```powershell
-winget install OpenJS.NodeJS.LTS
+winget install OpenJS.NodeJS.LTS --scope user
+```
+
+`corepack enable` needs script execution allowed first. **Open PowerShell as
+Administrator** and run:
+
+```powershell
+Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope LocalMachine
+```
+
+When prompted, choose **[A] Yes to All**:
+
+```text
+Do you want to change the execution policy?
+[Y] Yes  [A] Yes to All  [N] No  [L] No to All  [S] Suspend  [?] Help (default is "N"): A
+```
+
+Now finish setting up pnpm:
+
+```powershell
 corepack enable
 corepack prepare pnpm@10.0.0 --activate
 ```
