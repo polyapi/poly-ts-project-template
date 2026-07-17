@@ -3,7 +3,7 @@
 /**
  * PolyAPI Sync CLI - Main Entry Point
  *
- * Synchronizes local artefact files and functions with PolyAPI.
+ * Synchronizes local artifacts (schemas, webhooks, functions, triggers) with PolyAPI.
  */
 
 import { execFileSync } from "node:child_process";
@@ -12,15 +12,14 @@ import path from "node:path";
 import { createInterface } from "node:readline/promises";
 import { parseArgs as parseNodeArgs } from "node:util";
 import chalk from "chalk";
-import { findCanopyFiles, syncCanopy } from "./artefacts/canopy";
-import { findFunctionFiles, syncFunctions } from "./artefacts/functions";
-import { findJobFiles, syncJobs } from "./artefacts/jobs";
-import { findSchemaFiles, syncSchemas } from "./artefacts/schemas";
-import { findGraphQLSubscriptionFiles, syncGraphQLSubscriptions } from "./artefacts/subscriptions";
-import { findTableFiles, syncTables } from "./artefacts/tables";
-import { findTriggerFiles, syncTriggers } from "./artefacts/triggers";
-import { findVariableFiles, syncVariables } from "./artefacts/variables";
-import { findWebhookFiles, syncWebhooks } from "./artefacts/webhooks";
+import { findCanopyFiles, syncCanopy } from "./artifacts/canopy";
+import { findFunctionFiles, syncFunctions } from "./artifacts/functions";
+import { findJobFiles, syncJobs } from "./artifacts/jobs";
+import { findSchemaFiles, syncSchemas } from "./artifacts/schemas";
+import { findTableFiles, syncTables } from "./artifacts/tables";
+import { findTriggerFiles, syncTriggers } from "./artifacts/triggers";
+import { findVariableFiles, syncVariables } from "./artifacts/variables";
+import { findWebhookFiles, syncWebhooks } from "./artifacts/webhooks";
 import { createSummary, getTotalStats } from "./types/summary";
 import { createPolyApiClient, getBaseUrl, loadEnv } from "./utils/apiClient";
 import {
@@ -32,12 +31,11 @@ import {
 } from "./utils/deploymentConfig";
 import { collectMissingEnvTokenRefs, printMissingEnvTokenWarning } from "./utils/envPreflight";
 import { findWorkspaceRoot, type WalkDirOptions } from "./utils/fileSystem";
-import { logger, warningColor } from "./utils/logger";
+import { bullet, checkMark, heavyRule, logger, thinRule } from "./utils/logger";
 import { printFlowLogo } from "./utils/logo";
 import { printNamespaceBanner } from "./utils/namespace";
 import {
     validateFunctionArtifact,
-    validateGraphQLSubscriptionArtifact,
     validateJobArtifact,
     validateSchemaArtifact,
     validateTableArtifact,
@@ -46,16 +44,7 @@ import {
     validateWebhookArtifact,
 } from "./utils/validation";
 
-type ArtifactType =
-    | "canopy"
-    | "variables"
-    | "schemas"
-    | "tables"
-    | "functions"
-    | "webhooks"
-    | "triggers"
-    | "subscriptions"
-    | "jobs";
+type ArtifactType = "canopy" | "variables" | "schemas" | "tables" | "functions" | "webhooks" | "triggers" | "jobs";
 
 type FunctionTypeSelection = "client" | "server";
 
@@ -81,7 +70,6 @@ const DEFAULT_ENABLED_TYPES: ArtifactType[] = [
     "functions",
     "webhooks",
     "triggers",
-    "subscriptions",
     "jobs",
 ];
 
@@ -95,7 +83,6 @@ const SUPPORTED_TYPE_SELECTIONS = [
     "server-functions",
     "webhooks",
     "triggers",
-    "subscriptions",
     "jobs",
 ] as const;
 
@@ -135,6 +122,20 @@ function installSignalHandlers(): void {
     process.on("SIGTERM", handleSignal);
 }
 
+/**
+ * Exit the process without racing pending async handles (e.g. keep-alive
+ * HTTP sockets from the fetch/undici client used by the API client).
+ * Calling `process.exit()` immediately after network I/O can hit a libuv
+ * handle-teardown race that crashes with an assertion failure on some
+ * Windows terminals (observed on Git Bash/MinTTY). Setting `exitCode` lets
+ * Node drain and close those handles cooperatively; the unref'd timer is
+ * only a safety net in case something never closes on its own.
+ */
+function exitProcess(code: number): void {
+    process.exitCode = code;
+    setTimeout(() => process.exit(code), 2000).unref();
+}
+
 function printPushHelp(): void {
     logger.info(`Deploy PolyAPI artefacts from local files with env-driven behavior.
 
@@ -143,11 +144,11 @@ Usage:
 
   Options:
   --dry-run           Show planned actions without changing anything remotely
-  --force             Update existing remote artifacts even when unchanged; subscriptions prompt to delete/re-create
+  --force             Update existing remote artifacts even when payload is unchanged
   --verbose           Print debug logging while scanning and diffing
   --delete-orphans    Delete remote artefacts that no longer exist locally
   --build-schema      Regenerate OpenAPI SDK/schemas before sync
-  --types             Comma-separated types: canopy,variables,schemas,tables,functions,client-functions,server-functions,webhooks,triggers,subscriptions,jobs
+  --types             Comma-separated types: canopy,variables,schemas,tables,functions,client-functions,server-functions,webhooks,triggers,jobs
   --paths             Comma-separated scope filters, e.g. exampleWorkflow or src/utilities
   --show-config       Print resolved CLI config and exit
   --skip-generate     Skip pnpm workflows exec poly generate after sync
@@ -319,9 +320,9 @@ function printSummary(
     const totals = getTotalStats(summary);
     const variablesCollectionUrl = `${getBaseUrl().replace(/\/+$/, "")}/canopy/polyui/collections/variables`;
 
-    logger.info("\n" + chalk.bold("═══════════════════════════════════════════════════════════"));
+    logger.info("\n" + chalk.bold(heavyRule()));
     logger.info(chalk.bold.cyan("                    SYNCHRONIZATION SUMMARY                     "));
-    logger.info(chalk.bold("═══════════════════════════════════════════════════════════\n"));
+    logger.info(chalk.bold(`${heavyRule()}\n`));
 
     const artifacts = [
         { name: "Canopy", data: summary.canopy },
@@ -329,7 +330,6 @@ function printSummary(
         { name: "Webhooks", data: summary.webhooks },
         { name: "Functions", data: summary.functions },
         { name: "Triggers", data: summary.triggers },
-        { name: "Subscriptions", data: summary.subscriptions },
         { name: "Variables", data: summary.variables },
         { name: "Tables", data: summary.tables },
         { name: "Jobs", data: summary.jobs },
@@ -340,7 +340,7 @@ function printSummary(
             logger.info(chalk.bold(`${name}:`));
             if (data.created > 0) logger.info(`  ${chalk.green("[+]")} Created:  ${chalk.green(data.created)}`);
             if (data.updated > 0) logger.info(`  ${chalk.blue("[~]")} Updated:  ${chalk.blue(data.updated)}`);
-            if (data.deleted > 0) logger.info(`  ${warningColor("[-]")} Deleted:  ${warningColor(data.deleted)}`);
+            if (data.deleted > 0) logger.info(`  ${chalk.yellow("[-]")} Deleted:  ${chalk.yellow(data.deleted)}`);
             if (data.failed > 0) logger.info(`  ${chalk.red("[X]")} Failed:   ${chalk.red(data.failed)}`);
             if (data.skipped > 0) logger.info(`  ${chalk.gray("[=]")} Skipped:  ${chalk.gray(data.skipped)}`);
             if (data.planned > 0) logger.info(`  ${chalk.blue("[?]")} Planned:  ${chalk.blue(data.planned)}`);
@@ -351,17 +351,17 @@ function printSummary(
     logger.info(chalk.bold("Total:"));
     if (totals.created > 0) logger.info(`  ${chalk.green("[+]")} Created:  ${chalk.green(totals.created)}`);
     if (totals.updated > 0) logger.info(`  ${chalk.blue("[~]")} Updated:  ${chalk.blue(totals.updated)}`);
-    if (totals.deleted > 0) logger.info(`  ${warningColor("[-]")} Deleted:  ${warningColor(totals.deleted)}`);
+    if (totals.deleted > 0) logger.info(`  ${chalk.yellow("[-]")} Deleted:  ${chalk.yellow(totals.deleted)}`);
     if (totals.failed > 0) logger.info(`  ${chalk.red("[X]")} Failed:   ${chalk.red(totals.failed)}`);
     if (totals.skipped > 0) logger.info(`  ${chalk.gray("[=]")} Skipped:  ${chalk.gray(totals.skipped)}`);
     if (totals.planned > 0) logger.info(`  ${chalk.blue("[?]")} Planned:  ${chalk.blue(totals.planned)}`);
 
     logger.info(`\n${chalk.bold("Duration: ")}${chalk.cyan(`${duration}s`)}`);
-    logger.info(chalk.bold("═══════════════════════════════════════════════════════════"));
+    logger.info(chalk.bold(heavyRule()));
 
     // Show orphaned resources if any were found
     if (summary.orphans.length > 0) {
-        logger.info(warningColor.bold("\n[ORPHANED RESOURCES DETECTED]"));
+        logger.info(chalk.yellow.bold("\n[ORPHANED RESOURCES DETECTED]"));
         logger.info(chalk.gray("The following resources exist remotely but not locally:\n"));
 
         // Group orphans by type
@@ -371,7 +371,6 @@ function printSummary(
             webhook: summary.orphans.filter((o) => o.type === "webhook"),
             function: summary.orphans.filter((o) => o.type === "function"),
             trigger: summary.orphans.filter((o) => o.type === "trigger"),
-            subscription: summary.orphans.filter((o) => o.type === "subscription"),
             table: summary.orphans.filter((o) => o.type === "table"),
             job: summary.orphans.filter((o) => o.type === "job"),
         };
@@ -386,25 +385,25 @@ function printSummary(
             }
         }
 
-        logger.info(warningColor("To delete these orphaned resources, run with:"));
+        logger.info(chalk.yellow("To delete these orphaned resources, run with:"));
         logger.info(chalk.cyan("  pnpm workflows push --delete-orphans\n"));
-        logger.info(chalk.bold("═══════════════════════════════════════════════════════════"));
+        logger.info(chalk.bold(heavyRule()));
     }
 
     // Show reminder for newly created variables
     if (createdVariables.length > 0) {
-        logger.info(warningColor.bold("\n[REMINDER] Variables Created - Values Must Be Set"));
+        logger.info(chalk.yellow.bold("\n[REMINDER] Variables Created - Values Must Be Set"));
         logger.info(chalk.gray("The following variables were created and need values set in PolyAPI Canopy:\n"));
 
         for (const variable of createdVariables) {
-            logger.info(chalk.bold(`  • ${variable.name}`) + chalk.gray(` (${variable.context})`));
+            logger.info(chalk.bold(`  ${bullet} ${variable.name}`) + chalk.gray(` (${variable.context})`));
             if (variable.instruction) {
                 logger.info(chalk.dim(`    ${variable.instruction}`));
             }
         }
 
         logger.info(chalk.cyan("\nTo set values, visit: ") + chalk.underline(variablesCollectionUrl));
-        logger.info(chalk.bold("═══════════════════════════════════════════════════════════"));
+        logger.info(chalk.bold(heavyRule()));
     }
 
     if (totals.failed > 0) {
@@ -414,21 +413,22 @@ function printSummary(
     } else {
         logger.info(chalk.green.bold("\n[SUCCESS] Synchronization completed successfully"));
     }
-    logger.info(chalk.bold("═══════════════════════════════════════════════════════════\n"));
+    logger.info(chalk.bold(`${heavyRule()}\n`));
 }
 
 function runPolyGenerateAfterPush(): boolean {
     const workspaceRoot = findWorkspaceRoot(process.cwd());
 
-    logger.info(chalk.cyan.bold("\n[POST-PUSH] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"));
+    logger.info(chalk.cyan.bold(`\n[POST-PUSH] ${thinRule(47)}`));
     logger.info(chalk.gray(`Running: pnpm workflows exec poly generate (cwd: ${workspaceRoot})`));
 
     try {
         execFileSync("pnpm", ["workflows", "exec", "poly", "generate"], {
             cwd: workspaceRoot,
             stdio: "inherit",
+            shell: process.platform === "win32",
         });
-        logger.info(chalk.green("✓ Post-push generation completed\n"));
+        logger.info(chalk.green(`${checkMark} Post-push generation completed\n`));
         return true;
     } catch (error) {
         logger.error({ error: serializeErrorForLog(error) }, `Post-push generation failed: ${getErrorMessage(error)}`);
@@ -439,15 +439,16 @@ function runPolyGenerateAfterPush(): boolean {
 function runSchemaGenerationBeforePush(): boolean {
     const cliRoot = path.resolve(__dirname, "..");
 
-    logger.info(chalk.cyan.bold("[PRE-PUSH] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"));
+    logger.info(chalk.cyan.bold(`[PRE-PUSH] ${thinRule(48)}`));
     logger.info(chalk.gray(`Running: pnpm generate (cwd: ${cliRoot})`));
 
     try {
         execFileSync("pnpm", ["generate"], {
             cwd: cliRoot,
             stdio: "inherit",
+            shell: process.platform === "win32",
         });
-        logger.info(chalk.green("✓ Pre-push schema generation completed\n"));
+        logger.info(chalk.green(`${checkMark} Pre-push schema generation completed\n`));
         return true;
     } catch (error) {
         logger.error(
@@ -571,9 +572,7 @@ function warnForMissingDefaultEnvFile(envFile: { exists: boolean; fromEnvPath: b
     }
 
     logger.warn(
-        warningColor(
-            "No default env file was found at `workflows/dev.env`. Create it or set `ENVPATH` to point to a specific env file.",
-        ),
+        "No default env file was found at `workflows/dev.env`. Create it or set `ENVPATH` to point to a specific env file.",
     );
 }
 
@@ -596,7 +595,7 @@ async function maybeConfirmBranchEnvFileMatch(
 
     const warningMessage = buildBranchEnvMismatchWarning(projectRoot, preflight, expectedEnvPath);
 
-    process.stdout.write(warningColor(`WARN: ${warningMessage}\n`));
+    process.stdout.write(chalk.yellow(`WARN: ${warningMessage}\n`));
 
     if (!process.stdin.isTTY || !process.stdout.isTTY) {
         throw new Error(`${warningMessage} Run interactively to confirm or update ENVPATH.`);
@@ -774,7 +773,8 @@ function printConfig(
 async function main(): Promise<void> {
     const parsedArgs = parseCliArgs();
     if (!parsedArgs) {
-        process.exit(0);
+        exitProcess(0);
+        return;
     }
 
     if (parsedArgs.verbose) {
@@ -792,7 +792,8 @@ async function main(): Promise<void> {
 
         if (cliArgs.showConfig) {
             printConfig(cliArgs, envFile, preflight, projectRoot);
-            process.exit(0);
+            exitProcess(0);
+            return;
         }
 
         await maybeConfirmBranchEnvFileMatch(projectRoot, preflight);
@@ -814,9 +815,6 @@ async function main(): Promise<void> {
             : [];
         const webhookFiles = cliArgs.enabledTypes.includes("webhooks") ? findWebhookFiles(discoveryOptions) : [];
         const triggerFiles = cliArgs.enabledTypes.includes("triggers") ? findTriggerFiles(discoveryOptions) : [];
-        const subscriptionFiles = cliArgs.enabledTypes.includes("subscriptions")
-            ? findGraphQLSubscriptionFiles(discoveryOptions)
-            : [];
         const jobFiles = cliArgs.enabledTypes.includes("jobs") ? findJobFiles(discoveryOptions) : [];
 
         await maybePromptForMissingEnvTokens([
@@ -824,7 +822,6 @@ async function main(): Promise<void> {
             ...schemaFiles,
             ...webhookFiles,
             ...triggerFiles,
-            ...subscriptionFiles,
             ...tableFiles,
             ...variableFiles,
             ...jobFiles,
@@ -838,14 +835,14 @@ async function main(): Promise<void> {
         logger.info(chalk.gray(`Production Branch: ${chalk.cyan(preflight.productionBranch)}`));
         logger.info(
             productionSafeguardsTriggered(preflight, cliArgs)
-                ? warningColor(`Production Safeguards: ${describeProductionSafeguards(preflight, cliArgs)}`)
+                ? chalk.yellow(`Production Safeguards: ${describeProductionSafeguards(preflight, cliArgs)}`)
                 : chalk.gray(`Production Safeguards: ${describeProductionSafeguards(preflight, cliArgs)}`),
         );
         logger.info(
             cliArgs.dryRun
-                ? warningColor("Mode: Dry run")
+                ? chalk.yellow("Mode: Dry run")
                 : cliArgs.deleteOrphans
-                ? warningColor("Mode: Delete orphaned resources")
+                ? chalk.yellow("Mode: Delete orphaned resources")
                 : chalk.gray("Mode: Safe sync (orphans will be reported)"),
         );
         logger.info(chalk.gray(`Types: ${chalk.cyan(cliArgs.enabledTypes.join(", "))}`));
@@ -854,11 +851,7 @@ async function main(): Promise<void> {
         }
         logger.info(chalk.gray(`Scope: ${chalk.cyan(describeScope(cliArgs, projectRoot))}`));
         if (cliArgs.force) {
-            logger.info(
-                chalk.gray(
-                    "Force: enabled (existing remote artifacts will be updated even if unchanged; subscriptions require delete/re-create confirmation)",
-                ),
-            );
+            logger.info(chalk.gray("Force: enabled (existing remote artifacts will be updated even if unchanged)"));
         }
         if (cliArgs.buildSchema) {
             logger.info(chalk.gray("Schema Build: enabled (--build-schema)"));
@@ -868,12 +861,12 @@ async function main(): Promise<void> {
         }
         logger.info(
             cliArgs.skipInvalid
-                ? warningColor("Validation: Skip invalid artifacts (--skip-invalid)")
+                ? chalk.yellow("Validation: Skip invalid artifacts (--skip-invalid)")
                 : chalk.gray("Validation: Stop on invalid artifacts (use --skip-invalid to continue)"),
         );
         logger.info("");
 
-        logger.info(chalk.cyan.bold("[VALIDATION PHASE] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"));
+        logger.info(chalk.cyan.bold(`[VALIDATION PHASE] ${thinRule(40)}`));
         logger.info(chalk.gray("Validating selected artifacts before sync...\n"));
 
         let validVariables = 0;
@@ -882,7 +875,6 @@ async function main(): Promise<void> {
         let validWebhooks = 0;
         let validFunctions = 0;
         let validTriggers = 0;
-        let validSubscriptions = 0;
         let validTables = 0;
         let validJobs = 0;
         let totalValidated = 0;
@@ -946,16 +938,6 @@ async function main(): Promise<void> {
             }
         }
 
-        for (const subscription of subscriptionFiles) {
-            totalArtifacts++;
-            if (
-                validateGraphQLSubscriptionArtifact(subscription.content, subscription.filePath, cliArgs.skipInvalid)
-            ) {
-                validSubscriptions++;
-                totalValidated++;
-            }
-        }
-
         for (const job of jobFiles) {
             totalArtifacts++;
             if (validateJobArtifact(job.content, job.filePath, cliArgs.skipInvalid)) {
@@ -967,51 +949,45 @@ async function main(): Promise<void> {
         logger.info("");
         if (variableFiles.length > 0) {
             logger.info(
-                chalk.green("✓") + chalk.gray(` Variables:  ${validVariables}/${variableFiles.length} validated`),
+                chalk.green(checkMark) + chalk.gray(` Variables:  ${validVariables}/${variableFiles.length} validated`),
             );
         }
         if (canopyFiles.length > 0) {
-            logger.info(chalk.green("✓") + chalk.gray(` Canopy:     ${validCanopy}/${canopyFiles.length} validated`));
+            logger.info(chalk.green(checkMark) + chalk.gray(` Canopy:     ${validCanopy}/${canopyFiles.length} validated`));
         }
         if (schemaFiles.length > 0) {
-            logger.info(chalk.green("✓") + chalk.gray(` Schemas:    ${validSchemas}/${schemaFiles.length} validated`));
+            logger.info(chalk.green(checkMark) + chalk.gray(` Schemas:    ${validSchemas}/${schemaFiles.length} validated`));
         }
         if (tableFiles.length > 0) {
-            logger.info(chalk.green("✓") + chalk.gray(` Tables:     ${validTables}/${tableFiles.length} validated`));
+            logger.info(chalk.green(checkMark) + chalk.gray(` Tables:     ${validTables}/${tableFiles.length} validated`));
         }
         if (functionFiles.length > 0) {
             logger.info(
-                chalk.green("✓") + chalk.gray(` Functions:  ${validFunctions}/${functionFiles.length} validated`),
+                chalk.green(checkMark) + chalk.gray(` Functions:  ${validFunctions}/${functionFiles.length} validated`),
             );
         }
         if (webhookFiles.length > 0) {
             logger.info(
-                chalk.green("✓") + chalk.gray(` Webhooks:   ${validWebhooks}/${webhookFiles.length} validated`),
+                chalk.green(checkMark) + chalk.gray(` Webhooks:   ${validWebhooks}/${webhookFiles.length} validated`),
             );
         }
         if (triggerFiles.length > 0) {
             logger.info(
-                chalk.green("✓") + chalk.gray(` Triggers:   ${validTriggers}/${triggerFiles.length} validated`),
-            );
-        }
-        if (subscriptionFiles.length > 0) {
-            logger.info(
-                chalk.green("✓") +
-                    chalk.gray(` Subscriptions: ${validSubscriptions}/${subscriptionFiles.length} validated`),
+                chalk.green(checkMark) + chalk.gray(` Triggers:   ${validTriggers}/${triggerFiles.length} validated`),
             );
         }
         if (jobFiles.length > 0) {
-            logger.info(chalk.green("✓") + chalk.gray(` Jobs:       ${validJobs}/${jobFiles.length} validated`));
+            logger.info(chalk.green(checkMark) + chalk.gray(` Jobs:       ${validJobs}/${jobFiles.length} validated`));
         }
 
         logger.info("");
         logger.info(
-            chalk.green.bold("✓ Total: ") +
+            chalk.green.bold(`${checkMark} Total: `) +
                 chalk.green(`${totalValidated}/${totalArtifacts} artifacts validated successfully`),
         );
         logger.info("");
 
-        logger.info(chalk.cyan.bold("[SYNC PHASE] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"));
+        logger.info(chalk.cyan.bold(`[SYNC PHASE] ${thinRule(45)}`));
         logger.info("");
 
         const client = createPolyApiClient();
@@ -1090,16 +1066,6 @@ async function main(): Promise<void> {
                 syncOptions,
             );
         }
-        if (cliArgs.enabledTypes.includes("subscriptions")) {
-            await syncGraphQLSubscriptions(
-                client,
-                summary.subscriptions,
-                summary.orphans,
-                cliArgs.deleteOrphans,
-                cliArgs.skipInvalid,
-                syncOptions,
-            );
-        }
         if (cliArgs.enabledTypes.includes("jobs")) {
             await syncJobs(
                 client,
@@ -1117,13 +1083,13 @@ async function main(): Promise<void> {
             !cliArgs.dryRun && !cliArgs.skipGenerate && cliArgs.enabledTypes.includes("functions");
         const postPushGenerateSuccess = shouldRunGenerate ? runPolyGenerateAfterPush() : true;
 
-        process.exit(getTotalStats(summary).failed > 0 || !postPushGenerateSuccess ? 1 : 0);
+        exitProcess(getTotalStats(summary).failed > 0 || !postPushGenerateSuccess ? 1 : 0);
     } catch (error) {
         logger.fatal(
             { error: serializeErrorForLog(error) },
             `Fatal error during synchronization: ${getErrorMessage(error)}`,
         );
-        process.exit(1);
+        exitProcess(1);
     }
 }
 
