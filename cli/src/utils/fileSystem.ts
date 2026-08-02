@@ -122,7 +122,20 @@ export function getSrcPath(): string {
  * legacy artifacts compatibility alias.
  */
 export function isInArtefactDirectory(filePath: string): boolean {
-  return filePath.includes('/artefacts/') || filePath.includes('/artifacts/');
+  return (
+    isInNamedDirectory(filePath, 'artefacts') ||
+    isInNamedDirectory(filePath, 'artifacts')
+  );
+}
+
+/**
+ * Check whether a path contains an exact directory segment on any platform.
+ */
+export function isInNamedDirectory(
+  filePath: string,
+  directoryName: string
+): boolean {
+  return filePath.split(/[\\/]+/).includes(directoryName);
 }
 
 /**

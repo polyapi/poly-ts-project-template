@@ -7,6 +7,7 @@ import { validateEndpointPayload } from '../utils/apiSchemaValidation';
 import {
   getSrcPath,
   isInArtefactDirectory,
+  isInNamedDirectory,
   readJsonFile,
   type WalkDirOptions,
   walkDir,
@@ -44,7 +45,7 @@ export function findTableFiles(
       if (
         file.endsWith('.json') &&
         !file.endsWith('.test.json') &&
-        fullPath.includes('/tabi/') &&
+        isInNamedDirectory(fullPath, 'tabi') &&
         isInArtefactDirectory(fullPath)
       ) {
         const content = readJsonFile(fullPath);

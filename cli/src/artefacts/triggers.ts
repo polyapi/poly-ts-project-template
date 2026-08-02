@@ -11,6 +11,7 @@ import { validateEndpointPayload } from '../utils/apiSchemaValidation';
 import {
   getSrcPath,
   isInArtefactDirectory,
+  isInNamedDirectory,
   readJsonFile,
   type WalkDirOptions,
   walkDir,
@@ -72,7 +73,7 @@ export function findTriggerFiles(
     (fullPath, file) => {
       if (
         file.endsWith('.json') &&
-        fullPath.includes('/triggers/') &&
+        isInNamedDirectory(fullPath, 'triggers') &&
         isInArtefactDirectory(fullPath)
       ) {
         const content = readJsonFile(fullPath);

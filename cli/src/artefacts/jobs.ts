@@ -7,6 +7,7 @@ import { validateEndpointPayload } from '../utils/apiSchemaValidation';
 import {
   getSrcPath,
   isInArtefactDirectory,
+  isInNamedDirectory,
   readJsonFile,
   type WalkDirOptions,
   walkDir,
@@ -37,7 +38,7 @@ export function findJobFiles(options: FindJobFileOptions = {}): JobFile[] {
       if (
         file.endsWith('.json') &&
         !file.endsWith('.test.json') &&
-        fullPath.includes('/jobs/') &&
+        isInNamedDirectory(fullPath, 'jobs') &&
         isInArtefactDirectory(fullPath)
       ) {
         const content = readJsonFile(fullPath);

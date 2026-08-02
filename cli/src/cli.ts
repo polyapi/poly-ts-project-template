@@ -12,14 +12,14 @@ import path from "node:path";
 import { createInterface } from "node:readline/promises";
 import { parseArgs as parseNodeArgs } from "node:util";
 import chalk from "chalk";
-import { findCanopyFiles, syncCanopy } from "./artifacts/canopy";
-import { findFunctionFiles, syncFunctions } from "./artifacts/functions";
-import { findJobFiles, syncJobs } from "./artifacts/jobs";
-import { findSchemaFiles, syncSchemas } from "./artifacts/schemas";
-import { findTableFiles, syncTables } from "./artifacts/tables";
-import { findTriggerFiles, syncTriggers } from "./artifacts/triggers";
-import { findVariableFiles, syncVariables } from "./artifacts/variables";
-import { findWebhookFiles, syncWebhooks } from "./artifacts/webhooks";
+import { findCanopyFiles, syncCanopy } from "./artefacts/canopy";
+import { findFunctionFiles, syncFunctions } from "./artefacts/functions";
+import { findJobFiles, syncJobs } from "./artefacts/jobs";
+import { findSchemaFiles, syncSchemas } from "./artefacts/schemas";
+import { findTableFiles, syncTables } from "./artefacts/tables";
+import { findTriggerFiles, syncTriggers } from "./artefacts/triggers";
+import { findVariableFiles, syncVariables } from "./artefacts/variables";
+import { findWebhookFiles, syncWebhooks } from "./artefacts/webhooks";
 import { createSummary, getTotalStats } from "./types/summary";
 import { createPolyApiClient, getBaseUrl, loadEnv } from "./utils/apiClient";
 import {
@@ -55,12 +55,15 @@ type CliArgs = {
     deleteOrphans: boolean;
     buildSchema: boolean;
     skipInvalid: boolean;
+    skipValidationAcknowledged: boolean;
     showConfig: boolean;
     skipGenerate: boolean;
     pathFilters: string[];
     enabledTypes: ArtifactType[];
     functionTypes: FunctionTypeSelection[] | null;
 };
+
+const SKIP_VALIDATION_ACKNOWLEDGEMENT = "I know what am doing";
 
 const DEFAULT_ENABLED_TYPES: ArtifactType[] = [
     "canopy",
@@ -153,6 +156,7 @@ Usage:
   --show-config       Print resolved CLI config and exit
   --skip-generate     Skip pnpm workflows exec poly generate after sync
   --skip-invalid      Continue after validation failures
+  --skip-validation   Bypass interactive confirmations only when its value is exactly "I know what am doing"
   --help, -h          Show this help
 
 Notes:
@@ -274,6 +278,7 @@ function parseCliArgs(argv: string[] = process.argv.slice(2)): CliArgs | null {
             "delete-orphans": { type: "boolean" },
             "build-schema": { type: "boolean" },
             "skip-invalid": { type: "boolean" },
+            "skip-validation": { type: "string" },
             types: { type: "string" },
             paths: { type: "string" },
             "show-config": { type: "boolean" },
@@ -291,6 +296,15 @@ function parseCliArgs(argv: string[] = process.argv.slice(2)): CliArgs | null {
     }
 
     const parsedTypes = parseTypeSelection(parseCsvArgument(values.types));
+    const skipValidationValue = values["skip-validation"];
+    if (
+        skipValidationValue !== undefined &&
+        skipValidationValue !== SKIP_VALIDATION_ACKNOWLEDGEMENT
+    ) {
+        throw new Error(
+            `--skip-validation must exactly equal "${SKIP_VALIDATION_ACKNOWLEDGEMENT}".`,
+        );
+    }
 
     return {
         dryRun: Boolean(values["dry-run"]),
@@ -299,6 +313,7 @@ function parseCliArgs(argv: string[] = process.argv.slice(2)): CliArgs | null {
         deleteOrphans: Boolean(values["delete-orphans"]),
         buildSchema: Boolean(values["build-schema"]),
         skipInvalid: Boolean(values["skip-invalid"]),
+        skipValidationAcknowledged: skipValidationValue === SKIP_VALIDATION_ACKNOWLEDGEMENT,
         showConfig: Boolean(values["show-config"]),
         skipGenerate: Boolean(values["skip-generate"]),
         pathFilters: parseCsvArgument(values.paths),
@@ -579,6 +594,7 @@ function warnForMissingDefaultEnvFile(envFile: { exists: boolean; fromEnvPath: b
 async function maybeConfirmBranchEnvFileMatch(
     projectRoot: string,
     preflight: ReturnType<typeof buildDeploymentPreflight>,
+    cliArgs: CliArgs,
 ): Promise<void> {
     if (!preflight.expectedEnvFile) {
         return;
@@ -597,6 +613,11 @@ async function maybeConfirmBranchEnvFileMatch(
 
     process.stdout.write(chalk.yellow(`WARN: ${warningMessage}\n`));
 
+    if (cliArgs.skipValidationAcknowledged) {
+        logger.warn("Branch environment-file mismatch acknowledged non-interactively.");
+        return;
+    }
+
     if (!process.stdin.isTTY || !process.stdout.isTTY) {
         throw new Error(`${warningMessage} Run interactively to confirm or update ENVPATH.`);
     }
@@ -608,7 +629,10 @@ async function maybeConfirmBranchEnvFileMatch(
     }
 }
 
-async function maybePromptForMissingEnvTokens(files: Parameters<typeof collectMissingEnvTokenRefs>[0]): Promise<void> {
+async function maybePromptForMissingEnvTokens(
+    files: Parameters<typeof collectMissingEnvTokenRefs>[0],
+    cliArgs: CliArgs,
+): Promise<void> {
     const refs = collectMissingEnvTokenRefs(files);
 
     if (refs.length === 0) {
@@ -616,6 +640,16 @@ async function maybePromptForMissingEnvTokens(files: Parameters<typeof collectMi
     }
 
     printMissingEnvTokenWarning(refs);
+
+    if (cliArgs.skipValidationAcknowledged) {
+        throw new Error(
+            `Missing env-file values for deploy placeholders: ${[
+                ...new Set(refs.map((ref) => ref.envName)),
+            ]
+                .sort()
+                .join(", ")}`,
+        );
+    }
 
     if (!process.stdin.isTTY || !process.stdout.isTTY) {
         throw new Error(
@@ -657,6 +691,11 @@ async function enforceProductionSafeguards(
         );
     }
 
+    if (cliArgs.skipValidationAcknowledged) {
+        logger.warn("Production confirmation acknowledged non-interactively.");
+        return;
+    }
+
     if (!process.stdin.isTTY || !process.stdout.isTTY) {
         throw new Error(
             `Production-sensitive deployment requires an interactive terminal so you can type "${getProductionConfirmationValue()}".`,
@@ -678,6 +717,11 @@ async function enforceProductionSafeguards(
 
 async function maybePromptForInitialScope(projectRoot: string, cliArgs: CliArgs): Promise<CliArgs> {
     if (cliArgs.pathFilters.length > 0) {
+        return cliArgs;
+    }
+
+    if (cliArgs.skipValidationAcknowledged) {
+        logger.info(chalk.gray("Scope: full repository sync (acknowledged non-interactively)"));
         return cliArgs;
     }
 
@@ -755,6 +799,7 @@ function printConfig(
                     deleteOrphans: cliArgs.deleteOrphans,
                     buildSchema: cliArgs.buildSchema,
                     skipInvalid: cliArgs.skipInvalid,
+                    skipValidationAcknowledged: cliArgs.skipValidationAcknowledged,
                     showConfig: cliArgs.showConfig,
                     skipGenerate: cliArgs.skipGenerate,
                     enabledTypes: cliArgs.enabledTypes,
@@ -796,7 +841,7 @@ async function main(): Promise<void> {
             return;
         }
 
-        await maybeConfirmBranchEnvFileMatch(projectRoot, preflight);
+        await maybeConfirmBranchEnvFileMatch(projectRoot, preflight, cliArgs);
         cliArgs = await maybePromptForInitialScope(projectRoot, cliArgs);
         await enforceProductionSafeguards(preflight, cliArgs);
         if (cliArgs.buildSchema && !runSchemaGenerationBeforePush()) {
@@ -817,15 +862,18 @@ async function main(): Promise<void> {
         const triggerFiles = cliArgs.enabledTypes.includes("triggers") ? findTriggerFiles(discoveryOptions) : [];
         const jobFiles = cliArgs.enabledTypes.includes("jobs") ? findJobFiles(discoveryOptions) : [];
 
-        await maybePromptForMissingEnvTokens([
-            ...canopyFiles,
-            ...schemaFiles,
-            ...webhookFiles,
-            ...triggerFiles,
-            ...tableFiles,
-            ...variableFiles,
-            ...jobFiles,
-        ]);
+        await maybePromptForMissingEnvTokens(
+            [
+                ...canopyFiles,
+                ...schemaFiles,
+                ...webhookFiles,
+                ...triggerFiles,
+                ...tableFiles,
+                ...variableFiles,
+                ...jobFiles,
+            ],
+            cliArgs,
+        );
 
         printFlowLogo();
         logger.info(chalk.gray(`Base URL: ${getBaseUrl()}`));

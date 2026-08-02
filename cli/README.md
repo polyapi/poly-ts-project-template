@@ -13,6 +13,7 @@ flow push --dry-run
 flow push --paths exampleWorkflow
 flow push --types canopy,functions,webhooks,triggers,subscriptions
 flow push --delete-orphans
+flow push --skip-validation "I know what am doing"
 ```
 
 When called through the workflows package:
@@ -21,6 +22,11 @@ When called through the workflows package:
 ENVPATH=workflows/dev.env pnpm workflows push --dry-run
 ENVPATH=workflows/dev.env pnpm workflows push
 ```
+
+`--skip-validation` bypasses interactive scope, branch-environment, and
+production confirmation prompts only when its value exactly matches
+`I know what am doing`. It does not bypass the production execution key,
+schema validation, artefact validation, or unresolved environment-value checks.
 
 ## Environment
 

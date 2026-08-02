@@ -7,6 +7,7 @@ import { validateEndpointPayload } from '../utils/apiSchemaValidation';
 import {
   getSrcPath,
   isInArtefactDirectory,
+  isInNamedDirectory,
   readJsonFile,
   type WalkDirOptions,
   walkDir,
@@ -42,7 +43,7 @@ export function findSchemaFiles(
       if (
         file.endsWith('.json') &&
         !file.endsWith('.test.json') &&
-        fullPath.includes('/schemas/') &&
+        isInNamedDirectory(fullPath, 'schemas') &&
         isInArtefactDirectory(fullPath)
       ) {
         const content = readJsonFile(fullPath);

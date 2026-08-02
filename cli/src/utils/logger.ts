@@ -21,6 +21,16 @@ export const logger = pino({
 
 export { chalk };
 export const warningColor = chalk.hex(BRAND_COLORS.orange);
+export const bullet = '•';
+export const checkMark = '✓';
+
+export function heavyRule(length: number = 64): string {
+  return '━'.repeat(length);
+}
+
+export function thinRule(length: number = 64): string {
+  return '─'.repeat(length);
+}
 
 /**
  * Create a multicolored decorative line for headers

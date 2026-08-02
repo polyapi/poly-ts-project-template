@@ -5,6 +5,7 @@ import { getBaseUrl } from '../utils/apiClient';
 import {
   getSrcPath,
   isInArtefactDirectory,
+  isInNamedDirectory,
   readJsonFile,
   type WalkDirOptions,
   walkDir,
@@ -285,7 +286,7 @@ export function findCanopyFiles(
         file.endsWith('.json') &&
         !file.endsWith('.test.json') &&
         isInArtefactDirectory(fullPath) &&
-        fullPath.includes('/canopy/')
+        isInNamedDirectory(fullPath, 'canopy')
       ) {
         const content = readJsonFile<CanopyFile['content']>(fullPath);
         if (!content) {

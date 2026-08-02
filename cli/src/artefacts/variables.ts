@@ -10,6 +10,7 @@ import {
   getRelativePath,
   getSrcPath,
   isInArtefactDirectory,
+  isInNamedDirectory,
   readJsonFile,
   type WalkDirOptions,
   walkDir,
@@ -223,7 +224,7 @@ export function findVariableFiles(
       if (
         file.endsWith('.json') &&
         !file.endsWith('.test.json') &&
-        fullPath.includes('/vari/') &&
+        isInNamedDirectory(fullPath, 'vari') &&
         isInArtefactDirectory(fullPath)
       ) {
         const content = readJsonFile(fullPath);

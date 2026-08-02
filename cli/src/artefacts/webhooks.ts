@@ -16,6 +16,7 @@ import { validateEndpointPayload } from '../utils/apiSchemaValidation';
 import {
   getSrcPath,
   isInArtefactDirectory,
+  isInNamedDirectory,
   readJsonFile,
   type WalkDirOptions,
   walkDir,
@@ -43,7 +44,7 @@ export function findWebhookFiles(
       if (
         file.endsWith('.json') &&
         !file.endsWith('.test.json') &&
-        fullPath.includes('/webhooks/') &&
+        isInNamedDirectory(fullPath, 'webhooks') &&
         isInArtefactDirectory(fullPath)
       ) {
         const content = readJsonFile(fullPath);

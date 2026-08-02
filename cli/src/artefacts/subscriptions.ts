@@ -8,6 +8,7 @@ import { validateEndpointPayload } from '../utils/apiSchemaValidation';
 import {
   getSrcPath,
   isInArtefactDirectory,
+  isInNamedDirectory,
   readJsonFile,
   type WalkDirOptions,
   walkDir,
@@ -65,7 +66,7 @@ export function findGraphQLSubscriptionFiles(
       if (
         file.endsWith('.json') &&
         !file.endsWith('.test.json') &&
-        fullPath.includes('/subscriptions/') &&
+        isInNamedDirectory(fullPath, 'subscriptions') &&
         isInArtefactDirectory(fullPath)
       ) {
         const content = readJsonFile<GraphQLSubscriptionFile['content']>(
