@@ -18,7 +18,9 @@ type EndpointSchemaName =
   | 'CreateJobDto'
   | 'UpdateJobDto'
   | 'CreateServerCustomFunctionDto'
-  | 'CreateClientCustomFunctionDto';
+  | 'CreateClientCustomFunctionDto'
+  | 'CreateAiFunctionV2Dto'
+  | 'UpdateAiFunctionV2Dto';
 
 type ValidationContext = {
   artifactType: string;

@@ -16,12 +16,22 @@ import {
   type WalkDirOptions,
   walkDir,
 } from '../utils/fileSystem';
-import { chalk, createHeader, createLogger, warningColor } from '../utils/logger';
-import { getRequiredNamespaces, matchesAnyRequiredNamespace, validateNamespace } from '../utils/namespace';
+import {
+  chalk,
+  createHeader,
+  createLogger,
+  warningColor,
+} from '../utils/logger';
+import {
+  getRequiredNamespaces,
+  matchesAnyRequiredNamespace,
+} from '../utils/namespace';
 import { filterOrphansByContext } from '../utils/orphans';
 import { validateTriggerArtifact } from '../utils/validation';
-import { getExistingServerFunctions } from './functions';
-import { getExistingWebhooks } from './webhooks';
+import {
+  getReferenceableServerFunctions,
+  getReferenceableWebhooks,
+} from './references';
 
 function isErrorHandlerTrigger(
   content: unknown
@@ -401,17 +411,23 @@ export async function syncTriggers(
 
   // Get fresh lists of webhooks and functions for ID resolution
   const namespaces = getRequiredNamespaces();
-  const webhooksForTriggers = await getExistingWebhooks(client);
-  const functionsForTriggers = await getExistingServerFunctions(client);
-  const webhooksInNamespace = webhooksForTriggers.filter((webhook: any) =>
-    matchesAnyRequiredNamespace(webhook.context)
+  const [webhooksForTriggers, functionsForTriggers] = await Promise.all([
+    getReferenceableWebhooks(client),
+    getReferenceableServerFunctions(client),
+  ]);
+  const webhooksInNamespace = webhooksForTriggers.filter(
+    webhook =>
+      webhook.referenceScope === 'environment' &&
+      matchesAnyRequiredNamespace(webhook.context)
   );
-  const functionsInNamespace = functionsForTriggers.filter((fn: any) =>
-    matchesAnyRequiredNamespace(fn.context)
+  const functionsInNamespace = functionsForTriggers.filter(
+    fn =>
+      fn.referenceScope === 'environment' &&
+      matchesAnyRequiredNamespace(fn.context)
   );
   log.info(
     chalk.gray(
-      `Resolved ${webhooksInNamespace.length} webhook(s) and ${functionsInNamespace.length} function(s) in namespace(s) "${namespaces.join(", ")}"`
+      `Resolved ${webhooksInNamespace.length} webhook(s) and ${functionsInNamespace.length} function(s) in namespace(s) "${namespaces.join(', ')}"`
     )
   );
 
@@ -422,8 +438,35 @@ export async function syncTriggers(
     webhooksInNamespace.map((webhook: any) => webhook.id)
   );
   const functionIds = new Set(functionsInNamespace.map((fn: any) => fn.id));
-  // Filter triggers where either the webhook or function is in our namespace
-  const existingTriggers = allTriggers.filter((trigger: any) => {
+  const locallyReferencedWebhookIds = new Set<string>();
+  const locallyReferencedFunctionIds = new Set<string>();
+  for (const triggerFile of allTriggerFiles) {
+    const content = triggerFile.content;
+    if (isWebhookTrigger(content)) {
+      const webhook = webhooksForTriggers.find(
+        item =>
+          item.name === content.source.webhookName &&
+          item.context === content.source.webhookContext
+      );
+      if (webhook) {
+        locallyReferencedWebhookIds.add(webhook.id);
+      }
+    }
+
+    if (isWebhookTrigger(content) || isErrorHandlerTrigger(content)) {
+      const destination = content.destination;
+      const func = functionsForTriggers.find(
+        item =>
+          item.name === destination.functionName &&
+          item.context === destination.functionContext
+      );
+      if (func) {
+        locallyReferencedFunctionIds.add(func.id);
+      }
+    }
+  }
+
+  const namespaceOwnedTriggers = allTriggers.filter((trigger: any) => {
     const webhookId = getTriggerWebhookId(trigger);
     const functionId = getTriggerFunctionId(trigger);
     return (
@@ -431,9 +474,20 @@ export async function syncTriggers(
       (functionId && functionIds.has(functionId))
     );
   });
+  // External references can identify an existing local trigger for update, but
+  // must never widen namespace-owned orphan detection or deletion.
+  const existingTriggers = allTriggers.filter((trigger: any) => {
+    const webhookId = getTriggerWebhookId(trigger);
+    const functionId = getTriggerFunctionId(trigger);
+    return (
+      namespaceOwnedTriggers.includes(trigger) ||
+      (webhookId && locallyReferencedWebhookIds.has(webhookId)) ||
+      (functionId && locallyReferencedFunctionIds.has(functionId))
+    );
+  });
   log.info(
     chalk.gray(
-      `Fetched ${existingTriggers.length} trigger(s) from API in namespace(s) "${namespaces.join(", ")}"`
+      `Fetched ${existingTriggers.length} managed or locally referenced trigger(s)`
     )
   );
 
@@ -474,7 +528,7 @@ export async function syncTriggers(
       triggerFiles.map(tf => getTriggerName(tf)).filter(Boolean)
     );
 
-    const orphanCandidates = existingTriggers.filter((trigger: any) => {
+    const orphanCandidates = namespaceOwnedTriggers.filter((trigger: any) => {
       if (trigger.name && localTriggerNames.has(trigger.name)) {
         return false;
       }
@@ -564,27 +618,6 @@ export async function syncTriggers(
           `  → Webhook: ${source.webhookName} → ${destination.functionName}`
         )
       );
-      // Namespace validation for webhook triggers
-      try {
-        validateNamespace(
-          source.webhookContext,
-          'Trigger webhook',
-          source.webhookName
-        );
-        validateNamespace(
-          destination.functionContext,
-          'Trigger function',
-          destination.functionName
-        );
-      } catch (error) {
-        log.error(
-          { error: (error as Error).message },
-          'Namespace validation failed'
-        );
-        log.info(chalk.red('    [FAIL] Failed (namespace)'));
-        summary.failed++;
-        continue;
-      }
     } else if (isErrorHandlerTrigger(trigger.content)) {
       const { errorHandler, destination } = trigger.content;
       log.info(
@@ -592,22 +625,6 @@ export async function syncTriggers(
           `  → ErrorHandler: ${errorHandler.path} → ${destination.functionName}`
         )
       );
-      // Namespace validation for error handler triggers (only function destination)
-      try {
-        validateNamespace(
-          destination.functionContext,
-          'Trigger function',
-          destination.functionName
-        );
-      } catch (error) {
-        log.error(
-          { error: (error as Error).message },
-          'Namespace validation failed'
-        );
-        log.info(chalk.red('    [FAIL] Failed (namespace)'));
-        summary.failed++;
-        continue;
-      }
     } else {
       log.info(chalk.dim('  → Unknown trigger type'));
       summary.failed++;

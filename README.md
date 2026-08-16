@@ -6,35 +6,22 @@ The template keeps deployable workflow code under `workflows/src/` and uses a
 workspace-local Flow CLI under `cli/` to validate and sync TypeScript functions
 and JSON artefacts to PolyAPI.
 
-New to PolyAPI? Start with the sample integration tutorial:
-[workflows/src/sampleIntegration/README.md](workflows/src/sampleIntegration/README.md).
+New to PolyAPI? Start with the sample workflow tutorial:
+[workflows/src/sampleWorkflow/README.md](workflows/src/sampleWorkflow/README.md).
 It walks through the core runtime flow from webhook to trigger to functions.
 
 ## Structure
 
 ```text
 poly-ts-project-template/
-  workflows/
-    src/
-      exampleWorkflow/
-        artefacts/
-        client/
-        server/
-        types/
-      sampleIntegration/
-        README.md
-      utilities/
-        artefacts/
-        client/
-        server/
-        scripts/
-  cli/
-  designs/
-  .agents/
+  .agents/    repository-local agent configuration and guidance
+  cli/        workspace-local Flow validation and synchronization CLI
+  designs/    upstream specifications and design source material
+  workflows/  deployable workflows, shared utilities, and runtime tests
 ```
 
-Use one folder under `workflows/src/` per workflow. Shared reusable code belongs
-under `workflows/src/utilities/`.
+See [CONVENTIONS.md](CONVENTIONS.md) for the authoritative workflow layout,
+artefact folders, naming rules, namespace behavior, and test placement.
 
 ## Setup
 
@@ -71,24 +58,11 @@ BASE_URL=https://eu1.polyapi.io
 API_KEY=replace-with-your-api-key
 ```
 
-Choose a single root context for the project, usually the customer name, such
-as `mycustomer`. The checked-in template uses `example` as a placeholder. After
-setting `POLYAPI_NAMESPACE=mycustomer`, replace the `example` root everywhere
-under `workflows/src/`, including:
-
-- TypeScript `polyConfig.context` values and `poly.example` / `vari.example`
-  SDK paths
-- JSON `context` and `functionContext` values
-- trigger `errorHandler.path` values
-
-For example, `example.utilities` becomes `mycustomer.utilities`, and
-`example.configurations.logging` becomes
-`mycustomer.configurations.logging`. The environment namespace, SDK paths,
-function contexts, and artefact contexts must all use the same root.
-This is a required source-code replacement; changing only
-`POLYAPI_NAMESPACE` is not sufficient. See
-`workflows/src/utilities/common/OVERVIEW.md` for the complete utilities file
-checklist.
+Choose one root namespace for locally managed project artefacts. The checked-in
+template uses `example`; replace it consistently when adopting the template.
+See [Namespaces And Portable References](CONVENTIONS.md#namespaces-and-portable-references)
+for what must use that namespace and which public or tenant references must not
+be rewritten.
 
 Find any placeholders that remain before the first deployment:
 
@@ -167,36 +141,18 @@ pnpm flow generate
 
 ## Adding A Workflow
 
-1. Copy `workflows/src/exampleWorkflow/` to a new workflow folder.
-2. Replace the `example` root in all context values, SDK paths, and trigger
-   paths with the project's `POLYAPI_NAMESPACE` (for example,
-   `mycustomer.workflow`).
-3. Add TypeScript server or client functions with inline `polyConfig`.
-4. Add matching JSON artefacts under `artefacts/`.
-5. Add focused unit tests beside the code they verify.
-6. Add `.integration.test.ts` coverage for deployed function behavior when the
-   change depends on PolyAPI runtime state.
-7. Run `pnpm check` and `pnpm workflows test`.
-8. Run `ENVPATH=workflows/dev.env pnpm workflows test:integration` after the
-   required dev artefacts/functions are deployed.
-9. Run `ENVPATH=workflows/dev.env pnpm workflows push --dry-run`.
+Follow the workflow layout, namespace rules, artefact guidance, and test
+placement in [CONVENTIONS.md](CONVENTIONS.md). Start from the closest maintained
+sample under `workflows/src/`, then run the checks and dry-run commands listed
+there before deployment.
 
 ## Flow CLI
 
-The Flow CLI scans:
-
-- `workflows/src/**/server/*.ts`
-- `workflows/src/**/client/*.ts`
-- `workflows/src/**/artefacts/schemas/*.json`
-- `workflows/src/**/artefacts/webhooks/*.json`
-- `workflows/src/**/artefacts/triggers/*.json`
-- `workflows/src/**/artefacts/vari/**/*.json`
-- `workflows/src/**/artefacts/tabi/*.json`
-- `workflows/src/**/artefacts/jobs/*.json`
-
-It validates artefacts before sync, enforces `POLYAPI_NAMESPACE`, supports
-scoped deploys with `--paths`, and reports remote orphans without deleting them
-unless `--delete-orphans` is explicitly passed.
+The Flow CLI validates and synchronizes the artefact types documented in
+[CONVENTIONS.md](CONVENTIONS.md#artefacts). It supports scoped `--paths` and
+`--types` pushes, dry runs, production safeguards, and explicit orphan
+deletion. See [cli/README.md](cli/README.md) for its command and payload
+reference.
 
 ## OpenAPI Training
 
@@ -219,7 +175,7 @@ This template does not include agent skills. Bring relevant skills into
 <https://github.com/polyapi/poly-skills>
 
 For a TypeScript PolyAPI project, see the recommended skill setup in the
-[sample integration tutorial](workflows/src/sampleIntegration/README.md#recommended-agent-skills).
+[sample workflow tutorial](workflows/src/sampleWorkflow/README.md#recommended-agent-skills).
 
 See [AGENTS.md](AGENTS.md) and [CONVENTIONS.md](CONVENTIONS.md) before making
 workflow or tooling changes.

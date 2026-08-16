@@ -9,7 +9,7 @@
     "test:watch": "pnpm --filter workflows test -- --watch",
     "test:integration": "pnpm --filter workflows test:integration",
     "test:integration:mutating": "pnpm --filter workflows test:integration:mutating",
-    "workflows": "pnpm --filter workflows",
+    "workflows": "ENVIRONMENT_SETUP_COMPLETE=true pnpm --filter workflows",
     "flow": "pnpm --filter flow-cli",
     "format": "biome format --write .",
     "format:check": "biome format .",

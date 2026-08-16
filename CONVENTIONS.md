@@ -4,36 +4,37 @@ This file is the human-readable conventions reference for a TypeScript PolyAPI
 project created from this template. If this file drifts from the checked-in
 implementation under `workflows/src/` or `cli/`, follow the implementation.
 
-## Project Structure And Naming
+## Workflow Structure And Naming
 
-- Deployable workflows live under `workflows/src/<workflowName>/`.
-- Shared reusable implementations live under `workflows/src/utilities/`.
-- Upstream design material and OpenAPI specs live under `designs/` or
-  workflow-local `artefacts/specs/`.
-- Keep one workflow per folder.
-- Use descriptive camelCase workflow and function names.
-- Keep one primary server or client function per TypeScript file.
+Deployable workflows live under `workflows/src/<workflowName>/`. Shared
+implementations live under `workflows/src/utilities/`; upstream design material
+that is not owned by one workflow lives under `designs/`.
 
-Common workflow subfolders:
+```text
+workflows/src/<workflowName>/
+  OVERVIEW.md or README.md
+  artefacts/
+    ai-functions/
+    canopy/
+    jobs/
+    schemas/
+    specs/
+    tabi/
+    triggers/
+    vari/
+    webhooks/
+  client/
+  server/
+  types/
+```
 
-- `artefacts/`
-- `client/`
-- `server/`
-- `types/`
+Only create folders the workflow needs. Keep one workflow per folder, use
+descriptive camelCase workflow and function names, and keep one primary server
+or client function per TypeScript file. Place deployed integration tests beside
+the relevant runtime boundary, normally under `server/`.
 
-Common artefact subfolders:
-
-- `schemas/`
-- `specs/`
-- `webhooks/`
-- `triggers/`
-- `vari/`
-- `tabi/`
-- `jobs/`
-- `canopy/`
-
-Not every workflow needs every folder, but keep the structure aligned with
-nearby maintained workflows.
+The checked-in spelling is `artefacts/`. Flow also reads legacy `artifacts/`
+paths for compatibility, but new files must use `artefacts/`.
 
 ## Environment Files
 
@@ -51,10 +52,18 @@ ENVPATH=workflows/dev.env pnpm workflows push --dry-run
 
 ## PolyAPI Patterns
 
-PolyAPI runtime flow is:
+The common request runtime is:
 
 ```text
 schemas -> webhooks -> triggers -> functions
+```
+
+Flow currently synchronizes selected artefact types in this dependency-aware
+order:
+
+```text
+variables -> canopy -> schemas -> tables -> functions -> ai-functions
+          -> webhooks -> triggers -> jobs
 ```
 
 - Use generated `schemas.*`, `vari.*`, and `tabi.*` namespaces directly when
@@ -64,10 +73,28 @@ schemas -> webhooks -> triggers -> functions
 - Treat `poly.*`, `vari.*`, `tabi.*`, environment variables, files, HTTP, and
   webhook payloads as boundaries.
 
+## Namespaces And Portable References
+
+- `POLYAPI_NAMESPACE` is mandatory.
+- Every context belonging to a locally managed artefact, plus every TypeScript
+  `polyConfig.context`, must start with that namespace.
+- Replace the template's `example` root consistently in artefact contexts,
+  generated SDK paths, and trigger error-handler paths when adopting the
+  template for another namespace.
+- Portable references use exact names and contexts instead of remote IDs.
+- API, server, and client function references—and webhook references—may point
+  to any accessible environment, tenant, or public resource. Those external
+  reference contexts do not need to start with `POLYAPI_NAMESPACE`.
+- Variable references remain namespace-scoped.
+- Never check in environment-specific `id`, `variableId`,
+  `systemPromptVariableId`, or `contextName` fields in portable artefacts.
+
 ## Server Functions
 
 - Server functions live under `workflows/src/<workflowName>/server/`.
 - Each server function should expose one default async entrypoint.
+- Keep deployment metadata in the TypeScript file's inline `polyConfig`; do not
+  create parallel server-function JSON metadata files.
 - Set HTTP status explicitly only at webhook boundary handlers that own the
   response semantics.
 - Fail fast on invalid external input.
@@ -76,10 +103,28 @@ schemas -> webhooks -> triggers -> functions
 ## Client Functions
 
 - Client functions live under `workflows/src/<workflowName>/client/`.
+- Keep deployment metadata in the TypeScript file's inline `polyConfig`; do not
+  create parallel client-function JSON metadata files.
 - Use client functions for reusable calls or transformations that are safe to
   invoke from other PolyAPI functions.
 - Do not hide platform calls behind broad wrappers unless the wrapper removes
   real duplication.
+
+## AI Functions
+
+- AI Function JSON artefacts live under `artefacts/ai-functions/`.
+- Keep the prompt directly in `systemPrompt` by default. Use a prompt vari only
+  when externally managed prompt content is explicitly required.
+- Reference tools with `functionName` and `functionContext`; reference tool
+  credentials with `variableName` and `variableContext`.
+- Use API, server, or client functions as tools only when they provide
+  authoritative facts or bounded deterministic actions.
+- Define focused arguments and a strict output schema. Keep authorization,
+  persistence, destructive actions, and other consequential policy in
+  deterministic code.
+- Put credentials in `SECRET` vari artefacts without committing a value.
+- Test deployed AI Function behavior with an opt-in `.integration.test.ts`
+  file so normal test runs do not incur model or external API cost.
 
 ## Webhooks And Triggers
 
@@ -91,6 +136,7 @@ schemas -> webhooks -> triggers -> functions
 
 ## Artefacts
 
+- `ai-functions/` contains AI Function contracts and portable tool references.
 - `schemas/` contains JSON Schema contracts.
 - `specs/` contains OpenAPI or PolyAPI model source material.
 - `webhooks/` contains public HTTP boundary definitions.
@@ -102,6 +148,20 @@ schemas -> webhooks -> triggers -> functions
 - `canopy/` contains Canopy UI assets when a project uses them.
 
 Use `vari` for configuration and `tabi` for persisted workflow state.
+
+Scoped Flow pushes skip orphan detection. Full pushes report orphans but delete
+them only when `--delete-orphans` is explicitly passed. External resources used
+only as portable references must never widen namespace-owned orphan deletion.
+
+## Tests
+
+- Keep unit tests beside the code they verify as `*.test.ts`.
+- Keep deployed runtime tests as `*.integration.test.ts`, normally in the
+  workflow's `server/` folder.
+- Gate integration tests that mutate remote state or incur model/provider cost
+  behind an explicit environment flag.
+- Validate TypeScript, JSON artefacts, and tests together whenever a runtime
+  contract changes.
 
 ## Error Handling
 
@@ -118,16 +178,21 @@ Use `vari` for configuration and `tabi` for persisted workflow state.
 - Use `pnpm` workspaces.
 - Use Biome for formatting and linting.
 - Use Flow CLI for PolyAPI sync.
-- Keep local support scripts under `workflows/src/utilities/scripts/`.
+- Keep workflow-local support scripts with their workflow and shared scripts
+  under `workflows/src/utilities/common/scripts/`.
 - Scripts should preview destructive actions and require explicit confirmation.
 
 Useful commands:
 
 ```bash
+pnpm install
+pnpm workflows exec poly setup
+pnpm workflows exec poly generate
 pnpm check
 pnpm workflows test
-pnpm workflows push:dry-run
-pnpm workflows push
+ENVPATH=workflows/dev.env pnpm workflows test:integration
+ENVPATH=workflows/dev.env pnpm workflows push --dry-run
+ENVPATH=workflows/dev.env pnpm workflows push
 ```
 
 ## OpenAPI Spec Training
@@ -173,7 +238,8 @@ does not affect deployable artefacts.
 
 ## Review Checklist
 
-- Are contexts under `POLYAPI_NAMESPACE`?
+- Are locally owned contexts under `POLYAPI_NAMESPACE`?
+- Do portable references use exact names and contexts without remote IDs?
 - Are TypeScript, artefacts, and tests aligned?
 - Does every webhook have an intentional trigger?
 - Are secrets represented only as placeholders?

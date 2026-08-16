@@ -5869,6 +5869,10 @@
           "normalizeTags": {
             "type": "boolean",
             "description": "Normalize all tag names to lowercase.\nDefault: `false`."
+          },
+          "includeRawXml": {
+            "type": "boolean",
+            "description": "Include the exact decoded XML request body at top-level `rawXml` alongside the parsed payload.\nDefault: `false`."
           }
         }
       },

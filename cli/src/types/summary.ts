@@ -16,6 +16,7 @@ export interface OrphanedResource {
     | 'schema'
     | 'webhook'
     | 'function'
+    | 'ai-function'
     | 'trigger'
     | 'subscription'
     | 'variable'
@@ -31,6 +32,7 @@ export interface SyncSummary {
   schemas: ArtifactSummary;
   webhooks: ArtifactSummary;
   functions: ArtifactSummary;
+  aiFunctions: ArtifactSummary;
   triggers: ArtifactSummary;
   subscriptions: ArtifactSummary;
   variables: ArtifactSummary;
@@ -68,6 +70,14 @@ export function createSummary(): SyncSummary {
       planned: 0,
     },
     functions: {
+      created: 0,
+      updated: 0,
+      deleted: 0,
+      failed: 0,
+      skipped: 0,
+      planned: 0,
+    },
+    aiFunctions: {
       created: 0,
       updated: 0,
       deleted: 0,
@@ -135,6 +145,7 @@ export function getTotalStats(summary: SyncSummary): ArtifactSummary {
     'schemas',
     'webhooks',
     'functions',
+    'aiFunctions',
     'triggers',
     'subscriptions',
     'variables',

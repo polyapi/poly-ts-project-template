@@ -12,6 +12,7 @@ import path from "node:path";
 import { createInterface } from "node:readline/promises";
 import { parseArgs as parseNodeArgs } from "node:util";
 import chalk from "chalk";
+import { findAiFunctionFiles, syncAiFunctions } from "./artefacts/aiFunctions";
 import { findCanopyFiles, syncCanopy } from "./artefacts/canopy";
 import { findFunctionFiles, syncFunctions } from "./artefacts/functions";
 import { findJobFiles, syncJobs } from "./artefacts/jobs";
@@ -35,6 +36,7 @@ import { bullet, checkMark, heavyRule, logger, thinRule } from "./utils/logger";
 import { printFlowLogo } from "./utils/logo";
 import { printNamespaceBanner } from "./utils/namespace";
 import {
+    validateAiFunctionArtifact,
     validateFunctionArtifact,
     validateJobArtifact,
     validateSchemaArtifact,
@@ -44,7 +46,16 @@ import {
     validateWebhookArtifact,
 } from "./utils/validation";
 
-type ArtifactType = "canopy" | "variables" | "schemas" | "tables" | "functions" | "webhooks" | "triggers" | "jobs";
+type ArtifactType =
+    | "canopy"
+    | "variables"
+    | "schemas"
+    | "tables"
+    | "functions"
+    | "ai-functions"
+    | "webhooks"
+    | "triggers"
+    | "jobs";
 
 type FunctionTypeSelection = "client" | "server";
 
@@ -71,6 +82,7 @@ const DEFAULT_ENABLED_TYPES: ArtifactType[] = [
     "schemas",
     "tables",
     "functions",
+    "ai-functions",
     "webhooks",
     "triggers",
     "jobs",
@@ -84,6 +96,7 @@ const SUPPORTED_TYPE_SELECTIONS = [
     "functions",
     "client-functions",
     "server-functions",
+    "ai-functions",
     "webhooks",
     "triggers",
     "jobs",
@@ -100,7 +113,7 @@ Examples:
   flow push
   flow push --dry-run
   flow push --paths exampleWorkflow
-  flow push --paths src/utilities --types functions,jobs
+  flow push --paths src/utilities --types functions,ai-functions,jobs
   flow push --delete-orphans
   flow push --help
 `);
@@ -151,7 +164,7 @@ Usage:
   --verbose           Print debug logging while scanning and diffing
   --delete-orphans    Delete remote artefacts that no longer exist locally
   --build-schema      Regenerate OpenAPI SDK/schemas before sync
-  --types             Comma-separated types: canopy,variables,schemas,tables,functions,client-functions,server-functions,webhooks,triggers,jobs
+  --types             Comma-separated types: canopy,variables,schemas,tables,functions,client-functions,server-functions,ai-functions,webhooks,triggers,jobs
   --paths             Comma-separated scope filters, e.g. exampleWorkflow or src/utilities
   --show-config       Print resolved CLI config and exit
   --skip-generate     Skip pnpm workflows exec poly generate after sync
@@ -335,7 +348,7 @@ function printSummary(
     const totals = getTotalStats(summary);
     const variablesCollectionUrl = `${getBaseUrl().replace(/\/+$/, "")}/canopy/polyui/collections/variables`;
 
-    logger.info("\n" + chalk.bold(heavyRule()));
+    logger.info(`\n${chalk.bold(heavyRule())}`);
     logger.info(chalk.bold.cyan("                    SYNCHRONIZATION SUMMARY                     "));
     logger.info(chalk.bold(`${heavyRule()}\n`));
 
@@ -344,6 +357,7 @@ function printSummary(
         { name: "Schemas", data: summary.schemas },
         { name: "Webhooks", data: summary.webhooks },
         { name: "Functions", data: summary.functions },
+        { name: "AI Functions", data: summary.aiFunctions },
         { name: "Triggers", data: summary.triggers },
         { name: "Variables", data: summary.variables },
         { name: "Tables", data: summary.tables },
@@ -385,6 +399,7 @@ function printSummary(
             schema: summary.orphans.filter((o) => o.type === "schema"),
             webhook: summary.orphans.filter((o) => o.type === "webhook"),
             function: summary.orphans.filter((o) => o.type === "function"),
+            "ai-function": summary.orphans.filter((o) => o.type === "ai-function"),
             trigger: summary.orphans.filter((o) => o.type === "trigger"),
             table: summary.orphans.filter((o) => o.type === "table"),
             job: summary.orphans.filter((o) => o.type === "job"),
@@ -858,6 +873,9 @@ async function main(): Promise<void> {
                   (func) => !cliArgs.functionTypes || cliArgs.functionTypes.includes(func.type),
               )
             : [];
+        const aiFunctionFiles = cliArgs.enabledTypes.includes("ai-functions")
+            ? findAiFunctionFiles(discoveryOptions)
+            : [];
         const webhookFiles = cliArgs.enabledTypes.includes("webhooks") ? findWebhookFiles(discoveryOptions) : [];
         const triggerFiles = cliArgs.enabledTypes.includes("triggers") ? findTriggerFiles(discoveryOptions) : [];
         const jobFiles = cliArgs.enabledTypes.includes("jobs") ? findJobFiles(discoveryOptions) : [];
@@ -871,6 +889,7 @@ async function main(): Promise<void> {
                 ...tableFiles,
                 ...variableFiles,
                 ...jobFiles,
+                ...aiFunctionFiles,
             ],
             cliArgs,
         );
@@ -922,6 +941,7 @@ async function main(): Promise<void> {
         let validSchemas = 0;
         let validWebhooks = 0;
         let validFunctions = 0;
+        let validAiFunctions = 0;
         let validTriggers = 0;
         let validTables = 0;
         let validJobs = 0;
@@ -970,6 +990,14 @@ async function main(): Promise<void> {
             }
         }
 
+        for (const aiFunction of aiFunctionFiles) {
+            totalArtifacts++;
+            if (validateAiFunctionArtifact(aiFunction.content, aiFunction.filePath, cliArgs.skipInvalid)) {
+                validAiFunctions++;
+                totalValidated++;
+            }
+        }
+
         for (const webhook of webhookFiles) {
             totalArtifacts++;
             if (validateWebhookArtifact(webhook.content, webhook.filePath, cliArgs.skipInvalid)) {
@@ -1012,6 +1040,12 @@ async function main(): Promise<void> {
         if (functionFiles.length > 0) {
             logger.info(
                 chalk.green(checkMark) + chalk.gray(` Functions:  ${validFunctions}/${functionFiles.length} validated`),
+            );
+        }
+        if (aiFunctionFiles.length > 0) {
+            logger.info(
+                chalk.green(checkMark) +
+                    chalk.gray(` AI Functions: ${validAiFunctions}/${aiFunctionFiles.length} validated`),
             );
         }
         if (webhookFiles.length > 0) {
@@ -1094,6 +1128,16 @@ async function main(): Promise<void> {
                 },
             );
         }
+        if (cliArgs.enabledTypes.includes("ai-functions")) {
+            await syncAiFunctions(
+                client,
+                summary.aiFunctions,
+                summary.orphans,
+                cliArgs.deleteOrphans,
+                cliArgs.skipInvalid,
+                syncOptions,
+            );
+        }
         if (cliArgs.enabledTypes.includes("webhooks")) {
             await syncWebhooks(
                 client,
@@ -1128,7 +1172,9 @@ async function main(): Promise<void> {
         printSummary(summary, createdVariables, { dryRun: cliArgs.dryRun });
 
         const shouldRunGenerate =
-            !cliArgs.dryRun && !cliArgs.skipGenerate && cliArgs.enabledTypes.includes("functions");
+            !cliArgs.dryRun &&
+            !cliArgs.skipGenerate &&
+            (cliArgs.enabledTypes.includes("functions") || cliArgs.enabledTypes.includes("ai-functions"));
         const postPushGenerateSuccess = shouldRunGenerate ? runPolyGenerateAfterPush() : true;
 
         exitProcess(getTotalStats(summary).failed > 0 || !postPushGenerateSuccess ? 1 : 0);

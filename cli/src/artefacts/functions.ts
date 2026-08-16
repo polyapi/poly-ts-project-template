@@ -532,7 +532,7 @@ export async function getExistingServerFunctions(client: ReturnType<typeof creat
 /**
  * Get all existing client functions from the API
  */
-async function getExistingClientFunctions(client: ReturnType<typeof createClient<paths>>): Promise<any[]> {
+export async function getExistingClientFunctions(client: ReturnType<typeof createClient<paths>>): Promise<any[]> {
     try {
         const { data, error } = await client.GET("/functions/client", {});
 

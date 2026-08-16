@@ -178,6 +178,128 @@ export const FunctionArtifactSchema = Type.Object(
 
 export type FunctionArtifact = Static<typeof FunctionArtifactSchema>;
 
+const AiVariableReference = Type.Object(
+  {
+    variableName: Type.String(),
+    variableContext: Type.String(),
+  },
+  { additionalProperties: false }
+);
+
+const AiFunctionArgument = Type.Object(
+  {
+    key: Type.String(),
+    name: Type.Optional(Type.String()),
+    type: Type.String(),
+    required: Type.Optional(Type.Boolean()),
+    description: Type.Optional(Type.String()),
+    typeSchema: Type.Optional(Type.Record(Type.String(), Type.Any())),
+    secure: Type.Optional(Type.Boolean()),
+    payload: Type.Optional(Type.Boolean()),
+    variable: Type.Optional(Type.String()),
+    removeIfNotPresentOnExecute: Type.Optional(Type.Boolean()),
+  },
+  { additionalProperties: false }
+);
+
+const AiFunctionArgumentConfig = Type.Union([
+  Type.Object(
+    {
+      key: Type.String(),
+      source: Type.Literal('ai'),
+    },
+    { additionalProperties: false }
+  ),
+  Type.Object(
+    {
+      key: Type.String(),
+      source: Type.Literal('hardcoded'),
+      value: Type.Any(),
+    },
+    { additionalProperties: false }
+  ),
+  Type.Object(
+    {
+      key: Type.String(),
+      source: Type.Literal('argument'),
+      argumentKey: Type.String(),
+    },
+    { additionalProperties: false }
+  ),
+  Type.Object(
+    {
+      key: Type.String(),
+      source: Type.Literal('variable'),
+      variableName: Type.String(),
+      variableContext: Type.String(),
+    },
+    { additionalProperties: false }
+  ),
+]);
+
+const AiToolFunction = Type.Object(
+  {
+    functionName: Type.String(),
+    functionContext: Type.String(),
+    argumentConfig: Type.Optional(Type.Array(AiFunctionArgumentConfig)),
+  },
+  { additionalProperties: false }
+);
+
+/**
+ * AI Function Artifact (CreateAiFunctionV2Dto with portable name/context
+ * references in place of remote IDs)
+ */
+export const AiFunctionArtifactSchema = Type.Object(
+  {
+    name: Type.String(),
+    context: Type.String(),
+    description: Type.Optional(Type.String()),
+    provider: Type.Optional(Type.String()),
+    apiType: Type.Optional(Type.String()),
+    model: Type.Optional(Type.String()),
+    systemPrompt: Type.Optional(Type.String()),
+    systemPromptVariable: Type.Optional(AiVariableReference),
+    inputTemplate: Type.Optional(Type.String()),
+    arguments: Type.Optional(Type.Array(AiFunctionArgument)),
+    returnType: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+    returnTypeSchema: Type.Optional(
+      Type.Union([Type.Record(Type.String(), Type.Any()), Type.Null()])
+    ),
+    outputSchema: Type.Optional(
+      Type.Union([Type.Record(Type.String(), Type.Any()), Type.Null()])
+    ),
+    toolFunctions: Type.Optional(Type.Array(AiToolFunction)),
+    clientPromptEnabled: Type.Optional(Type.Boolean()),
+    clientPromptRequired: Type.Optional(Type.Boolean()),
+    clientPromptArgName: Type.Optional(Type.String()),
+    visibility: Type.Optional(Visibility),
+    state: Type.Optional(State),
+    enabled: Type.Optional(Type.Boolean()),
+    type: Type.Optional(Type.String()),
+    voiceConnectProvider: Type.Optional(Type.String()),
+    voiceOutput: Type.Optional(
+      Type.Union([
+        Type.Literal('ALLOY'),
+        Type.Literal('ASH'),
+        Type.Literal('BALLAD'),
+        Type.Literal('CORAL'),
+        Type.Literal('ECHO'),
+        Type.Literal('SAGE'),
+        Type.Literal('SHIMMER'),
+        Type.Literal('VERSE'),
+      ])
+    ),
+    voiceInitialMessage: Type.Optional(Type.String({ maxLength: 500 })),
+  },
+  {
+    $id: 'AiFunctionArtifact',
+    additionalProperties: false,
+  }
+);
+
+export type AiFunctionArtifact = Static<typeof AiFunctionArtifactSchema>;
+
 /**
  * Trigger Source
  */

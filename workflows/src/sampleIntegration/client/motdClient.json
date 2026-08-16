@@ -1,5 +1,0 @@
-{
-  "name": "motdClient",
-  "context": "covetrus.sampleIntegration",
-  "description": "Picks a trained API Function based on mood and returns its content."
-}

@@ -1,0 +1,12 @@
+{
+  "name": "motdTrigger",
+  "source": {
+    "webhookName": "motdWebhook",
+    "webhookContext": "example.sampleWorkflow"
+  },
+  "destination": {
+    "functionName": "motdServer",
+    "functionContext": "example.sampleWorkflow"
+  },
+  "waitForResponse": true
+}

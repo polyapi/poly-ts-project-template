@@ -1,0 +1,19 @@
+{
+  "name": "motdSchedulerJob",
+  "executionType": "sequential",
+  "enabled": false,
+  "schedule": {
+    "type": "interval",
+    "value": 60
+  },
+  "functions": [
+    {
+      "functionName": "motdServer",
+      "functionContext": "example.sampleWorkflow",
+      "eventPayload": {
+        "name": "Scheduler",
+        "mood": "wise"
+      }
+    }
+  ]
+}

@@ -33,6 +33,68 @@ export interface FunctionFile {
   };
 }
 
+export interface AiFunctionReference {
+  functionName: string;
+  functionContext: string;
+}
+
+export interface AiVariableReference {
+  variableName: string;
+  variableContext: string;
+}
+
+export interface AiFunctionArgumentConfig {
+  key: string;
+  source: 'ai' | 'hardcoded' | 'argument' | 'variable';
+  value?: unknown;
+  argumentKey?: string;
+  variableName?: string;
+  variableContext?: string;
+}
+
+export interface AiToolFunction extends AiFunctionReference {
+  argumentConfig?: AiFunctionArgumentConfig[];
+}
+
+export interface AiFunctionFile {
+  filePath: string;
+  fileName: string;
+  content: {
+    name: string;
+    context: string;
+    description?: string;
+    visibility?: 'ENVIRONMENT' | 'TENANT' | 'PUBLIC';
+    state?: 'ALPHA' | 'BETA' | 'STABLE' | 'DEPRECATED' | 'DISABLED';
+    enabled?: boolean;
+    type?: string;
+    provider?: string;
+    apiType?: string;
+    model?: string;
+    arguments?: Array<Record<string, unknown>>;
+    returnType?: string | null;
+    returnTypeSchema?: Record<string, unknown> | null;
+    systemPrompt?: string;
+    systemPromptVariable?: AiVariableReference;
+    inputTemplate?: string;
+    clientPromptEnabled?: boolean;
+    clientPromptRequired?: boolean;
+    clientPromptArgName?: string;
+    toolFunctions?: AiToolFunction[];
+    outputSchema?: Record<string, unknown> | null;
+    voiceConnectProvider?: string;
+    voiceOutput?:
+      | 'ALLOY'
+      | 'ASH'
+      | 'BALLAD'
+      | 'CORAL'
+      | 'ECHO'
+      | 'SAGE'
+      | 'SHIMMER'
+      | 'VERSE';
+    voiceInitialMessage?: string;
+  };
+}
+
 export interface WebhookTriggerFileContent {
   name?: string;
   source: {

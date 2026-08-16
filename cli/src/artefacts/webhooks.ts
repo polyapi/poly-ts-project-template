@@ -21,10 +21,20 @@ import {
   type WalkDirOptions,
   walkDir,
 } from '../utils/fileSystem';
-import { chalk, createHeader, createLogger, warningColor } from '../utils/logger';
-import { getRequiredNamespaces, matchesAnyRequiredNamespace, validateNamespace } from '../utils/namespace';
+import {
+  chalk,
+  createHeader,
+  createLogger,
+  warningColor,
+} from '../utils/logger';
+import {
+  getRequiredNamespaces,
+  matchesAnyRequiredNamespace,
+  validateNamespace,
+} from '../utils/namespace';
 import { filterOrphansByContext } from '../utils/orphans';
 import { validateWebhookArtifact } from '../utils/validation';
+import { getReferenceableServerFunctions } from './references';
 
 const log = createLogger('webhooks');
 type FindWebhookFileOptions = WalkDirOptions;
@@ -473,19 +483,15 @@ export async function syncWebhooks(
   );
   log.info(
     chalk.gray(
-      `Fetched ${existingWebhooks.length} webhook(s) from API in namespace(s) "${namespaces.join(", ")}"`
+      `Fetched ${existingWebhooks.length} webhook(s) from API in namespace(s) "${namespaces.join(', ')}"`
     )
   );
 
   // Step 1b: Get existing functions for security function resolution
-  const { getExistingServerFunctions } = await import('./functions');
-  const allFunctions = await getExistingServerFunctions(client);
-  const functionsInNamespace = allFunctions.filter((fn: any) =>
-    matchesAnyRequiredNamespace(fn.context)
-  );
+  const referenceableFunctions = await getReferenceableServerFunctions(client);
   log.info(
     chalk.gray(
-      `Fetched ${functionsInNamespace.length} function(s) from API in namespace(s) "${namespaces.join(", ")}"`
+      `Resolved ${referenceableFunctions.length} accessible server function(s) for webhook references`
     )
   );
 
@@ -592,7 +598,7 @@ export async function syncWebhooks(
       client,
       webhook,
       existingWebhooks,
-      functionsInNamespace,
+      referenceableFunctions,
       options.dryRun,
       options.force
     );

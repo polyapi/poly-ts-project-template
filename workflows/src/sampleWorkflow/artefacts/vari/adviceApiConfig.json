@@ -1,0 +1,21 @@
+{
+  "name": "adviceApiConfig",
+  "context": "example.sampleWorkflow",
+  "description": "Advice Slip API base URL, passed as the hostUrl argument to the trained getRandomAdvice API Function.",
+  "value": {
+    "hostUrl": "https://api.adviceslip.com"
+  },
+  "secrecy": "OBSCURED",
+  "visibility": "ENVIRONMENT",
+  "schema": {
+    "type": "object",
+    "required": ["hostUrl"],
+    "properties": {
+      "hostUrl": {
+        "type": "string",
+        "description": "Base URL for the Advice Slip API"
+      }
+    },
+    "additionalProperties": false
+  }
+}

@@ -12,11 +12,15 @@ import {
   type WalkDirOptions,
   walkDir,
 } from '../utils/fileSystem';
-import { chalk, createHeader, createLogger, warningColor } from '../utils/logger';
-import { getRequiredNamespaces, matchesAnyRequiredNamespace } from '../utils/namespace';
+import {
+  chalk,
+  createHeader,
+  createLogger,
+  warningColor,
+} from '../utils/logger';
 import { areComparisonPayloadsEqual } from '../utils/payloadComparison';
 import { validateJobArtifact } from '../utils/validation';
-import { getExistingServerFunctions } from './functions';
+import { getReferenceableServerFunctions } from './references';
 
 const log = createLogger('jobs');
 type FindJobFileOptions = WalkDirOptions;
@@ -341,14 +345,10 @@ export async function syncJobs(
   log.info(chalk.gray(`Found ${jobFiles.length} local job file(s)`));
 
   // Resolve all server functions (jobs reference functions by name+context)
-  const namespaces = getRequiredNamespaces();
-  const allFunctions = await getExistingServerFunctions(client);
-  const functionsInNamespace = allFunctions.filter((fn: any) =>
-    matchesAnyRequiredNamespace(fn.context)
-  );
+  const referenceableFunctions = await getReferenceableServerFunctions(client);
   log.info(
     chalk.gray(
-      `Resolved ${functionsInNamespace.length} server function(s) in namespace(s) "${namespaces.join(", ")}"`
+      `Resolved ${referenceableFunctions.length} accessible server function(s)`
     )
   );
 
@@ -424,7 +424,7 @@ export async function syncJobs(
     const result = await syncJob(
       client,
       jobFile,
-      functionsInNamespace,
+      referenceableFunctions,
       existingJobs,
       options.dryRun,
       options.force

@@ -1,6 +1,0 @@
-{
-  "name": "motdErrorHandler",
-  "context": "covetrus.sampleIntegration",
-  "description": "Error handler for the motd flow. Called directly by motdServer's catch block when motdClient fails, regardless of whether motdServer was invoked by the webhook or the scheduler. Also wired as the destination of motdErrorHandlerTrigger, a platform error-handler trigger on the /motd webhook path, as a safety net for exceptions motdServer's own catch block never sees. Logs the error and returns a normalized error payload.",
-  "logsEnabled": true
-}

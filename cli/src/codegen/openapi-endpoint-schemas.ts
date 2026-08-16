@@ -19,6 +19,7 @@ type OpenApiDocument = {
 type EndpointSchemaTarget = {
   method: 'post' | 'patch';
   path: string;
+  optional?: boolean;
 };
 
 const ENDPOINT_SCHEMA_TARGETS: Record<string, EndpointSchemaTarget> = {
@@ -43,6 +44,16 @@ const ENDPOINT_SCHEMA_TARGETS: Record<string, EndpointSchemaTarget> = {
   UpdateJobDto: { path: '/jobs/{id}', method: 'patch' },
   CreateServerCustomFunctionDto: { path: '/functions/server', method: 'post' },
   CreateClientCustomFunctionDto: { path: '/functions/client', method: 'post' },
+  CreateAiFunctionV2Dto: {
+    path: '/functions/ai',
+    method: 'post',
+    optional: true,
+  },
+  UpdateAiFunctionV2Dto: {
+    path: '/functions/ai/{id}',
+    method: 'patch',
+    optional: true,
+  },
 };
 
 function fetchOpenApiSpec(specUrl: string): Promise<OpenApiDocument> {
@@ -154,7 +165,9 @@ function patchVariableValueSchema(
     | Record<string, unknown>
     | undefined;
   const schemas = components?.schemas as Record<string, unknown> | undefined;
-  const variableDto = schemas?.[schemaName] as Record<string, unknown> | undefined;
+  const variableDto = schemas?.[schemaName] as
+    | Record<string, unknown>
+    | undefined;
   const properties = variableDto?.properties as
     | Record<string, unknown>
     | undefined;
@@ -173,7 +186,9 @@ function patchWebhookTemplateBodyRequirement(
     | Record<string, unknown>
     | undefined;
   const schemas = components?.schemas as Record<string, unknown> | undefined;
-  const webhookDto = schemas?.[schemaName] as Record<string, unknown> | undefined;
+  const webhookDto = schemas?.[schemaName] as
+    | Record<string, unknown>
+    | undefined;
 
   if (!webhookDto || !Array.isArray(webhookDto.required)) {
     return;
@@ -198,7 +213,10 @@ function patchKnownSchemaQuirks(
     patchTableDefaultSchema(schemaDocument);
   }
 
-  if (schemaName === 'CreateVariableDto' || schemaName === 'UpdateVariableDto') {
+  if (
+    schemaName === 'CreateVariableDto' ||
+    schemaName === 'UpdateVariableDto'
+  ) {
     patchVariableValueSchema(
       schemaDocument,
       schemaName as 'CreateVariableDto' | 'UpdateVariableDto'
@@ -214,6 +232,27 @@ function patchKnownSchemaQuirks(
       schemaName as 'CreateWebhookHandleDto' | 'UpdateWebhookHandleDto'
     );
   }
+
+  if (
+    schemaName === 'CreateAiFunctionV2Dto' ||
+    schemaName === 'UpdateAiFunctionV2Dto'
+  ) {
+    const components = schemaDocument.components as
+      | Record<string, unknown>
+      | undefined;
+    const schemas = components?.schemas as Record<string, unknown> | undefined;
+    const aiDto = schemas?.[schemaName] as Record<string, unknown> | undefined;
+    const properties = aiDto?.properties as Record<string, unknown> | undefined;
+    if (properties) {
+      // The API accepts string values such as TEXT, while the OpenAPI
+      // document currently describes this as an untyped object.
+      properties.type = { type: 'string' };
+      properties.apiType = { type: 'string' };
+      properties.returnType = { type: ['string', 'null'] };
+      properties.returnTypeSchema = { type: ['object', 'null'] };
+      properties.outputSchema = { type: ['object', 'null'] };
+    }
+  }
 }
 
 export async function generateEndpointSchemas(
@@ -228,7 +267,18 @@ export async function generateEndpointSchemas(
   }
 
   for (const [schemaName, target] of Object.entries(ENDPOINT_SCHEMA_TARGETS)) {
-    const requestBodySchema = resolveRequestBodySchema(spec, target);
+    let requestBodySchema: OpenApiSchema;
+    try {
+      requestBodySchema = resolveRequestBodySchema(spec, target);
+    } catch (error) {
+      if (target.optional) {
+        logger.warn(
+          `  Skipped ${schemaName}: endpoint is not present in this OpenAPI spec`
+        );
+        continue;
+      }
+      throw error;
+    }
     const schemaDocument = normalizeSchemaPatterns(
       buildSchemaDocument(requestBodySchema, spec)
     ) as Record<string, unknown>;

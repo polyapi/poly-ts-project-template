@@ -13,7 +13,12 @@ import {
   type WalkDirOptions,
   walkDir,
 } from '../utils/fileSystem';
-import { chalk, createHeader, createLogger, warningColor } from '../utils/logger';
+import {
+  chalk,
+  createHeader,
+  createLogger,
+  warningColor,
+} from '../utils/logger';
 import {
   getRequiredNamespaces,
   matchesAnyRequiredNamespace,
@@ -21,7 +26,7 @@ import {
 } from '../utils/namespace';
 import { filterOrphansByContext } from '../utils/orphans';
 import { validateGraphQLSubscriptionArtifact } from '../utils/validation';
-import { getExistingServerFunctions } from './functions';
+import { getReferenceableServerFunctions } from './references';
 import { getExistingVariables } from './variables';
 
 type CreateGraphQLSubscriptionDto =
@@ -69,9 +74,8 @@ export function findGraphQLSubscriptionFiles(
         isInNamedDirectory(fullPath, 'subscriptions') &&
         isInArtefactDirectory(fullPath)
       ) {
-        const content = readJsonFile<GraphQLSubscriptionFile['content']>(
-          fullPath
-        );
+        const content =
+          readJsonFile<GraphQLSubscriptionFile['content']>(fullPath);
         if (content) {
           subscriptionFiles.push({
             filePath: fullPath,
@@ -231,7 +235,9 @@ function normalizeFunctionParams(
   return INVALID_FUNCTION_PARAMS;
 }
 
-function isPolyVariableReference(value: unknown): value is PolyVariableReference {
+function isPolyVariableReference(
+  value: unknown
+): value is PolyVariableReference {
   return isRecord(value) && value.type === 'PolyVariable';
 }
 
@@ -240,12 +246,7 @@ function resolvePolyVariableReference(
   variables: any[],
   subscription: GraphQLSubscriptionFile
 ): Record<string, unknown> | typeof INVALID_PARAMS_OBJECT {
-  const {
-    id,
-    variableName,
-    variableContext,
-    ...payloadReference
-  } = value;
+  const { id, variableName, variableContext, ...payloadReference } = value;
 
   if (typeof id === 'string') {
     return {
@@ -254,10 +255,7 @@ function resolvePolyVariableReference(
     };
   }
 
-  if (
-    typeof variableName !== 'string' ||
-    typeof variableContext !== 'string'
-  ) {
+  if (typeof variableName !== 'string' || typeof variableContext !== 'string') {
     log.error(
       {
         name: subscription.content.name,
@@ -354,8 +352,11 @@ function buildGraphQLSubscriptionPayload(
     return null;
   }
 
-  const { destination: _destination, functionParams, ...content } =
-    subscription.content;
+  const {
+    destination: _destination,
+    functionParams,
+    ...content
+  } = subscription.content;
   const normalizedFunctionParams = normalizeFunctionParams(
     subscription,
     functionParams
@@ -652,17 +653,14 @@ export async function syncGraphQLSubscriptions(
   );
   log.info(
     chalk.gray(
-      `Fetched ${existingSubscriptions.length} GraphQL subscription(s) from API in namespace(s) "${namespaces.join(", ")}"`
+      `Fetched ${existingSubscriptions.length} GraphQL subscription(s) from API in namespace(s) "${namespaces.join(', ')}"`
     )
   );
 
-  const allFunctions = await getExistingServerFunctions(client);
-  const functionsInNamespace = allFunctions.filter((fn: any) =>
-    matchesAnyRequiredNamespace(fn.context)
-  );
+  const referenceableFunctions = await getReferenceableServerFunctions(client);
   log.info(
     chalk.gray(
-      `Fetched ${functionsInNamespace.length} server function(s) from API in namespace(s) "${namespaces.join(", ")}"`
+      `Resolved ${referenceableFunctions.length} accessible server function(s)`
     )
   );
 
@@ -672,7 +670,7 @@ export async function syncGraphQLSubscriptions(
   );
   log.info(
     chalk.gray(
-      `Fetched ${variablesInNamespace.length} variable(s) from API in namespace(s) "${namespaces.join(", ")}"`
+      `Fetched ${variablesInNamespace.length} variable(s) from API in namespace(s) "${namespaces.join(', ')}"`
     )
   );
 
@@ -684,7 +682,9 @@ export async function syncGraphQLSubscriptions(
   );
 
   if (options.detectOrphans === false) {
-    log.info(chalk.gray('Skipping orphan detection for scoped subscription sync'));
+    log.info(
+      chalk.gray('Skipping orphan detection for scoped subscription sync')
+    );
   } else {
     const orphanCandidates = existingSubscriptions.filter(
       subscription =>
@@ -775,11 +775,6 @@ export async function syncGraphQLSubscriptions(
         'GraphQL subscription',
         subscription.content.name
       );
-      validateNamespace(
-        destination.functionContext,
-        'GraphQL subscription function',
-        destination.functionName
-      );
     } catch (error) {
       log.error(
         { error: (error as Error).message },
@@ -806,7 +801,7 @@ export async function syncGraphQLSubscriptions(
       client,
       subscription,
       existingSubscriptions,
-      functionsInNamespace,
+      referenceableFunctions,
       variablesInNamespace,
       options.dryRun,
       options.force

@@ -1,0 +1,31 @@
+{
+  "name": "motdWebhook",
+  "context": "example.sampleWorkflow",
+  "description": "Receives a name and mood and triggers the motdServer server function.",
+  "visibility": "ENVIRONMENT",
+  "method": "POST",
+  "subpath": "motd",
+  "slug": "sample-workflow-motd",
+  "requirePolyApiKey": true,
+  "eventPayloadTypeSchema": {
+    "type": "object",
+    "properties": {
+      "name": {
+        "type": "string",
+        "description": "Name of the person to greet."
+      },
+      "mood": {
+        "type": "string",
+        "enum": ["funny", "wise"],
+        "description": "\"funny\" returns a joke, \"wise\" returns a piece of advice."
+      }
+    },
+    "required": ["name", "mood"]
+  },
+  "securityFunctions": [
+    {
+      "id": "{{sample.sampleWorkflow.validateMotdPayload}}",
+      "message": "Invalid or missing field in event payload."
+    }
+  ]
+}

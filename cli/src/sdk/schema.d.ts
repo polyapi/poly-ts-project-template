@@ -2168,6 +2168,11 @@ export interface components {
        * Default: `false`.
        */
       normalizeTags?: boolean;
+      /**
+       * @description Include the exact decoded XML request body at top-level `rawXml` alongside the parsed payload.
+       * Default: `false`.
+       */
+      includeRawXml?: boolean;
     };
     WebhookHandlePublicDto: {
       tenant: string;

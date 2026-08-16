@@ -8,6 +8,7 @@ import type { TSchema } from '@sinclair/typebox';
 import { TypeCompiler } from '@sinclair/typebox/compiler';
 import { chalk, createLogger, warningColor } from './logger';
 import {
+  AiFunctionArtifactSchema,
   FunctionArtifactSchema,
   GraphQLSubscriptionArtifactSchema,
   JobArtifactSchema,
@@ -232,6 +233,25 @@ export function validateFunctionArtifact(
     data,
     name,
     'Function',
+    filePath,
+    skipInvalid
+  );
+}
+
+/**
+ * Validate an AI function artifact.
+ */
+export function validateAiFunctionArtifact(
+  data: unknown,
+  filePath?: string,
+  skipInvalid: boolean = false
+): boolean {
+  const name = (data as any)?.name || 'unknown';
+  return validateAndLog(
+    AiFunctionArtifactSchema,
+    data,
+    name,
+    'AI Function',
     filePath,
     skipInvalid
   );
