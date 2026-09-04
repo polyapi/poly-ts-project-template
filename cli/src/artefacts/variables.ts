@@ -15,8 +15,17 @@ import {
   type WalkDirOptions,
   walkDir,
 } from '../utils/fileSystem';
-import { chalk, createHeader, createLogger, warningColor } from '../utils/logger';
-import { getRequiredNamespaces, matchesAnyRequiredNamespace, validateNamespace } from '../utils/namespace';
+import {
+  chalk,
+  createHeader,
+  createLogger,
+  warningColor,
+} from '../utils/logger';
+import {
+  getRequiredNamespaces,
+  matchesAnyRequiredNamespace,
+  validateNamespace,
+} from '../utils/namespace';
 import { filterOrphansByContext } from '../utils/orphans';
 import { areComparisonPayloadsEqual } from '../utils/payloadComparison';
 import { validateVariableArtifact } from '../utils/validation';
@@ -24,6 +33,129 @@ import { validateVariableArtifact } from '../utils/validation';
 const log = createLogger('variables');
 type VariableDto = components['schemas']['VariableDto'];
 type FindVariableFileOptions = WalkDirOptions;
+
+const MAX_API_ERROR_DEPTH = 4;
+const MAX_API_ERROR_ENTRIES = 25;
+const MAX_API_ERROR_STRING_LENGTH = 2_000;
+const SENSITIVE_LOG_FIELD_PATTERN =
+  /authorization|cookie|password|passwd|secret|token|api[-_]?key|credential|value|body|payload|request|headers/i;
+
+function sanitizeApiError(error: unknown, depth: number = 0): unknown {
+  if (error === null || error === undefined) {
+    return error;
+  }
+
+  if (typeof error === 'string') {
+    return error.length > MAX_API_ERROR_STRING_LENGTH
+      ? `${error.slice(0, MAX_API_ERROR_STRING_LENGTH)}...[truncated]`
+      : error;
+  }
+
+  if (typeof error === 'number' || typeof error === 'boolean') {
+    return error;
+  }
+
+  if (error instanceof Error) {
+    return {
+      name: error.name,
+      message: sanitizeApiError(error.message, depth + 1),
+    };
+  }
+
+  if (depth >= MAX_API_ERROR_DEPTH) {
+    return '[truncated]';
+  }
+
+  if (Array.isArray(error)) {
+    const entries = error
+      .slice(0, MAX_API_ERROR_ENTRIES)
+      .map(entry => sanitizeApiError(entry, depth + 1));
+
+    if (error.length > MAX_API_ERROR_ENTRIES) {
+      entries.push(`[${error.length - MAX_API_ERROR_ENTRIES} more item(s)]`);
+    }
+
+    return entries;
+  }
+
+  if (typeof error === 'object') {
+    const sanitized: Record<string, unknown> = {};
+    const entries = Object.entries(error).slice(0, MAX_API_ERROR_ENTRIES);
+
+    for (const [key, value] of entries) {
+      sanitized[key] = SENSITIVE_LOG_FIELD_PATTERN.test(key)
+        ? '[redacted]'
+        : sanitizeApiError(value, depth + 1);
+    }
+
+    if (Object.keys(error).length > MAX_API_ERROR_ENTRIES) {
+      sanitized.truncatedFields =
+        Object.keys(error).length - MAX_API_ERROR_ENTRIES;
+    }
+
+    return sanitized;
+  }
+
+  return String(error);
+}
+
+function logVariableApiRequest(
+  operation: string,
+  endpoint: string,
+  metadata: Record<string, unknown>
+): void {
+  log.debug(
+    { operation, endpoint, ...metadata },
+    'Sending variable API request'
+  );
+}
+
+function logVariableApiResponse(
+  operation: string,
+  endpoint: string,
+  response: Response | undefined,
+  error: unknown,
+  metadata: Record<string, unknown> = {}
+): void {
+  log.debug(
+    {
+      operation,
+      endpoint,
+      status: response?.status,
+      statusText: response?.statusText,
+      ...metadata,
+      ...(error === undefined ? {} : { error: sanitizeApiError(error) }),
+    },
+    error === undefined
+      ? 'Variable API request completed'
+      : 'Variable API request failed'
+  );
+}
+
+function buildVariableLogMetadata(
+  payload: Record<string, unknown>
+): Record<string, unknown> {
+  const value = payload.value;
+  const valueShape = Array.isArray(value)
+    ? 'array'
+    : value === null
+      ? 'null'
+      : typeof value;
+
+  return {
+    name: payload.name,
+    context: payload.context,
+    secret: payload.secret === true,
+    secrecy: payload.secrecy,
+    visibility: payload.visibility,
+    state: payload.state,
+    hasValue: value !== undefined,
+    valueShape,
+    providedFields: Object.entries(payload)
+      .filter(([, fieldValue]) => fieldValue !== undefined)
+      .map(([fieldName]) => fieldName),
+  };
+}
 
 /**
  * Find the line number where an environment variable pattern appears in a file
@@ -176,9 +308,7 @@ function validateVariableValue(
     );
     log.error(
       { name: variableName },
-      warningColor(
-        'Schema validation error, but processing will continue'
-      )
+      warningColor('Schema validation error, but processing will continue')
     );
     return false;
   }
@@ -189,12 +319,10 @@ function isSecretVariable(
   existingVariable?: any
 ): boolean {
   const localIsSecret =
-    variableContent.secret === true ||
-    variableContent.secrecy === 'SECRET';
+    variableContent.secret === true || variableContent.secrecy === 'SECRET';
 
   const existingIsSecret =
-    existingVariable?.secret === true ||
-    existingVariable?.secrecy === 'SECRET';
+    existingVariable?.secret === true || existingVariable?.secrecy === 'SECRET';
 
   return localIsSecret || existingIsSecret;
 }
@@ -250,15 +378,29 @@ export async function getExistingVariables(
   client: ReturnType<typeof createClient<paths>>
 ): Promise<any[]> {
   try {
-    const { data, error } = await client.GET('/variables', {});
+    logVariableApiRequest('list', 'GET /variables', {});
+    const { data, error, response } = await client.GET('/variables', {});
 
     if (error || !data) {
+      logVariableApiResponse(
+        'list',
+        'GET /variables',
+        response,
+        error ?? 'Response did not include variable data'
+      );
       return [];
     }
 
+    logVariableApiResponse('list', 'GET /variables', response, undefined, {
+      variableCount: data.length,
+    });
     return data;
   } catch (error) {
-    log.warn({ error }, 'Failed to fetch variables from API');
+    logVariableApiResponse('list', 'GET /variables', undefined, error);
+    log.warn(
+      { error: sanitizeApiError(error) },
+      'Failed to fetch variables from API'
+    );
     return [];
   }
 }
@@ -273,23 +415,49 @@ async function deleteVariable(
   context: string
 ): Promise<boolean> {
   try {
+    const metadata = { name, context };
+    logVariableApiRequest('delete', 'DELETE /variables/{id}', metadata);
     const { error, response } = await client.DELETE('/variables/{id}', {
       params: { path: { id: variableId } },
       headers: await getDeleteHeaders(),
     });
 
     if (error) {
+      logVariableApiResponse(
+        'delete',
+        'DELETE /variables/{id}',
+        response,
+        error,
+        metadata
+      );
       log.error(
-        { name, context, status: (response as any).status },
+        { name, context, status: (response as Response).status },
         'Failed to delete variable'
       );
       return false;
     } else {
+      logVariableApiResponse(
+        'delete',
+        'DELETE /variables/{id}',
+        response,
+        undefined,
+        metadata
+      );
       log.info({ name, context }, 'Variable deleted');
       return true;
     }
   } catch (error) {
-    log.error({ error, name, context }, 'Error deleting variable');
+    logVariableApiResponse(
+      'delete',
+      'DELETE /variables/{id}',
+      undefined,
+      error,
+      { name, context }
+    );
+    log.error(
+      { error: sanitizeApiError(error), name, context },
+      'Error deleting variable'
+    );
     return false;
   }
 }
@@ -411,21 +579,38 @@ async function getExistingVariableDetails(
   variableId: string
 ): Promise<VariableDto | null> {
   try {
+    logVariableApiRequest('get', 'GET /variables/{id}', { variableId });
     const { data, error, response } = await client.GET('/variables/{id}', {
       params: { path: { id: variableId } },
     });
 
     if (error || !data) {
+      logVariableApiResponse(
+        'get',
+        'GET /variables/{id}',
+        response,
+        error ?? 'Response did not include variable data',
+        { variableId }
+      );
       log.warn(
-        { variableId, status: (response as any)?.status },
+        { variableId, status: (response as Response).status },
         'Failed to fetch variable details'
       );
       return null;
     }
 
+    logVariableApiResponse('get', 'GET /variables/{id}', response, undefined, {
+      variableId,
+    });
     return data as VariableDto;
   } catch (error) {
-    log.warn({ error, variableId }, 'Error fetching variable details');
+    logVariableApiResponse('get', 'GET /variables/{id}', undefined, error, {
+      variableId,
+    });
+    log.warn(
+      { error: sanitizeApiError(error), variableId },
+      'Error fetching variable details'
+    );
     return null;
   }
 }
@@ -499,7 +684,7 @@ async function postVariable(
         ? buildSecretVariableUpdatePayload(payload)
         : isObscured
           ? buildObscuredVariableUpdatePayload(payload)
-        : payload;
+          : payload;
       const existingVariableDetails = await getExistingVariableDetails(
         client,
         existingVariable.id
@@ -528,7 +713,7 @@ async function postVariable(
         ? buildSecretVariableUpdatePayload(payload)
         : isObscured
           ? buildObscuredVariableUpdatePayload(payload)
-        : payload;
+          : payload;
       const updateValidationPayload =
         buildVariableEndpointValidationPayload(updatePayload);
 
@@ -542,12 +727,21 @@ async function postVariable(
         return 'failed';
       }
 
-      const { error } = await client.PATCH('/variables/{id}', {
+      const updateMetadata = buildVariableLogMetadata(updatePayload);
+      logVariableApiRequest('update', 'PATCH /variables/{id}', updateMetadata);
+      const { error, response } = await client.PATCH('/variables/{id}', {
         params: { path: { id: existingVariable.id } },
         body: updatePayload as any,
       });
 
       if (error) {
+        logVariableApiResponse(
+          'update',
+          'PATCH /variables/{id}',
+          response,
+          error,
+          updateMetadata
+        );
         const fileRef = chalk.cyan(getRelativePath(variable.filePath));
 
         // Check if the error is about changing secrecy level
@@ -577,14 +771,35 @@ async function postVariable(
           await sleep(500);
 
           // Recreate the variable with the new secrecy level
-          const { error: createError } = await client.POST('/variables', {
-            body: payload as any,
-          });
+          const recreateMetadata = buildVariableLogMetadata(payload);
+          logVariableApiRequest(
+            'recreate',
+            'POST /variables',
+            recreateMetadata
+          );
+          const { error: createError, response: createResponse } =
+            await client.POST('/variables', {
+              body: payload as any,
+            });
 
           if (createError) {
+            logVariableApiResponse(
+              'recreate',
+              'POST /variables',
+              createResponse,
+              createError,
+              recreateMetadata
+            );
             log.error(`Failed to recreate variable ${fileRef}`);
             return 'failed';
           } else {
+            logVariableApiResponse(
+              'recreate',
+              'POST /variables',
+              createResponse,
+              undefined,
+              recreateMetadata
+            );
             log.info(
               { name: variableName, context: variableContext },
               chalk.green(`Variable recreated with new secrecy level`)
@@ -596,6 +811,13 @@ async function postVariable(
         log.error(`Failed to update variable ${fileRef}`);
         return 'failed';
       } else {
+        logVariableApiResponse(
+          'update',
+          'PATCH /variables/{id}',
+          response,
+          undefined,
+          updateMetadata
+        );
         return isSecret ? 'secret-metadata-updated' : 'updated';
       }
     } else {
@@ -617,15 +839,31 @@ async function postVariable(
         return 'failed';
       }
 
-      const { error } = await client.POST('/variables', {
+      const createMetadata = buildVariableLogMetadata(payload);
+      logVariableApiRequest('create', 'POST /variables', createMetadata);
+      const { error, response } = await client.POST('/variables', {
         body: payload as any,
       });
 
       if (error) {
+        logVariableApiResponse(
+          'create',
+          'POST /variables',
+          response,
+          error,
+          createMetadata
+        );
         const fileRef = chalk.cyan(getRelativePath(variable.filePath));
         log.error(`Failed to create variable ${fileRef}`);
         return 'failed';
       } else {
+        logVariableApiResponse(
+          'create',
+          'POST /variables',
+          response,
+          undefined,
+          createMetadata
+        );
         return 'created';
       }
     }
@@ -634,7 +872,10 @@ async function postVariable(
       error instanceof Error ? error.message : 'Unknown error';
     const errorStack = error instanceof Error ? error.stack : undefined;
     log.error(
-      { error: errorMessage, stack: errorStack },
+      {
+        error: sanitizeApiError(errorMessage),
+        stack: sanitizeApiError(errorStack),
+      },
       'Error processing variable'
     );
     return 'failed';
@@ -699,7 +940,7 @@ export async function syncVariables(
   );
   log.info(
     chalk.gray(
-      `Fetched ${existingVariables.length} variable(s) from API in namespace(s) "${namespaces.join(", ")}"`
+      `Fetched ${existingVariables.length} variable(s) from API in namespace(s) "${namespaces.join(', ')}"`
     )
   );
 
