@@ -193,7 +193,16 @@ pnpm workflows test
 ENVPATH=workflows/dev.env pnpm workflows test:integration
 ENVPATH=workflows/dev.env pnpm workflows push --dry-run
 ENVPATH=workflows/dev.env pnpm workflows push
+ENVPATH=workflows/dev.env pnpm workflows push:dynamic:dry-run -- src/<workflow>/client/<file>.ts
 ```
+
+`push:dynamic` is `push` with a dependency-aware function step: a changed
+client function is deployed together with every function that embeds it (its
+code is bundled into the server functions that use it); everything else syncs
+as with `push`. Naming a function, as in the example above, deploys just its
+tree: other artefact types join only with `--paths`, `--types` or
+`--seed-from`. Always read its dry-run plan first. See
+[cli/push-dynamic.md](cli/push-dynamic.md).
 
 ## OpenAPI Spec Training
 

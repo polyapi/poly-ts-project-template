@@ -14,13 +14,20 @@ import { parseArgs as parseNodeArgs } from "node:util";
 import chalk from "chalk";
 import { findAiFunctionFiles, syncAiFunctions } from "./artefacts/aiFunctions";
 import { findCanopyFiles, syncCanopy } from "./artefacts/canopy";
-import { findFunctionFiles, syncFunctions } from "./artefacts/functions";
+import { findFunctionFiles, getPolyCliEnv, syncFunctions, writePolyGenerateProvenance } from "./artefacts/functions";
 import { findJobFiles, syncJobs } from "./artefacts/jobs";
 import { findSchemaFiles, syncSchemas } from "./artefacts/schemas";
 import { findTableFiles, syncTables } from "./artefacts/tables";
 import { findTriggerFiles, syncTriggers } from "./artefacts/triggers";
 import { findVariableFiles, syncVariables } from "./artefacts/variables";
 import { findWebhookFiles, syncWebhooks } from "./artefacts/webhooks";
+import {
+    confirmPushDynamicPlan,
+    executePushDynamicPlan,
+    type PushDynamicArgs,
+    type PushDynamicPlan,
+    planPushDynamic,
+} from "./commands/pushDynamic";
 import { createSummary, getTotalStats } from "./types/summary";
 import { createPolyApiClient, getBaseUrl, loadEnv } from "./utils/apiClient";
 import {
@@ -32,7 +39,7 @@ import {
 } from "./utils/deploymentConfig";
 import { collectMissingEnvTokenRefs, printMissingEnvTokenWarning } from "./utils/envPreflight";
 import { findWorkspaceRoot, type WalkDirOptions } from "./utils/fileSystem";
-import { bullet, checkMark, heavyRule, logger, thinRule } from "./utils/logger";
+import { bullet, checkMark, createHeader, heavyRule, logger, thinRule } from "./utils/logger";
 import { printFlowLogo } from "./utils/logo";
 import { printNamespaceBanner } from "./utils/namespace";
 import {
@@ -107,6 +114,7 @@ function printRootHelp(): void {
 
 Usage:
   flow push [options]
+  flow push-dynamic [options] [file|directory|context.name ...]
   flow --help
 
 Examples:
@@ -116,6 +124,9 @@ Examples:
   flow push --paths src/utilities --types functions,ai-functions,jobs
   flow push --delete-orphans
   flow push --help
+  flow push-dynamic --dry-run
+  flow push-dynamic --dry-run src/utilities/common/client/log.ts
+  flow push-dynamic --help
 `);
 }
 
@@ -237,28 +248,56 @@ function parseTypeSelection(items: string[]): {
 }
 
 function resolveScopeFilter(projectRoot: string, rawScope: string): string {
-    const normalizedScope = rawScope.trim().replace(/\\/g, "/").replace(/^\.\//, "");
+    const trimmedScope = rawScope.trim().replace(/\\/g, "/");
+    const normalizedScope = trimmedScope.replace(/^\.\//, "");
     if (!normalizedScope) {
         throw new Error("Scope cannot be empty.");
     }
 
-    const attemptedPaths: string[] = [];
-    const candidates = path.isAbsolute(normalizedScope)
-        ? [path.resolve(normalizedScope)]
-        : [
-              path.resolve(projectRoot, normalizedScope),
-              ...(normalizedScope.startsWith("src/") ? [] : [path.resolve(projectRoot, "src", normalizedScope)]),
-          ];
+    // Candidates found relative to the invocation directory or the workspace
+    // root must lie inside the workflows project: anything else would silently
+    // sync nothing.
+    const insideProject = (candidate: string): boolean => {
+        const relative = path.relative(projectRoot, candidate);
+        return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
+    };
+    const invocationCwd = process.env.INIT_CWD?.trim();
 
-    for (const candidate of candidates) {
-        const displayPath = path.relative(projectRoot, candidate) || candidate;
-        attemptedPaths.push(displayPath);
-        if (existsSync(candidate)) {
-            return candidate;
+    const candidates: Array<{ path: string; mustBeInside: boolean }> = [];
+    if (path.isAbsolute(normalizedScope)) {
+        candidates.push({ path: path.resolve(normalizedScope), mustBeInside: false });
+    } else {
+        // An explicitly cwd-relative scope (".", "./x", "../x") means the directory
+        // the command was run from (pnpm's INIT_CWD), as in a shell.
+        if (invocationCwd && /^\.\.?(\/|$)/.test(trimmedScope)) {
+            candidates.push({ path: path.resolve(invocationCwd, trimmedScope), mustBeInside: true });
+        }
+        candidates.push({ path: path.resolve(projectRoot, normalizedScope), mustBeInside: false });
+        if (!normalizedScope.startsWith("src/")) {
+            candidates.push({ path: path.resolve(projectRoot, "src", normalizedScope), mustBeInside: false });
+        }
+        // Also relative to where the command was run and to the workspace root,
+        // e.g. `workflows/src/sampleWorkflow` typed at the repo root — the forms
+        // push-dynamic accepts for seeds.
+        for (const base of [invocationCwd, findWorkspaceRoot(projectRoot)]) {
+            if (base) {
+                candidates.push({ path: path.resolve(base, normalizedScope), mustBeInside: true });
+            }
         }
     }
 
-    throw new Error(`Could not resolve scope "${rawScope}". Tried: ${attemptedPaths.join(", ")}`);
+    const attemptedPaths: string[] = [];
+    for (const candidate of candidates) {
+        const displayPath = path.relative(projectRoot, candidate.path) || candidate.path;
+        if (!attemptedPaths.includes(displayPath)) {
+            attemptedPaths.push(displayPath);
+        }
+        if (existsSync(candidate.path) && (!candidate.mustBeInside || insideProject(candidate.path))) {
+            return candidate.path;
+        }
+    }
+
+    throw new Error(`Could not resolve scope "${rawScope}" inside the workflows project. Tried: ${attemptedPaths.join(", ")}`);
 }
 
 function parseCliArgs(argv: string[] = process.argv.slice(2)): CliArgs | null {
@@ -457,7 +496,9 @@ function runPolyGenerateAfterPush(): boolean {
             cwd: workspaceRoot,
             stdio: "inherit",
             shell: process.platform === "win32",
+            env: getPolyCliEnv(),
         });
+        writePolyGenerateProvenance(workspaceRoot);
         logger.info(chalk.green(`${checkMark} Post-push generation completed\n`));
         return true;
     } catch (error) {
@@ -609,7 +650,7 @@ function warnForMissingDefaultEnvFile(envFile: { exists: boolean; fromEnvPath: b
 async function maybeConfirmBranchEnvFileMatch(
     projectRoot: string,
     preflight: ReturnType<typeof buildDeploymentPreflight>,
-    cliArgs: CliArgs,
+    cliArgs: Pick<CliArgs, "dryRun" | "skipValidationAcknowledged">,
 ): Promise<void> {
     if (!preflight.expectedEnvFile) {
         return;
@@ -626,7 +667,7 @@ async function maybeConfirmBranchEnvFileMatch(
 
     const warningMessage = buildBranchEnvMismatchWarning(projectRoot, preflight, expectedEnvPath);
 
-    process.stdout.write(chalk.yellow(`WARN: ${warningMessage}\n`));
+    logger.warn(chalk.yellow(`WARN: ${warningMessage}`));
 
     if (cliArgs.skipValidationAcknowledged) {
         logger.warn("Branch environment-file mismatch acknowledged non-interactively.");
@@ -687,14 +728,14 @@ async function maybePromptForMissingEnvTokens(
 
 function productionSafeguardsTriggered(
     preflight: ReturnType<typeof buildDeploymentPreflight>,
-    cliArgs: CliArgs,
+    cliArgs: Pick<CliArgs, "dryRun" | "skipValidationAcknowledged">,
 ): boolean {
     return preflight.productionSensitive && !cliArgs.dryRun;
 }
 
 async function enforceProductionSafeguards(
     preflight: ReturnType<typeof buildDeploymentPreflight>,
-    cliArgs: CliArgs,
+    cliArgs: Pick<CliArgs, "dryRun" | "skipValidationAcknowledged">,
 ): Promise<void> {
     if (!productionSafeguardsTriggered(preflight, cliArgs)) {
         return;
@@ -781,7 +822,7 @@ function describeScope(cliArgs: CliArgs, projectRoot: string): string {
 
 function describeProductionSafeguards(
     preflight: ReturnType<typeof buildDeploymentPreflight>,
-    cliArgs: CliArgs,
+    cliArgs: Pick<CliArgs, "dryRun" | "skipValidationAcknowledged">,
 ): string {
     if (productionSafeguardsTriggered(preflight, cliArgs)) {
         return `triggered (${preflight.sensitiveReason})`;
@@ -803,6 +844,7 @@ function printConfig(
     envFile: ReturnType<typeof loadEnv>,
     preflight: ReturnType<typeof buildDeploymentPreflight>,
     projectRoot: string,
+    dynamic?: PushDynamicArgs,
 ): void {
     logger.info(
         JSON.stringify(
@@ -823,6 +865,17 @@ function printConfig(
                 },
                 envFile,
                 preflight,
+                ...(dynamic
+                    ? {
+                          pushDynamic: {
+                              ...dynamic,
+                              // Never print the key itself.
+                              executionApiKey: dynamic.executionApiKey ? "<set>" : undefined,
+                              // main() copies the resolved --paths in only after this dump.
+                              scopePaths: cliArgs.pathFilters.map((scope) => path.relative(projectRoot, scope) || scope),
+                          },
+                      }
+                    : {}),
             },
             null,
             2,
@@ -830,8 +883,234 @@ function printConfig(
     );
 }
 
+function printPushDynamicHelp(): void {
+    logger.info(`\`flow push\` whose function step follows the call graph (dependency-aware deploy).
+
+Everything else is identical to push: the same discovery, validation, artefact types in the
+same order (variables, canopy, schemas, tables, functions, ai-functions, webhooks, triggers,
+jobs), scope prompt, production safeguards, summary and post-push \`poly generate\`. Only the
+functions step differs: a changed client function (CFX) is picked up by a server function (SFX)
+only when that SFX is rebuilt, so changed functions are expanded to their transitive
+client-function callers up to the first server function on every path, the trees are merged,
+and the whole tree is deployed in dependency order.
+
+Usage:
+  flow push-dynamic [options] [file|directory|context.name ...]
+
+Naming functions (as arguments or via --seeds) forces them as seeds: they and every function
+that embeds them are deployed even when their code is unchanged, and automatic change detection
+is OFF unless --seed-from or --paths is given. The intermediate client functions inside every
+tree are compared with the target. Unless --paths, --types or --seed-from says otherwise, such a
+run deploys only their trees (like push --paths <file>): no other artefact type, no scope prompt.
+A run that names functions never detects or deletes orphans.
+
+Shared with push:
+  --dry-run           Show planned actions without changing anything remotely
+  --paths <csv>       Scope: artefacts under these paths are synced and only functions under them
+                      are compared for changes (the function closure is never scoped). A bare
+                      workflow name means src/<workflow>
+  --types <csv>       canopy,variables,schemas,tables,functions,client-functions,server-functions,
+                      ai-functions,webhooks,triggers,jobs (function sub-types select functions)
+  --force             Update unchanged artefacts (functions are governed by seeds, not --force)
+  --delete-orphans, --build-schema, --skip-invalid, --show-config, --skip-generate, --verbose
+                      as for push
+  --skip-validation   Bypass interactive confirmations only when its value is exactly
+                      "${SKIP_VALIDATION_ACKNOWLEDGEMENT}" (as for push)
+
+Function seeds:
+  --seeds <csv>              Forced seeds: function files, directories or context.name identities
+  --seed-from <source>       remote: compare every function file (in scope) with the deployed code
+                             (default when nothing is forced)
+                             specs: offline compare against the generated SDK specs cache
+                             none: only forced seeds (default when functions are named and
+                             --paths is not given)
+
+Function closure:
+  --skip-unchanged-cfx       Do NOT re-add intermediate client functions whose deployed code is identical
+                             (default: the whole tree is deployed)
+  --through-sfx              Report only: also show callers of the server functions in the tree
+  --why <context.name>       Print the seed → … → function chains (up to 25) and exit
+  --hubs                     Print client functions by blast radius and exit
+  --experimental-wildcards   EXPERIMENTAL: expand computed access (poly.utilities[key].toCents(...))
+                             to every function that could match (over-approximates)
+
+Output (--json, --hubs and --why imply --dry-run):
+  --json                     Print the function plan as JSON on stdout (log lines go to stderr;
+                             not combinable with --build-schema or a --types without functions)
+
+Execution:
+  --yes, -y                  Skip the y/N confirmation of the run (required for non-interactive runs)
+  --max-leaves <n>           Ask for a typed confirmation above n server-function leaves (default 10)
+  --execution-api-key <key>  Execution API key for server functions — optional, as for push
+                             (precedence: POLYPROD_EXEC_KEY on production-sensitive branches >
+                             --execution-api-key > FLOW_EXECUTION_API_KEY > polyConfig.executionApiKey)
+  --help, -h                 Show this help
+
+Notes:
+  - Without --paths, an interactive run asks for a scope as push does, unless it only deploys the
+    trees of named functions; a scope typed there counts as --paths.
+  - Every function the plan deploys is validated (polyConfig and namespace), in scope or not;
+    --skip-invalid does not apply to the function tree, where skipping one would strand its callers.
+  - Production safeguards (typed "PROD" confirmation, POLYPROD_EXEC_KEY) apply exactly as for push.
+  - Leaves flagged MUST are alwaysOn or cachePolyLibrary on the platform: they never recycle their
+    pod, so a redeploy is the only way new client-function code reaches them.
+  - Function seeds are detected by code only; an npm-pin or flag-only change is not a seed.
+`);
+}
+
+type ParsedPushDynamic = {
+    cliArgs: CliArgs;
+    dynamic: PushDynamicArgs;
+    /** Named functions without --paths/--types/--seed-from: only the function trees are deployed. */
+    functionsOnly: boolean;
+    /** --seed-from was given; otherwise a scope typed at the prompt re-enables detection like --paths. */
+    seedFromExplicit: boolean;
+};
+
+function parsePushDynamicArgs(rest: string[]): ParsedPushDynamic | null {
+    const { values, positionals } = parseNodeArgs({
+        args: rest,
+        allowPositionals: true,
+        strict: true,
+        options: {
+            help: { type: "boolean", short: "h" },
+            // shared with push
+            "dry-run": { type: "boolean" },
+            force: { type: "boolean" },
+            verbose: { type: "boolean" },
+            "delete-orphans": { type: "boolean" },
+            "build-schema": { type: "boolean" },
+            "skip-invalid": { type: "boolean" },
+            "skip-validation": { type: "string" },
+            types: { type: "string" },
+            paths: { type: "string" },
+            "show-config": { type: "boolean" },
+            "skip-generate": { type: "boolean" },
+            // dynamic function step
+            seeds: { type: "string" },
+            "seed-from": { type: "string" },
+            "skip-unchanged-cfx": { type: "boolean" },
+            "through-sfx": { type: "boolean" },
+            json: { type: "boolean" },
+            yes: { type: "boolean", short: "y" },
+            "max-leaves": { type: "string" },
+            "execution-api-key": { type: "string" },
+            why: { type: "string" },
+            hubs: { type: "boolean" },
+            "experimental-wildcards": { type: "boolean" },
+        },
+    });
+
+    if (values.help) {
+        printPushDynamicHelp();
+        return null;
+    }
+
+    // Positional arguments are forced seeds, exactly like --seeds. Naming
+    // functions switches detection off unless --seed-from or --paths is explicit.
+    const forcedSeeds = [...parseCsvArgument(values.seeds), ...positionals.map((item) => item.trim()).filter(Boolean)];
+    const pathFilters = parseCsvArgument(values.paths);
+    const seedFrom = (
+        values["seed-from"] ?? (forcedSeeds.length > 0 && pathFilters.length === 0 ? "none" : "remote")
+    ).trim();
+    if (seedFrom !== "remote" && seedFrom !== "specs" && seedFrom !== "none") {
+        throw new Error(`Unsupported --seed-from value "${seedFrom}". Expected remote, specs or none.`);
+    }
+
+    const rawMaxLeaves = values["max-leaves"];
+    const maxLeaves = rawMaxLeaves === undefined ? 10 : Number(rawMaxLeaves);
+    if (!Number.isInteger(maxLeaves) || maxLeaves < 0) {
+        throw new Error(`--max-leaves must be a non-negative integer, got "${rawMaxLeaves}".`);
+    }
+
+    const skipValidationValue = values["skip-validation"];
+    if (skipValidationValue !== undefined && skipValidationValue !== SKIP_VALIDATION_ACKNOWLEDGEMENT) {
+        throw new Error(`--skip-validation must exactly equal "${SKIP_VALIDATION_ACKNOWLEDGEMENT}".`);
+    }
+    const skipValidationAcknowledged = skipValidationValue === SKIP_VALIDATION_ACKNOWLEDGEMENT;
+
+    const executionApiKey = values["execution-api-key"]?.trim() || undefined;
+    const why = values.why?.trim();
+    const typeItems = parseCsvArgument(values.types);
+    const parsedTypes = parseTypeSelection(typeItems);
+    if ((values.hubs || why || values.json) && !parsedTypes.enabledTypes.includes("functions")) {
+        throw new Error("--hubs, --why and --json report on functions; drop --types or include functions in it.");
+    }
+    if (values.json && values["build-schema"]) {
+        throw new Error("--json cannot be combined with --build-schema (its output would corrupt the JSON on stdout).");
+    }
+    // Naming functions without --paths or --types deploys just their trees, the
+    // way `flow push --paths <file>` syncs just that file; the other artefact
+    // types join only when --types or --paths asks for them.
+    const functionsOnly =
+        forcedSeeds.length > 0 && pathFilters.length === 0 && typeItems.length === 0 && seedFrom === "none";
+    // --json, --hubs and --why are report-only: they never reach a deploy, so
+    // they must not trigger the production safeguards either.
+    const dryRun = Boolean(values["dry-run"]) || Boolean(values.json) || Boolean(values.hubs) || Boolean(why);
+
+    const cliArgs: CliArgs = {
+        dryRun,
+        force: Boolean(values.force),
+        verbose: Boolean(values.verbose),
+        deleteOrphans: Boolean(values["delete-orphans"]),
+        buildSchema: Boolean(values["build-schema"]),
+        skipInvalid: Boolean(values["skip-invalid"]),
+        skipValidationAcknowledged,
+        showConfig: Boolean(values["show-config"]),
+        skipGenerate: Boolean(values["skip-generate"]),
+        pathFilters,
+        enabledTypes: functionsOnly ? ["functions"] : parsedTypes.enabledTypes,
+        functionTypes: parsedTypes.functionTypes,
+    };
+    const dynamic: PushDynamicArgs = {
+        dryRun,
+        seeds: forcedSeeds,
+        scopePaths: [], // filled from the resolved cliArgs.pathFilters in main()
+        seedFrom,
+        skipUnchangedCfx: Boolean(values["skip-unchanged-cfx"]),
+        throughSfx: Boolean(values["through-sfx"]),
+        json: Boolean(values.json),
+        yes: Boolean(values.yes),
+        maxLeaves,
+        executionApiKey,
+        skipGenerate: Boolean(values["skip-generate"]),
+        why: why || undefined,
+        hubs: Boolean(values.hubs),
+        experimentalWildcards: Boolean(values["experimental-wildcards"]),
+        skipValidationAcknowledged,
+        verbose: Boolean(values.verbose),
+    };
+    return { cliArgs, dynamic, functionsOnly, seedFromExplicit: values["seed-from"] !== undefined };
+}
+
 async function main(): Promise<void> {
-    const parsedArgs = parseCliArgs();
+    // `push-dynamic` is `push` with a dependency-aware functions step: same
+    // pipeline, same prompts and safeguards; only the function sync differs.
+    const rawArgs = process.argv.slice(2).filter((arg) => arg !== "--");
+    let parsedArgs: CliArgs | null;
+    let dynamic: PushDynamicArgs | undefined;
+    let functionsOnly = false;
+    let seedFromExplicit = false;
+    if (rawArgs[0] === "push-dynamic") {
+        let parsed: ParsedPushDynamic | null;
+        try {
+            parsed = parsePushDynamicArgs(rawArgs.slice(1));
+        } catch (error) {
+            logger.fatal(`${getErrorMessage(error)} Run "flow push-dynamic --help" for the accepted options.`);
+            exitProcess(1);
+            return;
+        }
+        if (!parsed) {
+            exitProcess(0);
+            return;
+        }
+        parsedArgs = parsed.cliArgs;
+        dynamic = parsed.dynamic;
+        functionsOnly = parsed.functionsOnly;
+        seedFromExplicit = parsed.seedFromExplicit;
+    } else {
+        parsedArgs = parseCliArgs();
+    }
     if (!parsedArgs) {
         exitProcess(0);
         return;
@@ -839,6 +1118,11 @@ async function main(): Promise<void> {
 
     if (parsedArgs.verbose) {
         logger.level = "debug";
+    }
+    if (dynamic?.json) {
+        // stdout carries only the JSON plan: the logger writes to stderr in this
+        // mode (see utils/logger.ts) and dotenv's "injecting env" tip is muted.
+        process.env.DOTENV_CONFIG_QUIET = "true";
     }
 
     const envFile = loadEnv();
@@ -851,13 +1135,33 @@ async function main(): Promise<void> {
         warnForMissingDefaultEnvFile(envFile);
 
         if (cliArgs.showConfig) {
-            printConfig(cliArgs, envFile, preflight, projectRoot);
+            printConfig(cliArgs, envFile, preflight, projectRoot, dynamic);
             exitProcess(0);
             return;
         }
 
         await maybeConfirmBranchEnvFileMatch(projectRoot, preflight, cliArgs);
-        cliArgs = await maybePromptForInitialScope(projectRoot, cliArgs);
+        // The report-only modes, and named functions with nothing else selected,
+        // already say what to look at.
+        const skipScopePrompt = Boolean(
+            dynamic &&
+                (dynamic.hubs ||
+                    dynamic.why ||
+                    (dynamic.seeds.length > 0 && cliArgs.enabledTypes.every((type) => type === "functions"))),
+        );
+        cliArgs = skipScopePrompt ? cliArgs : await maybePromptForInitialScope(projectRoot, cliArgs);
+        if (dynamic) {
+            dynamic.scopePaths = cliArgs.pathFilters;
+            // A scope typed at the prompt counts as --paths: with named functions it
+            // turns change detection back on, unless --seed-from was given.
+            if (!seedFromExplicit && dynamic.seeds.length > 0 && cliArgs.pathFilters.length > 0) {
+                dynamic.seedFrom = "remote";
+            }
+        }
+        // Scoped runs skip orphans (as push does), and so do runs that name
+        // functions: they are targeted, never a full reconciliation.
+        const namedFunctions = Boolean(dynamic && dynamic.seeds.length > 0);
+        const detectOrphans = cliArgs.pathFilters.length === 0 && !namedFunctions;
         await enforceProductionSafeguards(preflight, cliArgs);
         if (cliArgs.buildSchema && !runSchemaGenerationBeforePush()) {
             throw new Error("Schema generation failed before sync.");
@@ -894,7 +1198,9 @@ async function main(): Promise<void> {
             cliArgs,
         );
 
-        printFlowLogo();
+        if (!dynamic?.json) {
+            printFlowLogo();
+        }
         logger.info(chalk.gray(`Base URL: ${getBaseUrl()}`));
         printNamespaceBanner();
         logger.info(chalk.gray(`Env File: ${chalk.cyan(formatEnvFileVisibility(envFile))}`));
@@ -905,14 +1211,35 @@ async function main(): Promise<void> {
                 ? chalk.yellow(`Production Safeguards: ${describeProductionSafeguards(preflight, cliArgs)}`)
                 : chalk.gray(`Production Safeguards: ${describeProductionSafeguards(preflight, cliArgs)}`),
         );
+        const modeLabel = cliArgs.dryRun
+            ? "Dry run"
+            : cliArgs.deleteOrphans
+              ? "Delete orphaned resources"
+              : "Safe sync (orphans will be reported)";
         logger.info(
-            cliArgs.dryRun
-                ? chalk.yellow("Mode: Dry run")
-                : cliArgs.deleteOrphans
-                ? chalk.yellow("Mode: Delete orphaned resources")
-                : chalk.gray("Mode: Safe sync (orphans will be reported)"),
+            cliArgs.dryRun || cliArgs.deleteOrphans
+                ? chalk.yellow(`Mode: ${modeLabel}${dynamic ? ` ${bullet} push-dynamic` : ""}`)
+                : chalk.gray(`Mode: ${modeLabel}${dynamic ? ` ${bullet} push-dynamic` : ""}`),
         );
+        if (dynamic && !dynamic.hubs) {
+            logger.info(
+                chalk.gray(
+                    `Function seeds: ${dynamic.seeds.length > 0 ? `${dynamic.seeds.length} forced` : "auto-detect"} ${bullet} auto-detect: ${
+                        dynamic.seedFrom === "none" ? "off" : dynamic.seedFrom
+                    }${cliArgs.pathFilters.length > 0 ? " (scoped)" : ""} ${bullet} Intermediate CFX: ${
+                        dynamic.skipUnchangedCfx ? "skipped when unchanged" : "re-added (whole tree)"
+                    }${dynamic.throughSfx ? ` ${bullet} Tree expanded past SFX (report only)` : ""}`,
+                ),
+            );
+        }
         logger.info(chalk.gray(`Types: ${chalk.cyan(cliArgs.enabledTypes.join(", "))}`));
+        if (functionsOnly) {
+            logger.info(
+                chalk.gray(
+                    "Other artefact types: skipped (named functions deploy only their trees; add --types or --paths to sync them too)",
+                ),
+            );
+        }
         if (cliArgs.enabledTypes.includes("functions") && cliArgs.functionTypes) {
             logger.info(chalk.gray(`Function Types: ${chalk.cyan(cliArgs.functionTypes.join(", "))}`));
         }
@@ -925,6 +1252,12 @@ async function main(): Promise<void> {
         }
         if (cliArgs.pathFilters.length > 0) {
             logger.info(chalk.gray("Orphans: skipped for scoped sync"));
+        } else if (namedFunctions) {
+            logger.info(
+                chalk.gray(
+                    `Orphans: skipped (functions are named)${cliArgs.deleteOrphans ? "; --delete-orphans has no effect" : ""}`,
+                ),
+            );
         }
         logger.info(
             cliArgs.skipInvalid
@@ -1069,16 +1402,55 @@ async function main(): Promise<void> {
         );
         logger.info("");
 
+        const client = createPolyApiClient();
+        const dynamicContext = {
+            client,
+            projectRoot,
+            workspaceRoot: findWorkspaceRoot(projectRoot),
+            invocationCwd: process.env.INIT_CWD?.trim() || projectRoot,
+            productionSensitive: preflight.productionSensitive,
+            envDisplayPath: envFile.displayPath,
+            currentBranch: preflight.currentBranch,
+            confirm: promptForConfirmation,
+            syncsOtherArtefacts: cliArgs.enabledTypes.some((type) => type !== "functions"),
+            deletesOrphans: cliArgs.deleteOrphans,
+        };
+        let functionPlan: PushDynamicPlan | undefined;
+        if (dynamic && cliArgs.enabledTypes.includes("functions")) {
+            logger.info(chalk.cyan.bold(`[FUNCTION PLAN] ${thinRule(42)}`));
+            logger.info(chalk.gray("Following the call graph from the changed/forced functions...\n"));
+            const planned = await planPushDynamic(dynamic, dynamicContext, { detectOrphans });
+            if (planned.kind === "exit") {
+                exitProcess(planned.exitCode);
+                return;
+            }
+            functionPlan = planned.plan;
+            logger.info("");
+            if (!cliArgs.dryRun && !(await confirmPushDynamicPlan(functionPlan, dynamic, dynamicContext))) {
+                exitProcess(1);
+                return;
+            }
+        } else if (dynamic) {
+            if (dynamic.seeds.length > 0) {
+                logger.warn(
+                    chalk.yellow("Seeds were given but --types excludes functions; the function step is skipped."),
+                );
+            }
+            if (!cliArgs.dryRun && !(await confirmPushDynamicPlan(undefined, dynamic, dynamicContext))) {
+                exitProcess(1);
+                return;
+            }
+        }
+
         logger.info(chalk.cyan.bold(`[SYNC PHASE] ${thinRule(45)}`));
         logger.info("");
 
-        const client = createPolyApiClient();
         const summary = createSummary();
         const syncOptions = {
             dryRun: cliArgs.dryRun,
             force: cliArgs.force,
             discoveryOptions,
-            detectOrphans: cliArgs.pathFilters.length === 0,
+            detectOrphans,
         };
 
         let createdVariables: any[] = [];
@@ -1115,7 +1487,17 @@ async function main(): Promise<void> {
                 syncOptions,
             );
         }
-        if (cliArgs.enabledTypes.includes("functions")) {
+        if (dynamic && functionPlan) {
+            logger.info(chalk.cyan(createHeader("FUNCTIONS")));
+            await executePushDynamicPlan(
+                functionPlan,
+                dynamic,
+                dynamicContext,
+                summary.functions,
+                summary.orphans,
+                cliArgs.deleteOrphans,
+            );
+        } else if (!dynamic && cliArgs.enabledTypes.includes("functions")) {
             await syncFunctions(
                 client,
                 summary.functions,

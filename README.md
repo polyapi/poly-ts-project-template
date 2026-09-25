@@ -128,6 +128,8 @@ ENVPATH=workflows/dev.env RUN_MUTATING_INTEGRATION=true pnpm workflows test:inte
 pnpm workflows test:all
 pnpm workflows push
 pnpm workflows push:dry-run
+pnpm workflows push:dynamic -- <file|directory|context.name ...>
+pnpm workflows push:dynamic:dry-run
 pnpm workflows train:openapi
 pnpm workflows delete:content
 ```
@@ -137,6 +139,17 @@ CLI commands:
 ```bash
 pnpm flow build
 pnpm flow generate
+```
+
+`push-dynamic` is `push` with a dependency-aware function step (a changed
+client function plus every function that embeds it; same artefact types,
+prompts and safeguards; see [cli/push-dynamic.md](cli/push-dynamic.md)):
+
+```bash
+pnpm dyn:dev:dry                                                  # plan what differs from dev
+pnpm dyn:dev:dry -- ./workflows/src/<workflow>/client/<file>.ts   # force one function + its tree (functions only)
+pnpm dyn:dev -- ./workflows/src/<workflow>/client/<file>.ts   # deploy it (exec key optional, as for push)
+pnpm dyn:prod:dry
 ```
 
 ## Adding A Workflow
@@ -152,7 +165,8 @@ The Flow CLI validates and synchronizes the artefact types documented in
 [CONVENTIONS.md](CONVENTIONS.md#artefacts). It supports scoped `--paths` and
 `--types` pushes, dry runs, production safeguards, and explicit orphan
 deletion. See [cli/README.md](cli/README.md) for its command and payload
-reference.
+reference, and [cli/push-dynamic.md](cli/push-dynamic.md) for `push-dynamic`,
+which deploys a changed function together with every function that embeds it.
 
 ## OpenAPI Training
 

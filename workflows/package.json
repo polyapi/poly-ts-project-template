@@ -7,6 +7,8 @@
   "scripts": {
     "push": "pnpm --filter flow-cli run build && node ../cli/dist/cli.js push",
     "push:dry-run": "pnpm --filter flow-cli run build && node ../cli/dist/cli.js push --dry-run",
+    "push:dynamic": "pnpm --filter flow-cli run build && node ../cli/dist/cli.js push-dynamic",
+    "push:dynamic:dry-run": "pnpm --filter flow-cli run build && node ../cli/dist/cli.js push-dynamic --dry-run",
     "test": "ava",
     "test:integration": "ava --config ava.config.integration.cjs",
     "test:integration:mutating": "RUN_MUTATING_INTEGRATION=true ava --config ava.config.integration.cjs",

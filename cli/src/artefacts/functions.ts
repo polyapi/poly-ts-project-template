@@ -1,15 +1,18 @@
 import { spawn } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import path from "node:path";
 import type createClient from "openapi-fetch";
 import { getDependencies, getTSBaseUrl } from "polyapi/build/transpiler";
 import ts from "typescript";
 import type { paths } from "../sdk/schema";
 import type { FunctionFile } from "../types";
 import type { ArtifactSummary, OrphanedResource } from "../types/summary";
-import { getDeleteHeaders, sleep } from "../utils/apiClient";
+import { getBaseUrl, getDeleteHeaders, sleep } from "../utils/apiClient";
 import { getProductionExecutionApiKeyOverride } from "../utils/deploymentConfig";
 import { substituteEnvTokens } from "../utils/envSubstitution";
 import {
+    findWorkspaceRoot,
     getProjectRoot,
     getSrcPath,
     isInArtefactDirectory,
@@ -104,7 +107,7 @@ function getFunctionKey(type: "client" | "server", name: string, context: string
     return `${type}:${name}:${context}`;
 }
 
-function normalizeMultilineText(value: string): string {
+export function normalizeMultilineText(value: string): string {
     return value.replace(/\r\n/g, "\n").trimEnd();
 }
 
@@ -150,15 +153,66 @@ function getEffectiveVisibility(metadata: FunctionFile["metadata"]): "ENVIRONMEN
     return metadata.visibility ?? "ENVIRONMENT";
 }
 
+/**
+ * Directory of the package that declares `polyapi` — the home of the `poly`
+ * binary, of the npm pins polyapi resolves external dependencies from, and of
+ * the tsconfig it reads. Walks up from the CLI's cwd; in this template that is
+ * workflows/ itself, in a layout that declares polyapi at the workspace root
+ * it is the root. Falls back to the cwd.
+ */
+export function getPolyPackageDir(): string {
+    const declaresPolyapi = (dir: string): boolean => {
+        const packageJsonPath = path.join(dir, "package.json");
+        if (!existsSync(packageJsonPath)) {
+            return false;
+        }
+        try {
+            const manifest = JSON.parse(readFileSync(packageJsonPath, "utf8")) as {
+                dependencies?: Record<string, string>;
+                devDependencies?: Record<string, string>;
+            };
+            return Boolean(manifest.dependencies?.polyapi || manifest.devDependencies?.polyapi);
+        } catch {
+            return false;
+        }
+    };
+
+    // The workspace root wins when it declares polyapi: that is where a
+    // project's function dependencies are pinned (both manifests may list
+    // polyapi). Otherwise the nearest package above the cwd that declares it.
+    const workspaceRoot = findWorkspaceRoot(getProjectRoot());
+    if (declaresPolyapi(workspaceRoot)) {
+        return workspaceRoot;
+    }
+    let current = getProjectRoot();
+    while (true) {
+        if (declaresPolyapi(current)) {
+            return current;
+        }
+        if (current === workspaceRoot || path.dirname(current) === current) {
+            return getProjectRoot();
+        }
+        current = path.dirname(current);
+    }
+}
+
 async function getFunctionDependenciesForComparison(
     func: FunctionFile,
     code: string,
 ): Promise<{
     externalDependencies?: unknown;
 }> {
-    const [externalDependencies] = await getDependencies(code, func.tsFilePath, getTSBaseUrl(), true);
-
-    return { externalDependencies };
+    // polyapi's getDependencies resolves npm versions from process.cwd()/package.json
+    // (and tsconfig from cwd), so compare from the package that declares polyapi —
+    // the same directory addFunction deploys from; otherwise pins never match.
+    const previousCwd = process.cwd();
+    process.chdir(getPolyPackageDir());
+    try {
+        const [externalDependencies] = await getDependencies(code, func.tsFilePath, getTSBaseUrl(), true);
+        return { externalDependencies };
+    } finally {
+        process.chdir(previousCwd);
+    }
 }
 
 async function buildLocalComparisonPayload(func: FunctionFile): Promise<FunctionComparisonPayload> {
@@ -254,7 +308,7 @@ function areFunctionPayloadsEqual(
     );
 }
 
-async function getExistingFunctionDetails(
+export async function getExistingFunctionDetails(
     client: ReturnType<typeof createClient<paths>>,
     func: ExistingFunctionRecord,
 ): Promise<any | null> {
@@ -548,14 +602,14 @@ export async function getExistingClientFunctions(client: ReturnType<typeof creat
 }
 
 /**
- * Delete a server function by ID
+ * Delete a server function by ID. Returns true when the API confirmed the deletion.
  */
-async function deleteServerFunction(
+export async function deleteServerFunction(
     client: ReturnType<typeof createClient<paths>>,
     functionId: string,
     name: string,
     context: string,
-): Promise<void> {
+): Promise<boolean> {
     try {
         const { error, response } = await client.DELETE("/functions/server/{id}", {
             params: { path: { id: functionId } },
@@ -564,23 +618,25 @@ async function deleteServerFunction(
 
         if (error) {
             log.error({ name, context, status: (response as any).status }, "Failed to delete server function");
-        } else {
-            log.info({ name, context }, "Server function deleted");
+            return false;
         }
+        log.info({ name, context }, "Server function deleted");
+        return true;
     } catch (error) {
         log.error({ error, name, context }, "Error deleting server function");
+        return false;
     }
 }
 
 /**
- * Delete a client function by ID
+ * Delete a client function by ID. Returns true when the API confirmed the deletion.
  */
-async function deleteClientFunction(
+export async function deleteClientFunction(
     client: ReturnType<typeof createClient<paths>>,
     functionId: string,
     name: string,
     context: string,
-): Promise<void> {
+): Promise<boolean> {
     try {
         const { error, response } = await client.DELETE("/functions/client/{id}", {
             params: { path: { id: functionId } },
@@ -589,19 +645,113 @@ async function deleteClientFunction(
 
         if (error) {
             log.error({ name, context, status: (response as any).status }, "Failed to delete client function");
-        } else {
-            log.info({ name, context }, "Client function deleted");
+            return false;
         }
+        log.info({ name, context }, "Client function deleted");
+        return true;
     } catch (error) {
         log.error({ error, name, context }, "Error deleting client function");
+        return false;
+    }
+}
+
+/**
+ * Environment for a spawned `poly` CLI process.
+ *
+ * The poly CLI reads POLY_API_KEY / POLY_API_BASE_URL (falling back to the
+ * `poly setup` config file), while loadEnv() only populates API_KEY / BASE_URL
+ * from the ENVPATH file. Without this mapping a push compares against the
+ * ENVPATH environment but deploys to whatever `poly setup` last wrote. The base
+ * URL is pinned to the one this CLI talks to (getBaseUrl(), which has a
+ * default), so the child never deploys to another instance than the one that
+ * was compared.
+ */
+export function getPolyCliEnv(): NodeJS.ProcessEnv {
+    const env: NodeJS.ProcessEnv = { ...process.env };
+    // polyapi's loadConfig() lets its config file override the environment when
+    // CONFIG_ENV_PATH_PRIORITY === "true"; that would silently undo the pinning.
+    delete env.CONFIG_ENV_PATH_PRIORITY;
+    if (process.env.API_KEY) {
+        env.POLY_API_KEY = process.env.API_KEY;
+    }
+    env.POLY_API_BASE_URL = getBaseUrl();
+    return env;
+}
+
+/**
+ * Directory the poly CLI generates into, resolved the same way polyapi does
+ * (`<polyapi package>/build/../../../node_modules/.poly`) from the package that
+ * declares polyapi, then from the workspace root.
+ */
+export function locatePolyDir(workspaceRoot: string): string | null {
+    try {
+        const packageJsonPath = require.resolve("polyapi/package.json", {
+            paths: [getPolyPackageDir(), workspaceRoot],
+        });
+        return path.resolve(path.dirname(packageJsonPath), "..", "..", "node_modules", ".poly");
+    } catch (error) {
+        log.debug({ error, workspaceRoot }, "Could not resolve the polyapi package; .poly directory unknown");
+        return null;
+    }
+}
+
+export const POLY_GENERATE_PROVENANCE_FILE = ".flow-generate.json";
+
+export interface PolyGenerateProvenance {
+    baseUrl?: string;
+    keyFingerprint?: string;
+    generatedAt: string;
+}
+
+export function fingerprintApiKey(apiKey: string): string {
+    return createHash("sha256").update(apiKey).digest("hex").slice(0, 16);
+}
+
+/**
+ * Record which environment the generated SDK (specs cache) was produced for.
+ * Written inside `lib/` on purpose: `poly generate` replaces that directory,
+ * so a generate not run through this CLI leaves no stale provenance behind.
+ */
+export function writePolyGenerateProvenance(workspaceRoot: string): void {
+    const polyDir = locatePolyDir(workspaceRoot);
+    if (!polyDir) {
+        return;
+    }
+    const libDir = path.join(polyDir, "lib");
+    if (!existsSync(libDir)) {
+        return;
+    }
+    const provenance: PolyGenerateProvenance = {
+        baseUrl: process.env.BASE_URL,
+        keyFingerprint: process.env.API_KEY ? fingerprintApiKey(process.env.API_KEY) : undefined,
+        generatedAt: new Date().toISOString(),
+    };
+    try {
+        writeFileSync(path.join(libDir, POLY_GENERATE_PROVENANCE_FILE), `${JSON.stringify(provenance, null, 2)}\n`);
+    } catch (error) {
+        log.debug({ error }, "Could not write poly generate provenance");
+    }
+}
+
+export function readPolyGenerateProvenance(polyDir: string): PolyGenerateProvenance | null {
+    const provenancePath = path.join(polyDir, "lib", POLY_GENERATE_PROVENANCE_FILE);
+    if (!existsSync(provenancePath)) {
+        return null;
+    }
+    try {
+        return JSON.parse(readFileSync(provenancePath, "utf8")) as PolyGenerateProvenance;
+    } catch {
+        return null;
     }
 }
 
 /**
  * Add or update a function using poly CLI
  * Returns: 'deployed' | 'failed'
+ * `flagExecutionApiKey` is the `--execution-api-key` value of `push-dynamic`;
+ * precedence: production safeguard override > flag > polyConfig field.
  */
-async function addFunction(func: FunctionFile): Promise<"deployed" | "failed"> {
+export async function addFunction(func: FunctionFile, flagExecutionApiKey?: string): Promise<"deployed" | "failed"> {
     return new Promise((resolve, _reject) => {
         const {
             name,
@@ -614,7 +764,7 @@ async function addFunction(func: FunctionFile): Promise<"deployed" | "failed"> {
             cachePolyLibrary,
         } = func.metadata;
         const executionApiKeyOverride = getProductionExecutionApiKeyOverride(getProjectRoot());
-        const effectiveExecutionApiKey = executionApiKeyOverride ?? executionApiKey;
+        const effectiveExecutionApiKey = executionApiKeyOverride ?? flagExecutionApiKey ?? executionApiKey;
 
         const isServerFunction = func.type === "server";
         const isClientFunction = func.type === "client";
@@ -656,9 +806,13 @@ async function addFunction(func: FunctionFile): Promise<"deployed" | "failed"> {
         }
 
         const { command, commandArgs } = resolvePnpmCommand(args);
+        // Run from the package that declares polyapi: that is where `pnpm exec poly`
+        // finds the binary and where polyapi resolves npm pins and tsconfig from.
+        // Pin the child to the ENVPATH environment (see getPolyCliEnv).
         const child = spawn(command, commandArgs, {
             stdio: ["inherit", "pipe", "pipe"],
-            cwd: getProjectRoot(),
+            cwd: getPolyPackageDir(),
+            env: getPolyCliEnv(),
         });
 
         let stdout = "";
