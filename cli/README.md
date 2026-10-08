@@ -42,12 +42,21 @@ Optional values:
 
 ```env
 POLYAPI_OPENAPI_SPEC_URL=https://eu1.polyapi.io/swagger-json
+OTP_ENABLED=true
 ```
 
 Use `ENVPATH` to point Flow at the local environment file for the target
 environment.
 
-`build` and `postinstall` both run `generate`, which refreshes
+When `OTP_ENABLED=true`, Flow prompts for an OTP at the first write request
+and sends it as `x-otp` on its POST, PUT, PATCH, and DELETE requests, including
+Canopy updates. Input is hidden and the code is reused for that Flow run.
+Read requests and dry runs do not prompt. OTP-enabled writes require an
+interactive terminal; Flow does not read the OTP code from the environment.
+Function deployment through the Poly CLI retains that CLI's authentication
+handling.
+
+`build` compiles TypeScript. `generate` and `postinstall` refresh
 `src/sdk/schema.d.ts` from `POLYAPI_OPENAPI_SPEC_URL` (or the default URL above).
 
 ## What Flow Scans
@@ -67,6 +76,11 @@ environment.
 The legacy `artifacts/` spelling is also supported for the same artefact folders.
 
 Function metadata is read from inline `polyConfig` objects.
+
+Canopy JSON can include an application `description`. Flow synchronizes it as
+application metadata; `id`, `description`, and `visibility` are kept outside
+the rendered application config. Omitting `description` preserves the remote
+application's description. `visibility` is applied when creating an application.
 
 AI functions are JSON artefacts. References are portable and are resolved to
 remote IDs during sync:

@@ -15,6 +15,7 @@ export interface CanopyFile {
     id?: string;
     name?: string;
     subpath?: string;
+    description?: string;
   } & Record<string, unknown>;
 }
 

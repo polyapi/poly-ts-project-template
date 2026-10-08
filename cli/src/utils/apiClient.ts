@@ -11,18 +11,24 @@ import { findWorkspaceRoot } from "./fileSystem";
 import { chalk, logger, warningColor } from "./logger";
 
 class OtpManager {
-    private cachedOtp?: string;
+    private cachedOtp?: Promise<string>;
 
-    async getDeleteHeaders(): Promise<Record<string, string>> {
-        if (!parseBooleanEnv("OTP_ENABLED", false)) {
+    async getHeaders(method: string): Promise<Record<string, string>> {
+        if (
+            !["POST", "PUT", "PATCH", "DELETE"].includes(method.toUpperCase()) ||
+            !parseBooleanEnv("OTP_ENABLED", false)
+        ) {
             return {};
         }
 
-        if (!this.cachedOtp) {
-            this.cachedOtp = await promptForHiddenInput("OTP is required to delete resources. Enter OTP: ");
-        }
+        this.cachedOtp ??= promptForHiddenInput(
+            "OTP is required to modify resources. Enter OTP: ",
+        ).catch(error => {
+            this.cachedOtp = undefined;
+            throw error;
+        });
 
-        return { "x-otp": this.cachedOtp };
+        return { "x-otp": await this.cachedOtp };
     }
 }
 
@@ -30,7 +36,7 @@ const otpManager = new OtpManager();
 
 async function promptForHiddenInput(prompt: string): Promise<string> {
     if (!process.stdin.isTTY || !process.stdout.isTTY) {
-        throw new Error("OTP is required to delete resources, but no interactive terminal is available");
+        throw new Error("OTP is required to modify resources, but no interactive terminal is available");
     }
 
     const mutedOutput = new Writable({
@@ -49,12 +55,13 @@ async function promptForHiddenInput(prompt: string): Promise<string> {
     });
 
     try {
+        process.stdout.write(prompt);
         mutedOutput.muted = true;
-        const answer = (await readline.question(prompt)).trim();
+        const answer = (await readline.question("")).trim();
         process.stdout.write("\n");
 
         if (!answer) {
-            throw new Error("OTP is required to delete resources");
+            throw new Error("OTP is required to modify resources");
         }
 
         return answer;
@@ -285,7 +292,7 @@ export function getBaseUrl(): string {
 export function createPolyApiClient(): ReturnType<typeof createClient<paths>> {
     const baseUrl = getBaseUrl();
 
-    return createClient<paths>({
+    const client = createClient<paths>({
         baseUrl,
         headers: {
             "Content-Type": "application/json",
@@ -294,6 +301,18 @@ export function createPolyApiClient(): ReturnType<typeof createClient<paths>> {
             }),
         },
     });
+
+    client.use({
+        async onRequest({ request }) {
+            const otpHeaders = await getOtpHeaders(request.method);
+            for (const [name, value] of Object.entries(otpHeaders)) {
+                request.headers.set(name, value);
+            }
+            return request;
+        },
+    });
+
+    return client;
 }
 
 /**
@@ -303,6 +322,10 @@ export function sleep(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+export async function getOtpHeaders(method: string): Promise<Record<string, string>> {
+    return otpManager.getHeaders(method);
+}
+
 export async function getDeleteHeaders(): Promise<Record<string, string>> {
-    return otpManager.getDeleteHeaders();
+    return getOtpHeaders("DELETE");
 }

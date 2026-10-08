@@ -808,7 +808,14 @@ async function postVariable(
           }
         }
 
-        log.error(`Failed to update variable ${fileRef}`);
+        log.error(
+          {
+            ...updateMetadata,
+            status: (response as Response | undefined)?.status,
+            error: sanitizeApiError(error),
+          },
+          `Failed to update variable ${fileRef}`
+        );
         return 'failed';
       } else {
         logVariableApiResponse(
