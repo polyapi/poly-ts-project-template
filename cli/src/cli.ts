@@ -35,6 +35,7 @@ import { findWorkspaceRoot, type WalkDirOptions } from "./utils/fileSystem";
 import { bullet, checkMark, heavyRule, logger, thinRule } from "./utils/logger";
 import { printFlowLogo } from "./utils/logo";
 import { printNamespaceBanner } from "./utils/namespace";
+import { getPolyGenerateEnvironment } from "./utils/polyGenerateEnvironment";
 import {
     validateAiFunctionArtifact,
     validateFunctionArtifact,
@@ -455,6 +456,7 @@ function runPolyGenerateAfterPush(): boolean {
     try {
         execFileSync("pnpm", ["workflows", "exec", "poly", "generate"], {
             cwd: workspaceRoot,
+            env: getPolyGenerateEnvironment(process.env),
             stdio: "inherit",
             shell: process.platform === "win32",
         });

@@ -28,6 +28,13 @@ production confirmation prompts only when its value exactly matches
 `I know what am doing`. It does not bypass the production execution key,
 schema validation, artefact validation, or unresolved environment-value checks.
 
+After a successful push, Flow regenerates the workflow SDK with
+`pnpm workflows exec poly generate` unless `--skip-generate` is set. It removes
+the inherited `npm_config_recursive` setting, including case variants, from
+that child process's environment. This prevents npm's unknown-config warning
+when the Poly CLI checks its version. Other environment settings are preserved.
+Direct SDK-generation commands outside Flow do not use this filtering.
+
 ## Environment
 
 Required values:
