@@ -28,7 +28,7 @@
     "timeout": "60s"
   },
   "dependencies": {
-    "polyapi": "^0.27.0"
+    "polyapi": "^0.27.4"
   },
   "devDependencies": {
     "@ava/typescript": "^6.0.0",

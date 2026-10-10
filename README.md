@@ -31,6 +31,17 @@ Install dependencies:
 pnpm install
 ```
 
+To update the workflow SDK for your environment, use pnpm before running setup
+or generation. For example, for `eu1`:
+
+```bash
+pnpm --filter workflows add polyapi@eu1
+```
+
+Use `na1` or `na2` for those environments, and `develop` for `dev`. If the Poly
+CLI offers to update using npm, decline and use the pnpm command above; npm
+cannot install this project's `workspace:*` dependency.
+
 Set up PolyAPI environment
 
 ```bash
