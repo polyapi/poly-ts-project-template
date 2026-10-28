@@ -1,5 +1,6 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import type { TSchema } from '@sinclair/typebox';
 import { pathIsExcluded, pathPriorityRank } from './deploymentConfig';
 import { substituteEnvTokens } from './envSubstitution';
 import { logger } from './logger';
@@ -7,6 +8,10 @@ import { logger } from './logger';
 export interface WalkDirOptions {
   respectSkipPaths?: boolean;
   includePaths?: string[];
+}
+
+export interface ReadJsonFileOptions {
+  schema?: TSchema;
 }
 
 function isRelativeTo(targetPath: string, candidateParent: string): boolean {
@@ -222,11 +227,14 @@ function stripJsonComments(jsonString: string): string {
 /**
  * Read and parse a JSON/JSONC file (supports comments)
  */
-export function readJsonFile<T = any>(filePath: string): T | null {
+export function readJsonFile<T = any>(
+  filePath: string,
+  options: ReadJsonFileOptions = {}
+): T | null {
   try {
     const content = fs.readFileSync(filePath, 'utf-8');
     const stripped = stripJsonComments(content);
-    return substituteEnvTokens(JSON.parse(stripped)) as T;
+    return substituteEnvTokens(JSON.parse(stripped), options.schema) as T;
   } catch (error) {
     logger.error({ error, filePath }, 'Failed to read JSON file');
     return null;

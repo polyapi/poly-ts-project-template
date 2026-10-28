@@ -33,6 +33,7 @@ import {
   validateNamespace,
 } from '../utils/namespace';
 import { filterOrphansByContext } from '../utils/orphans';
+import { WebhookArtifactSchema } from '../utils/schemas';
 import { validateWebhookArtifact } from '../utils/validation';
 import { getReferenceableServerFunctions } from './references';
 
@@ -57,7 +58,9 @@ export function findWebhookFiles(
         isInNamedDirectory(fullPath, 'webhooks') &&
         isInArtefactDirectory(fullPath)
       ) {
-        const content = readJsonFile(fullPath);
+        const content = readJsonFile(fullPath, {
+          schema: WebhookArtifactSchema,
+        });
         if (content) {
           webhookFiles.push({
             filePath: fullPath,

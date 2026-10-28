@@ -16,6 +16,7 @@ import { chalk, createHeader, createLogger, warningColor } from '../utils/logger
 import { getRequiredNamespaces, matchesAnyRequiredNamespace, validateNamespace } from '../utils/namespace';
 import { filterOrphansByContext } from '../utils/orphans';
 import { areComparisonPayloadsEqual } from '../utils/payloadComparison';
+import { SchemaArtifactSchema } from '../utils/schemas';
 import { validateSchemaArtifact } from '../utils/validation';
 
 type SchemaDto = components['schemas']['SchemaDto'];
@@ -46,7 +47,9 @@ export function findSchemaFiles(
         isInNamedDirectory(fullPath, 'schemas') &&
         isInArtefactDirectory(fullPath)
       ) {
-        const content = readJsonFile(fullPath);
+        const content = readJsonFile(fullPath, {
+          schema: SchemaArtifactSchema,
+        });
         if (content) {
           schemaFiles.push({
             filePath: fullPath,

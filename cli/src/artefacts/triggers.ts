@@ -27,6 +27,7 @@ import {
   matchesAnyRequiredNamespace,
 } from '../utils/namespace';
 import { filterOrphansByContext } from '../utils/orphans';
+import { TriggerArtifactSchema } from '../utils/schemas';
 import { validateTriggerArtifact } from '../utils/validation';
 import {
   getReferenceableServerFunctions,
@@ -86,7 +87,9 @@ export function findTriggerFiles(
         isInNamedDirectory(fullPath, 'triggers') &&
         isInArtefactDirectory(fullPath)
       ) {
-        const content = readJsonFile(fullPath);
+        const content = readJsonFile(fullPath, {
+          schema: TriggerArtifactSchema,
+        });
         if (content) {
           triggerFiles.push({
             filePath: fullPath,

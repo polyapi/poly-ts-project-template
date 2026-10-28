@@ -28,6 +28,7 @@ import {
 } from '../utils/namespace';
 import { filterOrphansByContext } from '../utils/orphans';
 import { areComparisonPayloadsEqual } from '../utils/payloadComparison';
+import { VariableArtifactSchema } from '../utils/schemas';
 import { validateVariableArtifact } from '../utils/validation';
 
 const log = createLogger('variables');
@@ -355,7 +356,9 @@ export function findVariableFiles(
         isInNamedDirectory(fullPath, 'vari') &&
         isInArtefactDirectory(fullPath)
       ) {
-        const content = readJsonFile(fullPath);
+        const content = readJsonFile(fullPath, {
+          schema: VariableArtifactSchema,
+        });
         if (content) {
           variableFiles.push({
             filePath: fullPath,

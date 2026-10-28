@@ -193,9 +193,21 @@ Use `--types ai-functions` to sync only these artefacts. Flow creates them with
 `POST /functions/ai`, sends changed mutable fields only with `PATCH
 /functions/ai/{id}`, and supports safe orphan reporting/deletion.
 
-All artefact payloads also support `{{ENV_VAR_NAME}}` placeholders. During sync,
-placeholders are substituted from the selected env file values. Missing values are
-left unchanged and reported before sync.
+Flow substitutes `{{ENV_VAR_NAME}}` placeholders in discovered JSON artefacts
+and string-valued inline function metadata. In schema-validated JSON artefacts,
+an exact token used as the complete string value of a boolean or number field
+with no string alternative is converted to that field's type. Nullable boolean
+and number fields receive the same conversion. For example,
+`"enabled": "{{FEATURE_ENABLED}}"` becomes a boolean when the environment value
+is `true` or `false`, and `"responseStatus": "{{RESPONSE_STATUS}}"` becomes a
+number when the environment value is a valid JSON number.
+
+Interpolated strings, schema-less Canopy payloads, untyped fields, and inline
+function metadata remain string-only. Missing environment values leave their
+tokens unchanged for preflight reporting. Values that cannot be converted to
+the required boolean or number are substituted as strings so artefact
+validation can report the type mismatch. Flow does not substitute placeholders
+in OpenAPI or PolyAPI model specs.
 
 ## Safe Deletion
 

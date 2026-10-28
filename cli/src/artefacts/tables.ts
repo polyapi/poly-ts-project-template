@@ -16,6 +16,7 @@ import { chalk, createHeader, createLogger, warningColor } from '../utils/logger
 import { getRequiredNamespaces, matchesAnyRequiredNamespace, validateNamespace } from '../utils/namespace';
 import { filterOrphansByContext } from '../utils/orphans';
 import { areComparisonPayloadsEqual } from '../utils/payloadComparison';
+import { TableArtifactSchema } from '../utils/schemas';
 import { validateTableArtifact } from '../utils/validation';
 
 type TableResponseDto = components['schemas']['TableResponseDto'];
@@ -48,7 +49,7 @@ export function findTableFiles(
         isInNamedDirectory(fullPath, 'tabi') &&
         isInArtefactDirectory(fullPath)
       ) {
-        const content = readJsonFile(fullPath);
+        const content = readJsonFile(fullPath, { schema: TableArtifactSchema });
         if (content) {
           tableFiles.push({
             filePath: fullPath,

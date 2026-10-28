@@ -25,6 +25,7 @@ import {
   validateNamespace,
 } from '../utils/namespace';
 import { filterOrphansByContext } from '../utils/orphans';
+import { GraphQLSubscriptionArtifactSchema } from '../utils/schemas';
 import { validateGraphQLSubscriptionArtifact } from '../utils/validation';
 import { getReferenceableServerFunctions } from './references';
 import { getExistingVariables } from './variables';
@@ -74,8 +75,10 @@ export function findGraphQLSubscriptionFiles(
         isInNamedDirectory(fullPath, 'subscriptions') &&
         isInArtefactDirectory(fullPath)
       ) {
-        const content =
-          readJsonFile<GraphQLSubscriptionFile['content']>(fullPath);
+        const content = readJsonFile<GraphQLSubscriptionFile['content']>(
+          fullPath,
+          { schema: GraphQLSubscriptionArtifactSchema }
+        );
         if (content) {
           subscriptionFiles.push({
             filePath: fullPath,

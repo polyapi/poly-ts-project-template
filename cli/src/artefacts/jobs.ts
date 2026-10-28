@@ -19,6 +19,7 @@ import {
   warningColor,
 } from '../utils/logger';
 import { areComparisonPayloadsEqual } from '../utils/payloadComparison';
+import { JobArtifactSchema } from '../utils/schemas';
 import { validateJobArtifact } from '../utils/validation';
 import { getReferenceableServerFunctions } from './references';
 
@@ -45,7 +46,7 @@ export function findJobFiles(options: FindJobFileOptions = {}): JobFile[] {
         isInNamedDirectory(fullPath, 'jobs') &&
         isInArtefactDirectory(fullPath)
       ) {
-        const content = readJsonFile(fullPath);
+        const content = readJsonFile(fullPath, { schema: JobArtifactSchema });
         if (content) {
           jobFiles.push({
             filePath: fullPath,

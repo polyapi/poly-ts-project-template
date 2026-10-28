@@ -29,6 +29,7 @@ import {
 } from '../utils/namespace';
 import { filterOrphansByContext } from '../utils/orphans';
 import { canonicalizeComparisonValue } from '../utils/payloadComparison';
+import { AiFunctionArtifactSchema } from '../utils/schemas';
 import { validateAiFunctionArtifact } from '../utils/validation';
 import { getReferenceableFunctions } from './references';
 import { getExistingVariables } from './variables';
@@ -75,7 +76,9 @@ export function findAiFunctionFiles(
         isInNamedDirectory(fullPath, 'ai-functions') &&
         isInArtefactDirectory(fullPath)
       ) {
-        const content = readJsonFile(fullPath);
+        const content = readJsonFile(fullPath, {
+          schema: AiFunctionArtifactSchema,
+        });
         if (content) {
           files.push({ filePath: fullPath, fileName, content });
         }

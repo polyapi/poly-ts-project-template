@@ -1,6 +1,14 @@
 import assert from 'node:assert/strict';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import test from 'node:test';
-import { isInArtefactDirectory, isInNamedDirectory } from './fileSystem';
+import { Type } from '@sinclair/typebox';
+import {
+  isInArtefactDirectory,
+  isInNamedDirectory,
+  readJsonFile,
+} from './fileSystem';
 
 test('recognizes canonical and legacy artefact directory spellings', () => {
   assert.equal(
@@ -36,5 +44,31 @@ test('does not match partial directory names', () => {
       'schemas'
     ),
     false
+  );
+});
+
+test('uses the supplied schema for typed environment substitution', t => {
+  const directory = mkdtempSync(path.join(tmpdir(), 'flow-json-reader-'));
+  const filePath = path.join(directory, 'artifact.json');
+  const envName = 'FLOW_TEST_JSON_READER_ENABLED';
+  const previousValue = process.env[envName];
+
+  t.after(() => {
+    if (previousValue === undefined) {
+      delete process.env[envName];
+    } else {
+      process.env[envName] = previousValue;
+    }
+    rmSync(directory, { recursive: true, force: true });
+  });
+
+  process.env[envName] = 'true';
+  writeFileSync(filePath, `{"enabled":"{{${envName}}}"}`);
+
+  assert.deepEqual(
+    readJsonFile(filePath, {
+      schema: Type.Object({ enabled: Type.Boolean() }),
+    }),
+    { enabled: true }
   );
 });
