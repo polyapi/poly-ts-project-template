@@ -17,6 +17,7 @@ poly-ts-project-template/
   .agents/    repository-local agent configuration and guidance
   cli/        workspace-local Flow validation and synchronization CLI
   designs/    upstream specifications and design source material
+  kickstart/  interactive project bootstrap scripts
   workflows/  deployable workflows, shared utilities, and runtime tests
 ```
 
@@ -24,6 +25,19 @@ See [CONVENTIONS.md](CONVENTIONS.md) for the authoritative workflow layout,
 artefact folders, naming rules, namespace behavior, and test placement.
 
 ## Setup
+
+### Getting started
+
+Getting started is straightforward. Run this command and it will take care of
+bootstrapping the project locally for you:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/polyapi/poly-ts-project-template/main/kickstart/kickstart.sh | bash
+```
+
+Follow the prompts to configure your project.
+
+### Manual setup
 
 Install dependencies:
 
