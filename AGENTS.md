@@ -10,7 +10,7 @@ Docs: <https://docs.polyapi.io/platform_overview.html>
 - Applies to all work started from this repo.
 - Covers repo-wide source-of-truth order, runtime model, environment, and task
   routing.
-- Optional local implementation guidance can live under `./.agents/skills/`.
+- Optional local implementation guidance can live under `./agents/skills/`.
 
 ## Source Of Truth
 
@@ -18,7 +18,7 @@ Docs: <https://docs.polyapi.io/platform_overview.html>
 2. Checked-in executable code and JSON artefacts under `workflows/src/`, plus
    checked-in tooling under `cli/`
 3. `CONVENTIONS.md`
-4. Relevant installed skills under `./.agents/skills/`
+4. Relevant installed skills under `./agents/skills/`
 5. `README.md`
 6. Same-folder `OVERVIEW.md` files and maintained project docs
 

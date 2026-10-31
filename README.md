@@ -25,67 +25,6 @@ artefact folders, naming rules, namespace behavior, and test placement.
 
 ## Setup
 
-### Interactive project creation
-
-Run `bash ./kickstart.sh` from a template checkout to create a new project.
-The script downloads fresh copies of this template and
-[`poly-skills`](https://github.com/polyapi/poly-skills) into a unique temporary
-directory, then removes those downloads on success, failure, or interruption.
-It requires Bash (including macOS's built-in Bash), curl, tar, Git, Node.js,
-pnpm, the VS Code `code` command, and a configured Git author identity.
-
-The prompts ask for a project name, parent directory (default
-`$HOME/Code/poly`), namespace (default `demo`), hidden API key, and environment
-(`dev`, `na1`, `na2`, or `eu1`). The script installs the general, PolyAPI common,
-and TypeScript skills in `.agents/skills`, creates a private
-`workflows/dev.env`, installs the SDK for the selected environment, rewrites
-the template's `example.*` contexts and matching SDK references, and runs
-PolyAPI setup and generation. It then commits the project on `main`, switches
-to `develop`, and opens VS Code. Environment files remain ignored by Git.
-
-To launch it without keeping a local template checkout, add this function to
-`~/.zshrc`, then run `source ~/.zshrc` and `newpolyts`:
-
-```zsh
-newpolyts() (
-  emulate -L zsh
-  unsetopt xtrace verbose
-  local bootstrap_dir
-  bootstrap_dir=$(mktemp -d "${TMPDIR:-/tmp}/newpolyts.XXXXXXXX") || return 1
-  trap 'rm -rf -- "$bootstrap_dir"' EXIT
-  trap 'exit 130' INT
-  trap 'exit 143' TERM
-
-  if curl --fail --location --silent --show-error --retry 2 \
-    --output "$bootstrap_dir/kickstart.sh" \
-    https://raw.githubusercontent.com/polyapi/poly-ts-project-template/main/kickstart.sh; then
-    bash "$bootstrap_dir/kickstart.sh"
-  else
-    print -- "HTTPS script unavailable; trying GitHub SSH access..."
-    git clone --depth 1 --single-branch --branch main \
-      git@github.com:polyapi/poly-ts-project-template.git "$bootstrap_dir/template" || return 1
-    bash "$bootstrap_dir/template/kickstart.sh"
-  fi
-)
-```
-
-HTTPS downloads fall back to shallow SSH clones when archives or the script
-are inaccessible, for example with a private repository. This fallback needs
-GitHub SSH access to both repositories. The downloads' Git history is removed
-before creating the project's own repository. Bash runs the setup as a child
-process, so your terminal's current directory stays unchanged. If setup fails,
-the partial project is retained at the printed path for troubleshooting.
-
-Regression checks for the installer run without real API calls or package
-installation, after installing the template's dependencies:
-
-```bash
-bash -n kickstart.sh
-node --test tests/kickstart.test.cjs
-```
-
-### Manual setup
-
 Install dependencies:
 
 ```bash
