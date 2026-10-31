@@ -11,8 +11,9 @@
     "test:integration": "ava --config ava.config.integration.cjs",
     "test:integration:mutating": "RUN_MUTATING_INTEGRATION=true ava --config ava.config.integration.cjs",
     "test:all": "ava && ava --config ava.config.integration.cjs",
-    "train:openapi": "bash src/utilities/common/scripts/trainOpenApi.sh",
-    "delete:content": "bash src/utilities/common/scripts/deleteContent.sh"
+    "train:openapi": "pnpm --filter flow-cli run train:openapi",
+    "delete:content": "pnpm --filter flow-cli run delete:content",
+    "logs": "pnpm --filter flow-cli run logs"
   },
   "ava": {
     "extensions": [

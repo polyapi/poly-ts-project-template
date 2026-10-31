@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Run directly, or download to a temporary file and execute with Bash.
+# Run from a Git checkout of the template.
 set +x
 set +v
 set -euo pipefail
@@ -22,14 +22,14 @@ trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
-for tool in curl tar git node pnpm code; do
+for tool in tar git node pnpm code; do
   if ! command -v "$tool" >/dev/null 2>&1; then
     printf 'kickstart: required command not found: %s\n' "$tool" >&2
     exit 1
   fi
 done
 
-# Keep interactive input separate from the script when invoked via curl | bash.
+# Read prompts from the terminal so child commands can use standard input.
 if ! { exec 3</dev/tty; } 2>/dev/null; then
   printf 'kickstart: run this command from an interactive terminal.\n' >&2
   exit 1
@@ -87,26 +87,25 @@ base_url="https://${poly_env}.polyapi.io"
 sdk_tag="$poly_env"
 [[ "$poly_env" != dev ]] || sdk_tag=develop
 
+# This child process uses the prompted project's settings rather than a
+# connection or environment-file selection inherited from another project.
+unset ENVPATH BASE_URL API_KEY POLYAPI_BASE_URL POLYAPI_API_KEY
+unset POLY_API_BASE_URL POLY_API_KEY
+unset POLYAPI_NAMESPACE POLYAPI_NAMESPACES POLY_API_NAMESPACE POLY_NAMESPACE
+
 download_dir=$(mktemp -d "${TMPDIR:-/tmp}/poly-kickstart.XXXXXXXX")
 
-download_repository() {
-  local repo="$1" destination="$2"
-  local archive="$download_dir/$repo.tar.gz"
-  mkdir -p -- "$destination"
-  if curl --fail --location --silent --show-error --retry 2 \
-    --output "$archive" "https://codeload.github.com/polyapi/$repo/tar.gz/refs/heads/main"; then
-    tar -xzf "$archive" -C "$destination" --strip-components=1
-  else
-    printf 'HTTPS archive unavailable for %s; trying GitHub SSH access...\n' "$repo"
-    git clone --depth 1 --single-branch --branch main \
-      "git@github.com:polyapi/$repo.git" "$destination"
-    rm -rf -- "$destination/.git"
-  fi
-}
-
-printf 'Downloading project template and skills...\n'
-download_repository poly-ts-project-template "$download_dir/template"
-download_repository poly-skills "$download_dir/skills"
+script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+template_root="$(git -C "$script_dir/.." rev-parse --show-toplevel)"
+printf 'Preparing project template and downloading skills...\n'
+mkdir -p -- "$download_dir/template"
+git -C "$template_root" archive HEAD | tar \
+  --exclude='.env' --exclude='.env.*' --exclude='*.env' \
+  --exclude='*.key' --exclude='*.pem' --exclude='*.p12' \
+  --exclude='*.pfx' --exclude='*.crt' \
+  -xf - -C "$download_dir/template"
+git clone --depth 1 --single-branch --branch main \
+  git@github.com:polyapi/poly-skills.git "$download_dir/skills"
 [[ -f "$download_dir/template/package.json" ]]
 [[ -f "$download_dir/template/kickstart/kickstart-namespace.cjs" ]]
 for category in general polyapi-common polyapi-typescript; do
@@ -133,8 +132,6 @@ done
   umask 077
   printf '%s\n' \
     "POLYAPI_NAMESPACE=$project_namespace" \
-    "BASE_URL=$base_url" \
-    "API_KEY=$api_key" \
     '# POLYPROD_EXEC_KEY' \
     '' \
     'LOG_LEVEL=debug' \
@@ -157,9 +154,42 @@ node kickstart/kickstart-namespace.cjs "$project_namespace"
   umask 077
   export POLY_API_BASE_URL="$base_url" POLY_API_KEY="$api_key"
   printf 'Setting up PolyAPI (%s)...\n' "$poly_env"
-  pnpm --silent workflows exec poly setup "$base_url" "$api_key"
+  # Invoke the SDK's setup CLI without putting the key in pnpm's arguments.
+  pnpm --silent workflows exec node <<'NODE'
+const path = require('node:path');
+const sdkPath = require.resolve('polyapi/package.json');
+const sdk = require(sdkPath);
+const bin = typeof sdk.bin === 'string' ? sdk.bin : sdk.bin?.poly;
+if (!bin) throw new Error('The workflow PolyAPI SDK does not provide its setup CLI.');
+const cli = path.resolve(path.dirname(sdkPath), bin);
+process.argv = [process.execPath, cli, 'setup', process.env.POLY_API_BASE_URL, process.env.POLY_API_KEY];
+require(cli);
+NODE
   printf 'Generating PolyAPI SDK...\n'
   pnpm --silent workflows exec poly generate
+)
+
+printf 'Building Flow CLI...\n'
+pnpm flow build
+printf 'Verifying Flow configuration from saved Poly setup...\n'
+(
+  export KICKSTART_EXPECTED_BASE_URL="$base_url"
+  export KICKSTART_EXPECTED_API_KEY="$api_key"
+  export KICKSTART_EXPECTED_NAMESPACE="$project_namespace"
+  node <<'NODE'
+const { loadEnv, getBaseUrl } = require('./cli/dist/utils/apiClient.js');
+const { resolveWorkflowPolyConfig } = require('./cli/dist/utils/environment.js');
+const { getRequiredNamespaces } = require('./cli/dist/utils/namespace.js');
+if (!resolveWorkflowPolyConfig(process.cwd())) {
+  throw new Error('Poly setup did not save a connection for the workflow SDK.');
+}
+loadEnv();
+if (getBaseUrl() !== process.env.KICKSTART_EXPECTED_BASE_URL ||
+    process.env.API_KEY !== process.env.KICKSTART_EXPECTED_API_KEY ||
+    getRequiredNamespaces().join(',') !== process.env.KICKSTART_EXPECTED_NAMESPACE) {
+  throw new Error('Flow configuration does not match the project settings entered during kickstart.');
+}
+NODE
 )
 unset api_key
 

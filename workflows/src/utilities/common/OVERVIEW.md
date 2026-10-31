@@ -1,5 +1,10 @@
 # Common utilities
 
+Shared operational tooling lives in the Flow CLI: use `pnpm flow train:openapi`
+for API training, `pnpm flow delete:content` for scoped deletion, and
+`pnpm flow logs <function-id>` for function logs. These replace the former
+common shell scripts; this folder contains deployable utilities and artefacts.
+
 The template includes three deployable common functions:
 
 - `log` emits structured runtime logs, removes sensitive context keys, observes

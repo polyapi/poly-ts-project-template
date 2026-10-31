@@ -21,6 +21,7 @@ import { findTableFiles, syncTables } from "./artefacts/tables";
 import { findTriggerFiles, syncTriggers } from "./artefacts/triggers";
 import { findVariableFiles, syncVariables } from "./artefacts/variables";
 import { findWebhookFiles, syncWebhooks } from "./artefacts/webhooks";
+import { createMaintenanceRuntime, maintenanceHelp, parseMaintenanceArgs, runMaintenance } from "./commands/maintenance";
 import { createSummary, getTotalStats } from "./types/summary";
 import { createPolyApiClient, getBaseUrl, loadEnv } from "./utils/apiClient";
 import {
@@ -108,6 +109,9 @@ function printRootHelp(): void {
 
 Usage:
   flow push [options]
+  flow train:openapi [spec-file-or-folder] [--context namespace.apis.{file}] [--dry-run]
+  flow delete:content [--type api|schema|variable|webhook|trigger|table|job] [--context namespace.prefix] [--dry-run]
+  flow logs [function-id] [--keyword error] [--raw]
   flow --help
 
 Examples:
@@ -611,7 +615,7 @@ function warnForMissingDefaultEnvFile(envFile: { exists: boolean; fromEnvPath: b
 async function maybeConfirmBranchEnvFileMatch(
     projectRoot: string,
     preflight: ReturnType<typeof buildDeploymentPreflight>,
-    cliArgs: CliArgs,
+    cliArgs: Pick<CliArgs, "skipValidationAcknowledged">,
 ): Promise<void> {
     if (!preflight.expectedEnvFile) {
         return;
@@ -689,14 +693,14 @@ async function maybePromptForMissingEnvTokens(
 
 function productionSafeguardsTriggered(
     preflight: ReturnType<typeof buildDeploymentPreflight>,
-    cliArgs: CliArgs,
+    cliArgs: Pick<CliArgs, "dryRun">,
 ): boolean {
     return preflight.productionSensitive && !cliArgs.dryRun;
 }
 
 async function enforceProductionSafeguards(
     preflight: ReturnType<typeof buildDeploymentPreflight>,
-    cliArgs: CliArgs,
+    cliArgs: Pick<CliArgs, "dryRun" | "skipValidationAcknowledged">,
 ): Promise<void> {
     if (!productionSafeguardsTriggered(preflight, cliArgs)) {
         return;
@@ -833,6 +837,26 @@ function printConfig(
 }
 
 async function main(): Promise<void> {
+    const maintenance = parseMaintenanceArgs(process.argv.slice(2));
+    if (maintenance) {
+        if (maintenance.help) {
+            process.stdout.write(`${maintenanceHelp(maintenance.command)}\n`);
+            return;
+        }
+        const invocationDirectory = process.cwd();
+        const workspaceRoot = findWorkspaceRoot(invocationDirectory);
+        process.chdir(path.join(workspaceRoot, "workflows"));
+        const envFile = loadEnv();
+        if (maintenance.command !== "logs") {
+            const preflight = buildDeploymentPreflight(process.cwd(), envFile);
+            const safetyArgs = { dryRun: maintenance.dryRun, skipValidationAcknowledged: false };
+            await maybeConfirmBranchEnvFileMatch(process.cwd(), preflight, safetyArgs);
+            await enforceProductionSafeguards(preflight, safetyArgs);
+        }
+        await runMaintenance(maintenance, createMaintenanceRuntime(workspaceRoot, invocationDirectory));
+        exitProcess(0);
+        return;
+    }
     const parsedArgs = parseCliArgs();
     if (!parsedArgs) {
         exitProcess(0);

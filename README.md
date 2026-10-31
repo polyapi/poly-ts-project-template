@@ -10,6 +10,19 @@ New to PolyAPI? Start with the sample workflow tutorial:
 [workflows/src/sampleWorkflow/README.md](workflows/src/sampleWorkflow/README.md).
 It walks through the core runtime flow from webhook to trigger to functions.
 
+## Table of contents
+
+- [Structure](#structure)
+- [Setup](#setup)
+  - [Getting started](#getting-started)
+  - [Manual setup](#manual-setup)
+- [Add or update the Flow CLI in your project](#add-or-update-the-flow-cli-in-your-project)
+- [Commands](#commands)
+- [Adding a workflow](#adding-a-workflow)
+- [Flow CLI](#flow-cli)
+- [OpenAPI training](#openapi-training)
+- [Agent skills](#agent-skills)
+
 ## Structure
 
 ```text
@@ -28,16 +41,21 @@ artefact folders, naming rules, namespace behavior, and test placement.
 
 ### Getting started
 
-Getting started is straightforward. Run this command and it will take care of
-bootstrapping the project locally for you:
+Getting started is straightforward. Run this command and follow the prompts
+to bootstrap the project locally:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/polyapi/poly-ts-project-template/main/kickstart/kickstart.sh | bash
+git clone git@github.com:polyapi/poly-ts-project-template.git && ./poly-ts-project-template/kickstart/kickstart.sh
 ```
 
-Follow the prompts to configure your project.
+Requires GitHub SSH access to the template and skills repositories, Git,
+Node.js, pnpm, and the VS Code `code` command. GitHub CLI (`gh`) is not required.
+Kickstart configures PolyAPI, builds Flow, and opens the new project in VS Code.
 
 ### Manual setup
+
+These steps are only needed if you did not use kickstart. If you used
+kickstart, your project is already configured and you can skip this section.
 
 Install dependencies:
 
@@ -75,13 +93,18 @@ Set placeholder values in `workflows/dev.env`, then run Flow with `ENVPATH`:
 ENVPATH=workflows/dev.env pnpm workflows push --dry-run
 ```
 
-The required environment variables are:
+Keep the project namespace in your environment file:
 
 ```env
 POLYAPI_NAMESPACE=mycustomer
-BASE_URL=https://eu1.polyapi.io
-API_KEY=replace-with-your-api-key
 ```
+
+Flow reuses the base URL and API key saved by `pnpm workflows exec poly setup`.
+You only need to add `BASE_URL` and `API_KEY` to the selected environment file
+if you want to override that saved connection, for example for a different
+environment selected through `ENVPATH`.
+When copying a sample environment file, remove its `BASE_URL` and `API_KEY`
+entries if you want to use the saved connection.
 
 Choose one root namespace for locally managed project artefacts. The checked-in
 template uses `example`; replace it consistently when adopting the template.
@@ -153,8 +176,9 @@ ENVPATH=workflows/dev.env RUN_MUTATING_INTEGRATION=true pnpm workflows test:inte
 pnpm workflows test:all
 pnpm workflows push
 pnpm workflows push:dry-run
-pnpm workflows train:openapi
-pnpm workflows delete:content
+pnpm flow train:openapi
+pnpm flow delete:content --dry-run
+pnpm flow logs <function-id>
 ```
 
 CLI commands:
@@ -179,18 +203,38 @@ The Flow CLI validates and synchronizes the artefact types documented in
 deletion. See [cli/README.md](cli/README.md) for its command and payload
 reference.
 
+Flow also provides OpenAPI training, scoped content deletion, and function logs:
+
+```bash
+pnpm flow train:openapi designs/ --context 'demo.apis.{file}'
+pnpm flow delete:content --type api --context demo.apis --dry-run
+pnpm flow logs <function-id> --keyword error
+```
+
+These commands use the same Flow environment configuration (`ENVPATH` when
+specified). Training and deletion retain branch/environment and production
+confirmations. Deletion previews matching resources and requires typing
+`DELETE`; use `--dry-run` to preview without deleting. The existing
+`pnpm workflows train:openapi` and `pnpm workflows delete:content` shortcuts
+remain available and now invoke Flow.
+
 ## OpenAPI Training
 
 Put upstream specs under `designs/` or a workflow-local `artefacts/specs/`
 folder, then run:
 
 ```bash
-pnpm workflows train:openapi
+pnpm flow train:openapi
 ```
 
 The script prompts for a spec file or folder and a PolyAPI context. Use `{file}`
 in the context when each spec should train under a context based on its file
 name.
+
+You can also pass the spec path and `--context` directly. Training accepts
+OpenAPI 3 and Swagger 2 in JSON or YAML, writes generated `*.poly-model.json`
+files beside the source specs, trains them, and regenerates the SDK. Use
+`--dry-run` to preview specs and contexts without writing or training.
 
 ## Agent Skills
 

@@ -7,6 +7,7 @@ import createClient from "openapi-fetch";
 import type { paths } from "../sdk/schema";
 import type { EnvLoadResult } from "./deploymentConfig";
 import { parseBooleanEnv } from "./deploymentConfig";
+import { mergeEnvironmentLayers, resolveWorkflowPolyConfig } from "./environment";
 import { findWorkspaceRoot } from "./fileSystem";
 import { chalk, logger, warningColor } from "./logger";
 
@@ -77,44 +78,29 @@ async function promptForHiddenInput(prompt: string): Promise<string> {
 export function loadEnv(): EnvLoadResult {
     const workspaceRoot = findWorkspaceRoot(process.cwd());
     const defaultWorkflowEnvPath = path.join(workspaceRoot, "workflows", "dev.env");
-    const polyEnvPath = resolvePolyEnvPath();
+    const polyEnvPath = resolveWorkflowPolyConfig(workspaceRoot);
     const rootEnvPath = path.join(__dirname, "../../../dev.env");
-
-    // Load root dev.env first (lowest priority)
-    if (fs.existsSync(rootEnvPath)) {
-        dotenv.config({ path: rootEnvPath });
-    }
-
-    // Load Poly CLI config if present (can override previous)
-    if (polyEnvPath && fs.existsSync(polyEnvPath)) {
-        dotenv.config({ path: polyEnvPath, override: true });
-    }
 
     const envPathOverride = process.env.ENVPATH?.trim();
     const selectedEnvPath = envPathOverride ? resolveSelectedEnvPath(envPathOverride) : defaultWorkflowEnvPath;
-
     if (envPathOverride && !fs.existsSync(selectedEnvPath)) {
         throw new Error(`ENVPATH points to "${envPathOverride}", but that file does not exist.`);
     }
 
-    // Load the selected workspace env file (highest priority)
-    if (fs.existsSync(selectedEnvPath)) {
-        dotenv.config({ path: selectedEnvPath, override: true });
-    }
+    const readLayer = (filename: string | null): NodeJS.ProcessEnv => {
+        if (!filename || !fs.existsSync(filename)) return {};
+        const result = dotenv.config({ path: filename, processEnv: {}, quiet: true });
+        if (result.error) throw new Error(`Unable to load environment configuration: ${filename}`);
+        return result.parsed ?? {};
+    };
+    // Selected env file > shell settings > this workflow SDK's setup > legacy root env.
+    Object.assign(process.env, mergeEnvironmentLayers(
+        readLayer(rootEnvPath),
+        readLayer(polyEnvPath),
+        process.env,
+        readLayer(selectedEnvPath),
+    ));
 
-    // Map Poly CLI env names to this CLI's expected names
-    if (!process.env.BASE_URL && process.env.POLYAPI_BASE_URL) {
-        process.env.BASE_URL = process.env.POLYAPI_BASE_URL;
-    }
-    if (!process.env.POLYAPI_BASE_URL && process.env.BASE_URL) {
-        process.env.POLYAPI_BASE_URL = process.env.BASE_URL;
-    }
-    if (!process.env.API_KEY && process.env.POLYAPI_API_KEY) {
-        process.env.API_KEY = process.env.POLYAPI_API_KEY;
-    }
-    if (!process.env.POLYAPI_API_KEY && process.env.API_KEY) {
-        process.env.POLYAPI_API_KEY = process.env.API_KEY;
-    }
     if (!process.env.TENANT_ID && process.env.POLY_TENANT_ID) {
         process.env.TENANT_ID = process.env.POLY_TENANT_ID;
     }
@@ -151,7 +137,7 @@ export function loadEnv(): EnvLoadResult {
         logger.error(chalk.white("  POLYAPI_NAMESPACES=example,other"));
         logger.error(chalk.gray("\nChecked:"));
         logger.error(chalk.dim(`  - ${rootEnvPath}`));
-        logger.error(chalk.dim(`  - ${polyEnvPath ?? "polyapi config not found (checked pnpm + node_modules/.poly)"}`));
+        logger.error(chalk.dim(`  - ${polyEnvPath ?? "workflow PolyAPI setup not found"}`));
         logger.error(chalk.dim(`  - ${defaultWorkflowEnvPath} (default)`));
         if (envPathOverride) {
             logger.error(chalk.dim(`  - ${selectedEnvPath} (ENVPATH)`));
@@ -198,85 +184,6 @@ function resolveSelectedEnvPath(envPathOverride: string): string {
     }
 
     return workflowsCandidate;
-}
-
-function findUp(relativePath: string): string | null {
-    let current = process.cwd();
-
-    while (true) {
-        const candidate = path.join(current, relativePath);
-        if (fs.existsSync(candidate)) {
-            return candidate;
-        }
-
-        const parent = path.dirname(current);
-        if (parent === current) {
-            return null;
-        }
-        current = parent;
-    }
-}
-
-function resolvePolyEnvPath(): string | null {
-    const fromPackage = resolvePolyEnvPathFromPackage();
-    if (fromPackage) {
-        return fromPackage;
-    }
-
-    const fromPnpm = findPnpmPolyEnvPath();
-    if (fromPnpm) {
-        return fromPnpm;
-    }
-
-    const fromNodeModules = findUp("node_modules/.poly/.config.env");
-    if (fromNodeModules) {
-        return fromNodeModules;
-    }
-
-    const fallback = path.join(__dirname, "../../../node_modules/.poly/.config.env");
-    return fs.existsSync(fallback) ? fallback : null;
-}
-
-function resolvePolyEnvPathFromPackage(): string | null {
-    try {
-        const pkgJsonPath = require.resolve("polyapi/package.json", {
-            paths: [process.cwd()],
-        });
-        const pkgDir = path.dirname(pkgJsonPath);
-        const nodeModulesDir = path.dirname(pkgDir);
-        const candidate = path.join(nodeModulesDir, ".poly", ".config.env");
-        return fs.existsSync(candidate) ? candidate : null;
-    } catch {
-        return null;
-    }
-}
-
-function findPnpmPolyEnvPath(): string | null {
-    const pnpmRoot = findUp("node_modules/.pnpm");
-    if (!pnpmRoot) {
-        return null;
-    }
-
-    const pnpmDir = path.join(pnpmRoot, "node_modules/.pnpm");
-    let entries: string[] = [];
-    try {
-        entries = fs.readdirSync(pnpmDir);
-    } catch {
-        return null;
-    }
-
-    for (const entry of entries) {
-        if (!entry.startsWith("polyapi@")) {
-            continue;
-        }
-
-        const candidate = path.join(pnpmDir, entry, "node_modules/.poly/.config.env");
-        if (fs.existsSync(candidate)) {
-            return candidate;
-        }
-    }
-
-    return null;
 }
 
 /**

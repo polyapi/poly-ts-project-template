@@ -178,8 +178,8 @@ only as portable references must never widen namespace-owned orphan deletion.
 - Use `pnpm` workspaces.
 - Use Biome for formatting and linting.
 - Use Flow CLI for PolyAPI sync.
-- Keep workflow-local support scripts with their workflow and shared scripts
-  under `workflows/src/utilities/common/scripts/`.
+- Keep workflow-local support scripts with their workflow. Shared operational
+  commands belong in the Flow CLI under `cli/src/commands/`.
 - Scripts should preview destructive actions and require explicit confirmation.
 
 Useful commands:
@@ -198,7 +198,8 @@ ENVPATH=workflows/dev.env pnpm workflows push
 ## OpenAPI Spec Training
 
 - Store source specs under `designs/` or `artefacts/specs/`.
-- Use `pnpm workflows train:openapi` to generate and train PolyAPI models.
+- Use `pnpm flow train:openapi` to generate and train PolyAPI models. The
+  `pnpm workflows train:openapi` shortcut invokes the same Flow command.
 - Use context paths that start with `POLYAPI_NAMESPACE`.
 - Use `{file}` in the context prompt when training multiple specs into
   file-based child contexts.
