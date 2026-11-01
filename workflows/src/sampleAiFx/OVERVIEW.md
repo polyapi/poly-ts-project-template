@@ -63,7 +63,12 @@ owned namespace are ready before deployment.
 ## Deploy and test
 
 Run from the repository root after [project setup](../../../docs/SETUP.md),
-including [pinning the target environment](../../../docs/SETUP.md#pin-the-target-environment).
+including [aligning the SDK with your instance](../../../docs/SETUP.md#align-the-sdk-with-your-polyapi-instance)
+and [pinning the target environment](../../../docs/SETUP.md#pin-the-target-environment).
+For a manual or older checkout on `na1`, SDK alignment starts with
+`pnpm --filter workflows add polyapi@na1`, followed by separate `poly setup`
+and `poly generate` commands as shown in the setup guide. Kickstart already
+aligns the SDK during project creation; repeat if Poly reports a version mismatch.
 `TARGET_ENV_ID` checks that your connection reaches the intended environment;
 it is separate from the namespace and does not switch credentials. Kickstart
 saves it automatically. Select that file once for this terminal session:

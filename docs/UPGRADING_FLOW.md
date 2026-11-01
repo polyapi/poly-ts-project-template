@@ -11,6 +11,10 @@ patch releases such as `1.1.1` contain fixes, minor releases such as `1.2.0`
 add compatible features, and major releases such as `2.0.0` introduce breaking
 changes. The version is maintained in `cli/package.json`.
 
+Upgrading Flow does not update the workflow's PolyAPI SDK. If Poly reports a
+client-version mismatch, [align the SDK with your selected instance](SETUP.md#align-the-sdk-with-your-polyapi-instance)
+using pnpm before setup or generation.
+
 ## Upgrading from an older version
 
 Use this route if your project does not yet have Flow's `self-update` command.

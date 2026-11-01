@@ -37,24 +37,54 @@ Install dependencies:
 pnpm install
 ```
 
-Keep the checked-in SDK version unless your target environment requires a
-different release. If an SDK update is needed, review that dependency change
-and use pnpm before running setup or generation. For example, for `eu1`:
+### Align the SDK with your PolyAPI instance
+
+The template defaults to the **NA1 SDK release**: `workflows/package.json`
+declares `"polyapi": "na1"`, and `pnpm-lock.yaml` records the resolved version.
+The lockfile keeps installs reproducible; `pnpm install` alone does not refresh
+the SDK each time NA1 is upgraded. Before manual setup or following a tutorial
+in an existing checkout, align the SDK with the instance your project connects
+to. **Kickstart already does this for the instance selected during project
+creation.** Repeat this step when changing
+instances or when Poly reports that your client version differs from the
+instance's version.
+
+Choose the package tag from the connection's base URL:
+
+| PolyAPI instance | SDK package tag |
+| --- | --- |
+| `https://dev.polyapi.io` | `develop` |
+| `https://na1.polyapi.io` | `na1` |
+| `https://na2.polyapi.io` | `na2` |
+| `https://eu1.polyapi.io` | `eu1` |
+
+For a project pointing to **`https://na1.polyapi.io`**, run from the project root:
 
 ```bash
-pnpm --filter workflows add polyapi@eu1
-```
-
-Use `na1` or `na2` for those environments, and `develop` for `dev`. If the Poly
-CLI offers to update using npm, decline and use the pnpm command above; npm
-cannot install this project's `workspace:*` dependency.
-
-Set up PolyAPI environment
-
-```bash
+pnpm --filter workflows add polyapi@na1
 pnpm workflows exec poly setup
 pnpm workflows exec poly generate
 ```
+
+Replace `na1` with the matching tag from the table for another instance. Choose
+the tag from the URL, not the environment filename: `workflows/dev.env` can
+point to `na1`.
+
+The `add` command updates the SDK dependency in `workflows/package.json` and
+the resolved version in `pnpm-lock.yaml`; review and commit those changes with
+your project. The tag resolves to a version at installation time; it does not
+automatically follow future instance releases. It does not select your
+connection or change `TARGET_ENV_ID`.
+Run `poly setup` separately afterward with the intended URL and key, then
+generate. A changed SDK version can have a different saved-configuration
+location under pnpm, so setup may be required again.
+
+If Poly asks **“Update now?”** and proposes `npm install`, choose **No** and
+use the pnpm command above. The SDK's npm updater cannot install this project's
+`workspace:*` dependency and fails with `EUNSUPPORTEDPROTOCOL`. Updating Flow
+itself does not update the workflow SDK.
+
+### Finish project configuration
 
 Create a local environment file from the sample:
 

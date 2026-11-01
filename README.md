@@ -21,7 +21,8 @@ git clone git@github.com:polyapi/poly-ts-project-template.git && \
 ```
 
 Follow the prompts for your project location, namespace, PolyAPI instance, and
-API key. Kickstart configures PolyAPI, aligns the starter contexts, SDK references,
+API key. Kickstart installs the SDK for your selected instance, configures
+PolyAPI, aligns the starter contexts, SDK references,
 and tutorial examples with your namespace, saves the verified `TARGET_ENV_ID`,
 installs skills, builds Flow, and opens your project in VS Code.
 It does not deploy resources or train the sample APIs.

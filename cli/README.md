@@ -313,6 +313,11 @@ that child process's environment. This prevents npm's unknown-config warning
 when the Poly CLI checks its version. Other environment settings are preserved.
 Direct SDK-generation commands outside Flow do not use this filtering.
 
+If Poly reports a client-version mismatch, follow
+[SDK instance alignment](../docs/SETUP.md#align-the-sdk-with-your-polyapi-instance).
+Use pnpm to update the workflow SDK; decline the SDK's npm-based update prompt.
+Flow's self-updater does not change that dependency.
+
 ## Environment
 
 Required project settings in `workflows/dev.env` (or the file selected by

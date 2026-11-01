@@ -41,6 +41,9 @@ checked-in implementation and call out the drift clearly.
 - Package manager: `pnpm` workspaces.
 - Formatter and linter: Biome.
 - SDK dependency lives in `workflows/package.json`. Do not upgrade casually.
+- The default workflow SDK uses the `na1` package tag, with its resolved release
+  recorded in `pnpm-lock.yaml`. Kickstart installs the tag for the user's chosen
+  instance instead; SDK selection does not select credentials or the target pin.
 - Never commit secrets or log them.
 - Required settings in the selected Flow environment file:
 

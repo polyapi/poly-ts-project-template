@@ -68,6 +68,22 @@ Kickstart saves it automatically; for manual setup, follow
 [pin the target environment](../../../docs/SETUP.md#pin-the-target-environment).
 The pin verifies your connection; it does not switch credentials.
 
+**Align the SDK with your instance before continuing.** Kickstart does this
+during project creation. For a manual or older checkout pointing to
+`https://na1.polyapi.io`, run these commands from the project root:
+
+```bash
+pnpm --filter workflows add polyapi@na1
+pnpm workflows exec poly setup
+pnpm workflows exec poly generate
+```
+
+Use the [matching SDK tag](../../../docs/SETUP.md#align-the-sdk-with-your-polyapi-instance)
+for another instance (`develop` for `dev`, or `na2` / `eu1`). Repeat SDK
+alignment if Poly later reports a version mismatch. Decline its npm-based
+update prompt and update with pnpm instead. The tag selects the SDK release;
+setup selects the connection, and `TARGET_ENV_ID` verifies that connection.
+
 This tutorial assumes you are using `example` as your namespace in
 `workflows/dev.env`. **Check this setting in the file**, rather than entering it
 as a terminal command:
