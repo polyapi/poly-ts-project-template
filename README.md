@@ -50,7 +50,10 @@ git clone git@github.com:polyapi/poly-ts-project-template.git && ./poly-ts-proje
 
 Requires GitHub SSH access to the template and skills repositories, Git,
 Node.js, pnpm, and the VS Code `code` command. GitHub CLI (`gh`) is not required.
-Kickstart configures PolyAPI, builds Flow, and opens the new project in VS Code.
+Kickstart configures PolyAPI, saves the verified environment ID as
+`TARGET_ENV_ID`, builds Flow, and opens the new project in VS Code.
+It installs general, common, and TypeScript skills into `.agents/skills/`,
+including the dedicated `api-function-training` skill.
 
 ### Manual setup
 
@@ -87,24 +90,38 @@ Create a local environment file from the sample:
 cp workflows/dev.env.example workflows/dev.env
 ```
 
-Set placeholder values in `workflows/dev.env`, then run Flow with `ENVPATH`:
-
-```bash
-ENVPATH=workflows/dev.env pnpm workflows push --dry-run
-```
-
-Keep the project namespace in your environment file:
+Keep the project namespace and target environment pin in your environment file:
 
 ```env
 POLYAPI_NAMESPACE=mycustomer
+TARGET_ENV_ID=replace-with-environment-id
 ```
 
 Flow reuses the base URL and API key saved by `pnpm workflows exec poly setup`.
 You only need to add `BASE_URL` and `API_KEY` to the selected environment file
 if you want to override that saved connection, for example for a different
 environment selected through `ENVPATH`.
-When copying a sample environment file, remove its `BASE_URL` and `API_KEY`
-entries if you want to use the saved connection.
+
+For manual setup or an existing project, obtain the ID from your configured
+connection:
+
+```bash
+pnpm flow target-env
+```
+
+Copy the printed `TARGET_ENV_ID=<id>` into the selected environment file after
+checking it is the intended target. Kickstart does this automatically. Flow
+checks the file's pin against authenticated `GET /whoami` before remote commands,
+including deployment dry runs, training, deletion previews, and logs. A
+mismatched key is rejected even when both environments use the same base URL.
+Exporting a pin in the shell does not replace the file's pin. Offline training
+dry runs and help do not need a pin or connection.
+
+Once the values in `workflows/dev.env` are configured, preview deployment:
+
+```bash
+ENVPATH=workflows/dev.env pnpm workflows push --dry-run
+```
 
 Choose one root namespace for locally managed project artefacts. The checked-in
 template uses `example`; replace it consistently when adopting the template.
@@ -176,8 +193,8 @@ ENVPATH=workflows/dev.env RUN_MUTATING_INTEGRATION=true pnpm workflows test:inte
 pnpm workflows test:all
 pnpm workflows push
 pnpm workflows push:dry-run
-pnpm flow train:openapi
-pnpm flow delete:content --dry-run
+pnpm flow train-openapi
+pnpm flow delete-content --dry-run
 pnpm flow logs <function-id>
 ```
 
@@ -206,8 +223,8 @@ reference.
 Flow also provides OpenAPI training, scoped content deletion, and function logs:
 
 ```bash
-pnpm flow train:openapi designs/ --context 'demo.apis.{file}'
-pnpm flow delete:content --type api --context demo.apis --dry-run
+pnpm flow train-openapi designs/ --context 'demo.apis.{file}'
+pnpm flow delete-content --types api-functions,schemas --context demo.apis
 pnpm flow logs <function-id> --keyword error
 ```
 
@@ -224,22 +241,41 @@ Put upstream specs under `designs/` or a workflow-local `artefacts/specs/`
 folder, then run:
 
 ```bash
-pnpm flow train:openapi
+pnpm flow train-openapi
 ```
 
 The script prompts for a spec file or folder and a PolyAPI context. Use `{file}`
 in the context when each spec should train under a context based on its file
 name.
 
-You can also pass the spec path and `--context` directly. Training accepts
-OpenAPI 3 and Swagger 2 in JSON or YAML, writes generated `*.poly-model.json`
-files beside the source specs, trains them, and regenerates the SDK. Use
-`--dry-run` to preview specs and contexts without writing or training.
+You can also pass the spec path and `--context` directly. Add repeatable
+`--operation-id ID` options to train only selected original operations and their
+required schemas. Descriptions are converted from HTML to readable plain text;
+the source specification stays unchanged.
+
+Use `--generate-only` to review a generated `*.poly.json` before training it with
+`pnpm flow train-model <model-file>`. Replacing a model requires
+`--overwrite-model`. `--disable-ai`, `--rename FROM TO`, `--skip-generate`, and
+`--dry-run` provide metadata, generation, and preview controls.
+
+Preview resources for deletion:
+
+```bash
+pnpm flow delete-content --types api-functions,schemas --context demo.apis
+```
+
+This selects the exact context by default; add
+`--include-children` for descendants and `--apply` for confirmed deletion.
+Every deletion is verified. Existing colon command aliases remain supported.
+See the [Flow CLI reference](cli/README.md#openapi-training) for details.
 
 ## Agent Skills
 
-This template does not include agent skills. Bring relevant skills into
-`.agents/skills/` from:
+Kickstart installs the general, common, and TypeScript skill folders into
+`.agents/skills/`, including `api-function-training` for OpenAPI/Swagger training.
+It requires that skill to be available on `poly-skills/main`.
+
+For manual setup, bring relevant skills into `.agents/skills/` from:
 
 <https://github.com/polyapi/poly-skills>
 

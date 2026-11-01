@@ -12,6 +12,7 @@ import {
   parseMaintenanceArgs,
   selectResources,
   trainOpenApi,
+  trainSavedModel,
 } from './maintenance';
 
 function fixture(t: TestContext) {
@@ -39,17 +40,30 @@ function fixture(t: TestContext) {
   const output: string[] = [];
   const calls: string[][] = [];
   const removed: string[] = [];
+  const trained: Record<
+    string,
+    { id: string; name: string; context: string }[]
+  > = {};
   const runtime: MaintenanceRuntime = {
     workspaceRoot: root,
     invocationDirectory: root,
     prompt: async () => 'DELETE',
     print: message => output.push(message),
-    list: async () => [
-      { id: 'one', context: 'demo.apis', name: 'one' },
-      { id: 'two', context: 'demo.apis.child', name: 'two' },
-    ],
+    list: async type =>
+      trained[type] ?? [
+        { id: 'one', context: 'demo.apis', name: 'one' },
+        { id: 'two', context: 'demo.apis.child', name: 'two' },
+      ],
     remove: async (_type, id) => {
       removed.push(id);
+    },
+    detail: async () => null,
+    upsert: async (type, resource) => {
+      trained[type] ??= [];
+      trained[type].push({
+        ...resource,
+        id: `${type}-${trained[type]?.length ?? 0}`,
+      });
     },
     logs: async () => '{"logs":[]}',
     runPoly(args) {
@@ -58,8 +72,38 @@ function fixture(t: TestContext) {
         const context = args[args.indexOf('--context') + 1];
         fs.writeFileSync(
           args[3],
-          JSON.stringify({ functions: [{ name: 'fetch', context }] })
+          JSON.stringify({
+            functions: [
+              {
+                name: 'fetch',
+                context,
+                description: 'Fetch',
+                arguments: [],
+                source: {
+                  auth: { type: 'noauth' },
+                  body: { mode: 'empty' },
+                  url: '{{hostUrl}}/test',
+                  method: 'GET',
+                },
+              },
+            ],
+          })
         );
+      }
+      if (args[0] === 'model' && args[1] === 'train') {
+        const model = JSON.parse(fs.readFileSync(args[2], 'utf8'));
+        for (const [kind, type] of [
+          ['functions', 'api'],
+          ['schemas', 'schema'],
+          ['webhooks', 'webhook'],
+        ]) {
+          trained[type] = (model[kind] ?? []).map(
+            (resource: { name: string; context: string }, index: number) => ({
+              ...resource,
+              id: `${type}-${index}`,
+            })
+          );
+        }
       }
     },
     convertSwagger(input, outputFile) {
@@ -143,20 +187,36 @@ test('deletion dry run previews matches without prompting or writing', async t =
     f.runtime
   );
   assert.deepEqual(f.removed, []);
-  assert.match(f.output.join('\n'), /2 matching api/);
+  assert.match(f.output.join('\n'), /1 resource/);
 });
 
 test('deletion requires exact DELETE confirmation and rejects foreign scopes before listing', async t => {
   const f = fixture(t);
   f.runtime.prompt = async () => 'yes';
   await deleteContent(
-    args('delete:content', '--type', 'apis', '--context', 'demo.apis'),
+    args(
+      'delete:content',
+      '--type',
+      'apis',
+      '--context',
+      'demo.apis',
+      '--apply',
+      '--include-children'
+    ),
     f.runtime
   );
   assert.deepEqual(f.removed, []);
   f.runtime.prompt = async () => 'DELETE';
   await deleteContent(
-    args('delete:content', '--type', 'api', '--context', 'demo.apis'),
+    args(
+      'delete:content',
+      '--type',
+      'api',
+      '--context',
+      'demo.apis',
+      '--apply',
+      '--include-children'
+    ),
     f.runtime
   );
   assert.deepEqual(f.removed, ['one', 'two']);
@@ -180,7 +240,15 @@ test('a failed delete stops further deletion', async t => {
   };
   await assert.rejects(
     deleteContent(
-      args('delete:content', '--type', 'api', '--context', 'demo.apis'),
+      args(
+        'delete:content',
+        '--type',
+        'api',
+        '--context',
+        'demo.apis',
+        '--apply',
+        '--include-children'
+      ),
       f.runtime
     ),
     /403/
@@ -262,6 +330,11 @@ test('resource requests use the shared authenticated client and supported deleti
   const requests: Request[] = [];
   t.mock.method(globalThis, 'fetch', async (request: Request) => {
     requests.push(request);
+    if (
+      request.method === 'GET' &&
+      new URL(request.url).pathname.endsWith('/resource%20id')
+    )
+      return new Response(null, { status: 404 });
     return request.method === 'DELETE'
       ? new Response(null, { status: 204 })
       : new Response('[]', { headers: { 'Content-Type': 'application/json' } });
@@ -278,7 +351,7 @@ test('resource requests use the shared authenticated client and supported deleti
   ] as const) {
     await runtime.list(type);
     await runtime.remove(type, 'resource id');
-    const [get, remove] = requests.slice(-2);
+    const [get, remove] = requests.slice(-3);
     assert.equal(get.method, 'GET');
     assert.equal(new URL(get.url).pathname, endpoint);
     assert.equal(remove.method, 'DELETE');
@@ -306,10 +379,8 @@ test('training supports JSON and YAML, file contexts, model output, and SDK rege
     ['demo.apis.orders', 'demo.apis.weather']
   );
   assert.deepEqual(f.calls[f.calls.length - 1], ['generate']);
-  assert.equal(f.calls.filter(call => call[1] === 'train').length, 2);
-  assert.ok(
-    fs.existsSync(path.join(f.root, 'designs/weather.poly-model.json'))
-  );
+  assert.equal(f.calls.filter(call => call[1] === 'generate').length, 2);
+  assert.ok(fs.existsSync(path.join(f.root, 'designs/weather.poly.json')));
   assert.ok(
     !fs
       .readdirSync(path.join(f.root, 'designs'))
@@ -337,14 +408,20 @@ test('Swagger 2 conversion happens before generation and dry run makes no change
 test('failed generation preserves prior models, cleans temporary files, and does not train', async t => {
   const f = fixture(t);
   const file = f.spec('weather.json');
-  const model = f.spec('weather.poly-model.json', '{"previous":true}');
+  const model = f.spec('weather.poly.json', '{"previous":true}');
   f.runtime.runPoly = call => {
     f.calls.push(call);
     throw new Error('generation failed');
   };
   await assert.rejects(
     trainOpenApi(
-      args('train:openapi', file, '--context', 'demo.weather'),
+      args(
+        'train:openapi',
+        file,
+        '--context',
+        'demo.weather',
+        '--overwrite-model'
+      ),
       f.runtime
     ),
     /generation failed/
@@ -370,4 +447,213 @@ test('training fails if the SDK exits without generating a model', async t => {
     /did not generate/
   );
   assert.equal(f.calls.length, 1);
+});
+
+test('training rejects a partial SDK failure even when the SDK exits successfully', async t => {
+  const f = fixture(t);
+  const file = f.spec('weather.json');
+  f.runtime.list = async () => [];
+  await assert.rejects(
+    trainOpenApi(
+      args('train:openapi', file, '--context', 'demo.weather'),
+      f.runtime
+    ),
+    /Training incomplete; missing api resources: demo.weather.fetch/
+  );
+  assert.deepEqual(
+    f.calls.map(call => call.slice(0, 2)),
+    [['model', 'generate']]
+  );
+});
+
+test('canonical commands, aliases and repeatable operation/rename options share one parser', () => {
+  const parsed = args(
+    'train-openapi',
+    'spec.json',
+    '--operation-id',
+    'one',
+    '--operation-id',
+    'two',
+    '--rename',
+    'old',
+    'new',
+    '--rename',
+    'before',
+    'after',
+    '--disable-ai'
+  );
+  assert.deepEqual(parsed.operationIds, ['one', 'two']);
+  assert.deepEqual(parsed.renames, [
+    ['old', 'new'],
+    ['before', 'after'],
+  ]);
+  assert.equal(args('train:openapi').command, 'train-openapi');
+  assert.equal(args('delete:content').command, 'delete-content');
+  assert.equal(args('delete-content').dryRun, true);
+  assert.throws(
+    () => args('train-openapi', '--rename', 'one'),
+    /requires FROM TO/
+  );
+  assert.throws(
+    () => args('delete-content', '--apply', '--dry-run'),
+    /cannot be combined/
+  );
+});
+
+test('deletion defaults to preview and exact context; multiple types require explicit apply', async t => {
+  const f = fixture(t);
+  f.runtime.prompt = async () => {
+    throw Error('must not prompt');
+  };
+  await deleteContent(
+    args(
+      'delete-content',
+      '--types',
+      'api-functions,schemas',
+      '--context',
+      'demo.apis'
+    ),
+    f.runtime
+  );
+  assert.equal(f.removed.length, 0);
+  assert.match(
+    f.output.join('\n'),
+    /2 resource\(s\) selected in exact context/
+  );
+  f.runtime.prompt = async () => 'DELETE';
+  await deleteContent(
+    args(
+      'delete-content',
+      '--types',
+      'api-functions,schemas',
+      '--context',
+      'demo.apis',
+      '--apply'
+    ),
+    f.runtime
+  );
+  assert.deepEqual(f.removed, ['one', 'one']);
+});
+
+test('deletion readback must be 404 and a successful DELETE alone is insufficient', async t => {
+  const f = fixture(t);
+  t.mock.method(globalThis, 'fetch', async (request: Request) =>
+    request.method === 'DELETE'
+      ? new Response(null, { status: 204 })
+      : new Response('{}', { status: 200 })
+  );
+  await assert.rejects(
+    createMaintenanceRuntime(f.root, f.root).remove('api', 'test'),
+    /Deletion could not be verified/
+  );
+});
+
+test('jobs and triggers are scoped by every destination function rather than by their names', async t => {
+  const f = fixture(t);
+  f.runtime.list = async type =>
+    type === 'server'
+      ? [
+          { id: 'owned', context: 'demo.apis' },
+          { id: 'foreign', context: 'other.apis' },
+        ]
+      : [{ id: 'safe' }, { id: 'shared' }];
+  f.runtime.detail = async (_type, id) => ({
+    functions: [
+      { id: 'owned' },
+      ...(id === 'shared' ? [{ id: 'foreign' }] : []),
+    ],
+  });
+  await deleteContent(
+    args(
+      'delete-content',
+      '--types',
+      'jobs',
+      '--context',
+      'demo.apis',
+      '--apply'
+    ),
+    f.runtime
+  );
+  assert.deepEqual(f.removed, ['safe']);
+});
+
+test('generate-only saves a clean model, refuses overwrites and supports saved-model retry without regeneration', async t => {
+  const f = fixture(t);
+  const file = f.spec('weather.json');
+  let writes = 0;
+  const upsert = f.runtime.upsert;
+  f.runtime.upsert = async (...values) => {
+    writes++;
+    await upsert(...values);
+  };
+  await trainOpenApi(
+    args(
+      'train-openapi',
+      file,
+      '--context',
+      'demo.weather',
+      '--generate-only',
+      '--disable-ai'
+    ),
+    f.runtime
+  );
+  assert.equal(writes, 0);
+  assert.ok(f.calls[0].includes('--disable-ai'));
+  const model = path.join(f.root, 'designs/weather.poly.json');
+  const calls = f.calls.length;
+  await assert.rejects(
+    trainOpenApi(
+      args('train-openapi', file, '--context', 'demo.weather'),
+      f.runtime
+    ),
+    /Model already exists/
+  );
+  assert.equal(f.calls.length, calls);
+  const legacy = path.join(f.root, 'designs/weather.poly-model.json');
+  fs.renameSync(model, legacy);
+  await trainSavedModel(
+    args('train-model', legacy, '--skip-generate'),
+    f.runtime
+  );
+  assert.equal(writes, 1);
+  assert.equal(f.calls.length, calls);
+});
+
+test('cross-file duplicate identities fail before writes or saved models', async t => {
+  const f = fixture(t);
+  f.spec('first.json');
+  f.spec('nested/second.yaml', 'openapi: 3.0.3\npaths: {}');
+  f.runtime.upsert = async () => {
+    throw Error('must not write');
+  };
+  await assert.rejects(
+    trainOpenApi(
+      args('train-openapi', 'designs', '--context', 'demo.same'),
+      f.runtime
+    ),
+    /Duplicate model identity/
+  );
+  assert.equal(
+    fs.existsSync(path.join(f.root, 'designs/first.poly.json')),
+    false
+  );
+});
+
+test('a failed training write stops later batches and SDK regeneration', async t => {
+  const f = fixture(t);
+  const file = f.spec('weather.json');
+  f.runtime.upsert = async () => {
+    throw Error('HTTP 403');
+  };
+  await assert.rejects(
+    trainOpenApi(
+      args('train-openapi', file, '--context', 'demo.weather'),
+      f.runtime
+    ),
+    /HTTP 403/
+  );
+  assert.deepEqual(
+    f.calls.map(call => call.slice(0, 2)),
+    [['model', 'generate']]
+  );
 });

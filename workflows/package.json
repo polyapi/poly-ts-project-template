@@ -13,7 +13,10 @@
     "test:all": "ava && ava --config ava.config.integration.cjs",
     "train:openapi": "pnpm --filter flow-cli run train:openapi",
     "delete:content": "pnpm --filter flow-cli run delete:content",
-    "logs": "pnpm --filter flow-cli run logs"
+    "logs": "pnpm --filter flow-cli run logs",
+    "train-openapi": "pnpm --filter flow-cli run train-openapi",
+    "train-model": "pnpm --filter flow-cli run train-model",
+    "delete-content": "pnpm --filter flow-cli run delete-content"
   },
   "ava": {
     "extensions": [

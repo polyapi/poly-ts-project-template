@@ -41,7 +41,12 @@ paths for compatibility, but new files must use `artefacts/`.
 - Keep real environment files out of Git.
 - Commit only `*.env.example` files with placeholder values.
 - Use `ENVPATH` when running Flow against a specific environment file.
-- Required values are `POLYAPI_NAMESPACE`, `BASE_URL`, and `API_KEY`.
+- Keep `POLYAPI_NAMESPACE` and the verified `TARGET_ENV_ID` in the selected file.
+- Flow uses the workflow SDK's saved setup for its connection. `BASE_URL` and
+  `API_KEY` are optional overrides; SDK and older `POLYAPI_*` aliases also work.
+- Kickstart saves the target pin automatically. For manual setup, obtain it
+  with `pnpm flow target-env`. Remote Flow commands verify it using `/whoami`;
+  shell exports and confirmation bypasses cannot replace this file's pin.
 - Do not log environment values that may contain secrets.
 
 Example:

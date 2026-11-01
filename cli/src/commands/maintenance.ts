@@ -8,6 +8,15 @@ import { parse as parseYaml } from 'yaml';
 import { createPolyApiClient, getBaseUrl } from '../utils/apiClient';
 import { validateNamespace } from '../utils/namespace';
 import { getPolyGenerateEnvironment } from '../utils/polyGenerateEnvironment';
+import { cleanDescriptions, selectOperations } from './openApiPreparation';
+import { normalizeOpenApiSchemaNames } from './openApiSchemaNames';
+import {
+  type ModelResource,
+  prepareModel,
+  schemaLayers,
+  type TrainingModel,
+  validateModel,
+} from './trainingModel';
 
 const endpoints = {
   api: '/functions/api',
@@ -17,6 +26,10 @@ const endpoints = {
   trigger: '/triggers',
   table: '/tables',
   job: '/jobs',
+  client: '/functions/client',
+  server: '/functions/server',
+  ai: '/functions/ai',
+  subscription: '/subscriptions/graphql',
 } as const;
 
 export type ResourceType = keyof typeof endpoints;
@@ -26,12 +39,20 @@ export interface Resource {
   name?: string;
 }
 export interface MaintenanceArgs {
-  command: 'train:openapi' | 'delete:content' | 'logs';
+  command: 'train-openapi' | 'train-model' | 'delete-content' | 'logs';
   help: boolean;
   dryRun: boolean;
   target?: string;
   context?: string;
   type?: string;
+  apply: boolean;
+  includeChildren: boolean;
+  generateOnly: boolean;
+  overwriteModel: boolean;
+  skipGenerate: boolean;
+  disableAi: boolean;
+  operationIds: string[];
+  renames: string[][];
   logsPage: number;
   logsPageSize: number;
   limit: number;
@@ -45,6 +66,11 @@ export interface MaintenanceRuntime {
   print(message: string): void;
   list(type: ResourceType): Promise<unknown>;
   remove(type: ResourceType, id: string): Promise<void>;
+  detail(type: ResourceType, id: string): Promise<Record<string, any> | null>;
+  upsert(
+    type: 'api' | 'schema' | 'webhook',
+    resource: ModelResource
+  ): Promise<void>;
   logs(id: string, options: MaintenanceArgs): Promise<string>;
   runPoly(args: string[]): void;
   convertSwagger(input: string, output: string): void;
@@ -58,38 +84,86 @@ function positiveInteger(name: string, value: string): number {
 }
 
 export function parseMaintenanceArgs(argv: string[]): MaintenanceArgs | null {
-  const [command, ...rest] = argv.filter(argument => argument !== '--');
-  if (!['train:openapi', 'delete:content', 'logs'].includes(command))
+  const [provided, ...rest] = argv.filter(argument => argument !== '--');
+  const aliases: Record<string, MaintenanceArgs['command']> = {
+    'train:openapi': 'train-openapi',
+    'delete:content': 'delete-content',
+  };
+  const command = aliases[provided] ?? provided;
+  if (
+    !['train-openapi', 'train-model', 'delete-content', 'logs'].includes(
+      command
+    )
+  )
     return null;
+  const input: string[] = [];
+  for (let i = 0; i < rest.length; i += 1) {
+    if (rest[i] === '--rename') {
+      const pair = rest.slice(i + 1, i + 3);
+      if (pair.length !== 2 || pair.some(value => value.startsWith('--')))
+        throw new Error('--rename requires FROM TO.');
+      if (!pair[0] || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(pair[1]))
+        throw new Error(
+          '--rename requires a nonempty FROM and an identifier TO.'
+        );
+      input.push('--rename', JSON.stringify(pair));
+      i += 2;
+    } else input.push(rest[i]);
+  }
   const options: Record<
     string,
-    { type: 'string' | 'boolean'; short?: string }
+    { type: 'string' | 'boolean'; short?: string; multiple?: boolean }
   > = {
     help: { type: 'boolean', short: 'h' },
     ...(command === 'logs'
       ? {
-          'logs-page': { type: 'string' },
-          'logs-page-size': { type: 'string' },
-          limit: { type: 'string' },
-          keyword: { type: 'string' },
-          raw: { type: 'boolean' },
+          'logs-page': { type: 'string' as const },
+          'logs-page-size': { type: 'string' as const },
+          limit: { type: 'string' as const },
+          keyword: { type: 'string' as const },
+          raw: { type: 'boolean' as const },
         }
       : {
-          context: { type: 'string' },
-          'dry-run': { type: 'boolean' },
-          ...(command === 'delete:content' ? { type: { type: 'string' } } : {}),
+          'dry-run': { type: 'boolean' as const },
+          ...(command === 'delete-content'
+            ? {
+                context: { type: 'string' as const },
+                types: { type: 'string' as const },
+                type: { type: 'string' as const },
+                apply: { type: 'boolean' as const },
+                'include-children': { type: 'boolean' as const },
+              }
+            : {
+                'skip-generate': { type: 'boolean' as const },
+                ...(command === 'train-openapi'
+                  ? {
+                      context: { type: 'string' as const },
+                      'generate-only': { type: 'boolean' as const },
+                      'overwrite-model': { type: 'boolean' as const },
+                      'disable-ai': { type: 'boolean' as const },
+                      'operation-id': {
+                        type: 'string' as const,
+                        multiple: true,
+                      },
+                      rename: { type: 'string' as const, multiple: true },
+                    }
+                  : {}),
+              }),
         }),
   };
   const { values, positionals } = parseArgs({
-    args: rest,
+    args: input,
     options,
     allowPositionals: true,
   });
-  if (positionals.length > (command === 'delete:content' ? 0 : 1)) {
+  if (positionals.length > (command === 'delete-content' ? 0 : 1))
     throw new Error(
       `Unexpected argument(s) for flow ${command}. Use --help for usage.`
     );
-  }
+  if (values.type && values.types)
+    throw new Error('Use either --type or --types.');
+  if (values.apply && values['dry-run'])
+    throw new Error('--apply and --dry-run cannot be combined.');
   const pageSize = positiveInteger(
     '--logs-page-size',
     String(values['logs-page-size'] ?? '100')
@@ -97,10 +171,22 @@ export function parseMaintenanceArgs(argv: string[]): MaintenanceArgs | null {
   return {
     command: command as MaintenanceArgs['command'],
     help: values.help === true,
-    dryRun: values['dry-run'] === true,
+    dryRun:
+      values['dry-run'] === true ||
+      (command === 'delete-content' && values.apply !== true),
     target: positionals[0],
     context: values.context as string | undefined,
-    type: values.type as string | undefined,
+    type: (values.types ?? values.type) as string | undefined,
+    apply: values.apply === true,
+    includeChildren: values['include-children'] === true,
+    generateOnly: values['generate-only'] === true,
+    overwriteModel: values['overwrite-model'] === true,
+    skipGenerate: values['skip-generate'] === true,
+    disableAi: values['disable-ai'] === true,
+    operationIds: (values['operation-id'] ?? []) as string[],
+    renames: ((values.rename ?? []) as string[]).map(value =>
+      JSON.parse(value)
+    ),
     logsPage: positiveInteger(
       '--logs-page',
       String(values['logs-page'] ?? '1')
@@ -114,20 +200,27 @@ export function parseMaintenanceArgs(argv: string[]): MaintenanceArgs | null {
 
 export function maintenanceHelp(command: MaintenanceArgs['command']): string {
   switch (command) {
-    case 'train:openapi':
-      return `Usage: flow train:openapi [spec-file-or-folder] [--context namespace.apis.{file}] [--dry-run]
-Prompts for missing inputs. Accepts OpenAPI 3 or Swagger 2 JSON/YAML.
-Creates model JSON beside each source spec, trains it, then regenerates the SDK.
---dry-run previews specs and contexts without writing files or calling PolyAPI.`;
-    case 'delete:content':
-      return `Usage: flow delete:content [--type api|schema|variable|webhook|trigger|table|job] [--context namespace.prefix] [--dry-run]
-Prompts for missing inputs. Matches the exact context and its dot-separated children.
-Previews matching resources and requires typing DELETE before deleting.
---dry-run lists matches without deleting. Context must belong to a configured namespace.`;
+    case 'train-openapi':
+      return `Usage: flow train-openapi [spec-file-or-folder] --context namespace.apis.{file}
+Options: --operation-id ID (repeatable), --disable-ai, --rename FROM TO (repeatable),
+  --generate-only, --overwrite-model, --skip-generate, --dry-run
+Accepts OpenAPI 3/Swagger 2 JSON/YAML; directories are searched recursively.
+Operation selection retains referenced schemas. Descriptions become plain text.
+Writes *.poly.json models; existing models require --overwrite-model.
+Alias: train:openapi. Dry runs do not call PolyAPI or write models.`;
+    case 'train-model':
+      return `Usage: flow train-model [model-file] [--skip-generate] [--dry-run]
+Validate and train a saved *.poly.json or legacy *.poly-model.json, then regenerate SDK.`;
+    case 'delete-content':
+      return `Usage: flow delete-content --types api-functions,schemas --context namespace.prefix
+Options: --include-children, --apply, --dry-run
+Preview only by default, exact context only. --apply requires typing DELETE.
+Every deletion is verified with a 404 readback. --type remains an alias for --types.
+Types: api-functions,client-functions,server-functions,ai-functions,schemas,variables,webhooks,triggers,tables,jobs,subscriptions.
+Alias: delete:content. Singular type names remain supported.`;
     case 'logs':
       return `Usage: flow logs [function-id] [--logs-page 1] [--logs-page-size 100] [--keyword error] [--limit 100] [--raw]
-Prompts for a missing function ID. --limit defaults to --logs-page-size.
-Uses the selected Flow environment; --raw prints the original response.`;
+Prompts for a missing function ID; the log limit defaults to the page size.`;
   }
 }
 
@@ -136,6 +229,18 @@ export function createMaintenanceRuntime(
   invocationDirectory: string
 ): MaintenanceRuntime {
   const client = createPolyApiClient();
+  // The checked-in REST types omit the AI-function routes already used by Flow.
+  // Broaden only the metadata methods; retain this client's authentication/OTP middleware.
+  const metadata = client as {
+    GET(
+      path: string,
+      options?: Record<string, any>
+    ): Promise<{ data?: any; error?: unknown; response: Response }>;
+    DELETE(
+      path: string,
+      options: Record<string, any>
+    ): Promise<{ error?: unknown; response: Response }>;
+  };
   const workflows = path.join(workspaceRoot, 'workflows');
   const run = (args: string[]) => {
     // Keep spec paths and contexts as arguments, including on Windows.
@@ -188,20 +293,50 @@ export function createMaintenanceRuntime(
     },
     print: message => process.stdout.write(`${message}\n`),
     async list(type) {
-      const { data, error, response } = await client.GET(endpoints[type]);
+      const { data, error, response } = await metadata.GET(endpoints[type], {});
       if (error !== undefined || !response.ok)
         throw new Error(`Listing ${type} failed (HTTP ${response.status}).`);
       return data;
     },
+    async detail(type, id) {
+      const endpoint =
+        `${endpoints[type]}/{id}` as `${(typeof endpoints)[ResourceType]}/{id}`;
+      const { data, error, response } = await metadata.GET(endpoint, {
+        params: { path: { id } },
+      });
+      if (response.status === 404) return null;
+      if (error !== undefined || !response.ok)
+        throw new Error(
+          `Reading ${type} ${id} failed (HTTP ${response.status}).`
+        );
+      return data as Record<string, any>;
+    },
+    async upsert(type, resource) {
+      const endpoint = endpoints[type];
+      const { error, response } = await client.PUT(endpoint, {
+        body: resource as any,
+      });
+      if (error !== undefined || !response.ok)
+        throw new Error(
+          `Training ${type} ${resource.context}.${resource.name} failed (HTTP ${response.status}).`
+        );
+    },
     async remove(type, id) {
       const endpoint =
         `${endpoints[type]}/{id}` as `${(typeof endpoints)[ResourceType]}/{id}`;
-      const { error, response } = await client.DELETE(endpoint, {
+      const { error, response } = await metadata.DELETE(endpoint, {
         params: { path: { id } },
       });
       if (error !== undefined || !response.ok)
         throw new Error(
           `Deleting ${type} ${id} failed (HTTP ${response.status}).`
+        );
+      const readback = await metadata.GET(endpoint, {
+        params: { path: { id } },
+      });
+      if (readback.response.status !== 404)
+        throw new Error(
+          `Deletion could not be verified for ${type} ${id} (HTTP ${readback.response.status}); inspect before retrying.`
         );
     },
     async logs(id, options) {
@@ -281,40 +416,127 @@ export function selectResources(data: unknown, context: string): Resource[] {
   );
 }
 
+const typeAliases: Record<string, ResourceType> = {
+  'api-functions': 'api',
+  'client-functions': 'client',
+  'server-functions': 'server',
+  'ai-functions': 'ai',
+  schemas: 'schema',
+  variables: 'variable',
+  webhooks: 'webhook',
+  triggers: 'trigger',
+  tables: 'table',
+  jobs: 'job',
+  subscriptions: 'subscription',
+};
+function resourceRecords(data: any): Record<string, any>[] {
+  if (Array.isArray(data)) return data.flatMap(resourceRecords);
+  if (!data || typeof data !== 'object') return [];
+  if (typeof data.id === 'string') return [data];
+  return Object.values(data).flatMap(resourceRecords);
+}
+
 export async function deleteContent(
   args: MaintenanceArgs,
   runtime: MaintenanceRuntime
 ): Promise<void> {
-  const requestedType = (
+  const requested =
     args.type ??
     (await runtime.prompt(
-      'Resource type (api/schema/variable/webhook/trigger/table/job):'
-    ))
-  ).toLowerCase();
-  const type = requestedType.replace(/s$/, '') as ResourceType;
-  if (!Object.keys(endpoints).includes(type))
-    throw new Error(`Unsupported resource type: ${requestedType}`);
+      'Resource types (api-functions,schemas,variables,webhooks,triggers,tables,jobs):'
+    ));
+  const types = [
+    ...new Set(
+      requested.split(',').map(value => {
+        const key = value.trim().toLowerCase();
+        const type =
+          typeAliases[key] ?? (key.replace(/s$/, '') as ResourceType);
+        if (!Object.keys(endpoints).includes(type))
+          throw new Error(`Unsupported resource type: ${key}`);
+        return type;
+      })
+    ),
+  ];
   const context = (
-    args.context ?? (await runtime.prompt('Context prefix:'))
+    args.context ?? (await runtime.prompt('Context to delete:'))
   ).trim();
   validateNamespace(context, 'deletion scope', context);
-  const resources = selectResources(await runtime.list(type), context);
-  if (resources.length === 0) {
-    runtime.print(`No ${type} resources found under context: ${context}`);
+  if (!/^[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*$/.test(context))
+    throw new Error('Deletion context must contain dotted identifiers.');
+  const matches = (value: string) =>
+    value === context ||
+    (args.includeChildren && value.startsWith(`${context}.`));
+  const servers = types.some(type => type === 'job' || type === 'trigger')
+    ? resourceRecords(await runtime.list('server'))
+    : [];
+  const serverContexts = new Map(servers.map(item => [item.id, item.context]));
+  const plan: { type: ResourceType; item: Resource }[] = [];
+  for (const type of types) {
+    const data = await runtime.list(type);
+    if (type === 'job' || type === 'trigger') {
+      for (const record of resourceRecords(data)) {
+        const detail = await runtime.detail(type, record.id);
+        if (!detail)
+          throw new Error(`Selected ${type} disappeared before preview.`);
+        const ids =
+          type === 'job'
+            ? (detail.functions ?? []).map((item: any) => item.id)
+            : [detail.serverFunctionId];
+        if (
+          ids.length &&
+          ids.every(
+            (id: string) =>
+              typeof serverContexts.get(id) === 'string' &&
+              matches(serverContexts.get(id))
+          )
+        )
+          plan.push({
+            type,
+            item: { id: record.id, context, name: record.name },
+          });
+      }
+    } else {
+      for (const item of selectResources(data, context).filter(item =>
+        matches(item.context)
+      ))
+        plan.push({ type, item });
+    }
+  }
+  const priority: ResourceType[] = [
+    'trigger',
+    'job',
+    'subscription',
+    'webhook',
+    'ai',
+    'server',
+    'client',
+    'api',
+    'schema',
+    'variable',
+    'table',
+  ];
+  plan.sort(
+    (a, b) =>
+      priority.indexOf(a.type) - priority.indexOf(b.type) ||
+      a.item.id.localeCompare(b.item.id)
+  );
+  runtime.print(
+    `${plan.length} resource(s) selected${args.includeChildren ? ' including child contexts' : ' in exact context'}:`
+  );
+  for (const { type, item } of plan)
+    runtime.print(
+      `  ${type} ${item.id} ${item.context}.${item.name ?? '(unnamed)'}`
+    );
+  if (!args.apply || args.dryRun) {
+    runtime.print('Preview only: no resources deleted. Use --apply to delete.');
     return;
   }
-  runtime.print(`Found ${resources.length} matching ${type} resource(s):`);
-  for (const item of resources)
-    runtime.print(`  ${item.id}  ${item.context}.${item.name ?? '(unnamed)'}`);
-  if (args.dryRun) {
-    runtime.print('Dry run: no resources deleted.');
-    return;
-  }
+  if (!plan.length) return;
   if ((await runtime.prompt('Type DELETE to confirm deletion:')) !== 'DELETE') {
     runtime.print('Aborted.');
     return;
   }
-  for (const item of resources) {
+  for (const { type, item } of plan) {
     await runtime.remove(type, item.id);
     runtime.print(`Deleted ${type}: ${item.id}`);
   }
@@ -432,7 +654,12 @@ function readSpec(file: string): Record<string, unknown> | null {
     throw new Error('OpenAPI specs must be JSON or YAML files.');
   }
   const text = fs.readFileSync(file, 'utf8');
-  const document = /\.ya?ml$/i.test(file) ? parseYaml(text) : JSON.parse(text);
+  let document: any;
+  try {
+    document = /\.ya?ml$/i.test(file) ? parseYaml(text) : JSON.parse(text);
+  } catch {
+    throw new Error(`Invalid JSON/YAML specification: ${file}`);
+  }
   if (
     document &&
     typeof document === 'object' &&
@@ -441,6 +668,87 @@ function readSpec(file: string): Record<string, unknown> | null {
     return document;
   }
   return null;
+}
+
+function readModel(file: string): unknown {
+  try {
+    return JSON.parse(fs.readFileSync(file, 'utf8'));
+  } catch {
+    throw new Error(`Unable to read a valid Poly model: ${file}`);
+  }
+}
+
+async function verifyTraining(
+  model: TrainingModel,
+  runtime: MaintenanceRuntime
+): Promise<void> {
+  for (const [kind, type] of [
+    ['functions', 'api'],
+    ['schemas', 'schema'],
+    ['webhooks', 'webhook'],
+  ] as const) {
+    if (!model[kind].length) continue;
+    const actual = await runtime.list(type);
+    const missing = model[kind].filter(
+      resource =>
+        !selectResources(actual, resource.context).some(
+          item =>
+            item.context === resource.context && item.name === resource.name
+        )
+    );
+    if (missing.length)
+      throw new Error(
+        `Training incomplete; missing ${type} resources: ${missing.map(item => `${item.context}.${item.name}`).join(', ')}`
+      );
+  }
+}
+
+async function trainResources(
+  model: TrainingModel,
+  runtime: MaintenanceRuntime,
+  dryRun: boolean
+): Promise<void> {
+  const batches = [
+    ...schemaLayers(model.schemas).map(items => ({
+      type: 'schema' as const,
+      items,
+    })),
+    { type: 'api' as const, items: model.functions },
+    { type: 'webhook' as const, items: model.webhooks },
+  ];
+  for (const { type, items } of batches) {
+    for (let start = 0; start < items.length; start += 5) {
+      const batch = items.slice(start, start + 5);
+      for (const item of batch)
+        runtime.print(
+          `${dryRun ? 'Would train' : 'Training'} ${type}: ${item.context}.${item.name}`
+        );
+      if (dryRun) continue;
+      // Finish this bounded batch before surfacing an error; never launch later batches on failure.
+      const results = await Promise.allSettled(
+        batch.map(item => runtime.upsert(type, item))
+      );
+      const failure = results.find(
+        (result): result is PromiseRejectedResult =>
+          result.status === 'rejected'
+      );
+      if (failure) throw failure.reason;
+    }
+  }
+  if (!dryRun) await verifyTraining(model, runtime);
+}
+
+export async function trainSavedModel(
+  args: MaintenanceArgs,
+  runtime: MaintenanceRuntime
+): Promise<void> {
+  const file = resolveSpecPath(
+    args.target ?? (await runtime.prompt('Poly model file:')),
+    runtime
+  );
+  const model = prepareModel(readModel(file), []);
+  await trainResources(model, runtime, args.dryRun);
+  if (!args.dryRun && !args.skipGenerate) runtime.runPoly(['generate']);
 }
 
 export async function trainOpenApi(
@@ -453,44 +761,74 @@ export async function trainOpenApi(
     args.context ??
     (await runtime.prompt('PolyAPI context (use {file} for each spec name):'));
   const target = resolveSpecPath(input, runtime);
-  const isDirectory = fs.statSync(target).isDirectory();
-  const candidates = isDirectory
-    ? fs
-        .readdirSync(target, { withFileTypes: true })
-        .filter(
-          entry =>
-            entry.isFile() &&
-            !entry.name.startsWith('.') &&
-            !entry.name.endsWith('.poly-model.json') &&
-            /\.(json|ya?ml)$/i.test(entry.name)
-        )
-        .map(entry => path.join(target, entry.name))
-        .sort()
+  const discover = (directory: string): string[] =>
+    fs
+      .readdirSync(directory, { withFileTypes: true })
+      .filter(entry => !entry.name.startsWith('.'))
+      .flatMap(entry =>
+        entry.isDirectory()
+          ? discover(path.join(directory, entry.name))
+          : entry.isFile() &&
+              /\.(json|ya?ml)$/i.test(entry.name) &&
+              !/\.poly(?:-model)?\.json$/i.test(entry.name)
+            ? [path.join(directory, entry.name)]
+            : []
+      );
+  const candidates = fs.statSync(target).isDirectory()
+    ? discover(target).sort()
     : [target];
   const specs = candidates
     .map(file => ({ file, document: readSpec(file) }))
     .filter(item => item.document !== null);
   if (!specs.length)
     throw new Error('No OpenAPI 3 or Swagger 2 specifications found.');
+  const outputs = new Set<string>();
   const planned = specs.map(({ file, document }) => {
     const name = path.basename(file).replace(/\.(json|ya?ml)$/i, '');
-    const context = pattern.replace(/\{file\}/g, name);
+    const context = pattern.replace(
+      /\{file\}/g,
+      name.replace(/[^A-Za-z0-9_]/g, '_')
+    );
     validateNamespace(context, 'OpenAPI model', name);
+    if (!/^[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*$/.test(context))
+      throw new Error('Training context must contain dotted identifiers.');
+    const model = path.join(path.dirname(file), `${name}.poly.json`);
+    if (outputs.has(model))
+      throw new Error(
+        'Multiple specifications would overwrite the same model file.'
+      );
+    outputs.add(model);
+    if (
+      !args.dryRun &&
+      !args.overwriteModel &&
+      (fs.existsSync(model) ||
+        fs.existsSync(path.join(path.dirname(file), `${name}.poly-model.json`)))
+    )
+      throw new Error(
+        `Model already exists for ${file}; use train-model or --overwrite-model.`
+      );
+    if (!document) throw new Error(`Invalid OpenAPI document: ${file}`);
+    const selected = selectOperations(document, args.operationIds);
+    const normalized = normalizeOpenApiSchemaNames(selected);
+    for (const rename of normalized.renames)
+      runtime.print(`PolyAPI schema name: ${rename}`);
+    runtime.print(
+      `${file} -> ${context}${args.operationIds.length ? ` (operations: ${args.operationIds.join(', ')})` : ''}`
+    );
     return {
       file,
-      document: document as Record<string, unknown>,
+      document: cleanDescriptions(normalized.document),
       context,
-      name,
+      model,
     };
   });
-  for (const { file, context } of planned)
-    runtime.print(`${file} -> ${context}`);
   if (args.dryRun) {
     runtime.print('Dry run: no models written or trained.');
     return;
   }
-  for (const { file, document, context, name } of planned) {
-    const directory = path.dirname(file);
+  const generatedModels: { file: string; model: TrainingModel }[] = [];
+  for (const plan of planned) {
+    const directory = path.dirname(plan.file);
     const temporarySpec = path.join(directory, `.flow-${randomUUID()}.json`);
     const convertedSpec = path.join(
       directory,
@@ -500,15 +838,12 @@ export async function trainOpenApi(
       directory,
       `.flow-${randomUUID()}.model.json`
     );
-    const model = path.join(directory, `${name}.poly-model.json`);
     try {
-      fs.writeFileSync(
-        temporarySpec,
-        `${JSON.stringify(document, null, 2)}\n`,
-        { flag: 'wx' }
-      );
+      fs.writeFileSync(temporarySpec, JSON.stringify(plan.document), {
+        flag: 'wx',
+      });
       let spec = temporarySpec;
-      if (document.swagger === '2.0') {
+      if (plan.document.swagger === '2.0') {
         runtime.convertSwagger(temporarySpec, convertedSpec);
         spec = convertedSpec;
       }
@@ -518,32 +853,51 @@ export async function trainOpenApi(
         spec,
         temporaryModel,
         '--context',
-        context,
+        plan.context,
         '--hostUrlAsArgument',
+        ...(args.disableAi ? ['--disable-ai'] : []),
       ]);
       if (!fs.existsSync(temporaryModel))
-        throw new Error(`Poly did not generate a model for ${file}.`);
-      const generated = JSON.parse(fs.readFileSync(temporaryModel, 'utf8'));
-      let resources = 0;
-      for (const kind of ['functions', 'schemas', 'webhooks']) {
-        for (const resource of generated[kind] ?? []) {
-          validateNamespace(resource.context, kind, resource.name ?? name);
-          resources += 1;
-        }
-      }
-      if (!resources)
-        throw new Error(
-          `Generated model contains no trainable resources: ${file}`
-        );
-      fs.renameSync(temporaryModel, model);
-      runtime.print(`Training ${model}`);
-      runtime.runPoly(['model', 'train', model]);
+        throw new Error(`Poly did not generate a model for ${plan.file}.`);
+      generatedModels.push({
+        file: plan.model,
+        model: prepareModel(readModel(temporaryModel), args.renames),
+      });
     } finally {
-      for (const temporary of [temporarySpec, convertedSpec, temporaryModel])
-        fs.rmSync(temporary, { force: true });
+      for (const file of [temporarySpec, convertedSpec, temporaryModel])
+        fs.rmSync(file, { force: true });
     }
   }
-  runtime.runPoly(['generate']);
+  const combined = validateModel(
+    Object.fromEntries(
+      ['functions', 'schemas', 'webhooks'].map(kind => [
+        kind,
+        generatedModels.flatMap(
+          item => item.model[kind as keyof TrainingModel]
+        ),
+      ])
+    )
+  );
+  for (const { file, model } of generatedModels) {
+    if (!args.overwriteModel && fs.existsSync(file))
+      throw new Error(
+        `Model appeared during generation: ${file}; inspect it before retrying with --overwrite-model.`
+      );
+    const temporary = `${file}.${randomUUID()}.tmp`;
+    try {
+      fs.writeFileSync(temporary, `${JSON.stringify(model, null, 2)}\n`, {
+        flag: 'wx',
+      });
+      fs.renameSync(temporary, file);
+    } finally {
+      fs.rmSync(temporary, { force: true });
+    }
+    runtime.print(`Saved model: ${file}`);
+  }
+  if (!args.generateOnly) {
+    await trainResources(combined, runtime, false);
+    if (!args.skipGenerate) runtime.runPoly(['generate']);
+  }
 }
 
 export async function runMaintenance(
@@ -551,9 +905,11 @@ export async function runMaintenance(
   runtime: MaintenanceRuntime
 ): Promise<void> {
   switch (args.command) {
-    case 'train:openapi':
+    case 'train-openapi':
       return trainOpenApi(args, runtime);
-    case 'delete:content':
+    case 'train-model':
+      return trainSavedModel(args, runtime);
+    case 'delete-content':
       return deleteContent(args, runtime);
     case 'logs':
       return functionLogs(args, runtime);

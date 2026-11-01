@@ -37,6 +37,7 @@ import { bullet, checkMark, heavyRule, logger, thinRule } from "./utils/logger";
 import { printFlowLogo } from "./utils/logo";
 import { printNamespaceBanner } from "./utils/namespace";
 import { getPolyGenerateEnvironment } from "./utils/polyGenerateEnvironment";
+import { enforceTargetEnvironment, fetchRemoteEnvironment } from "./utils/targetEnvironment";
 import {
     validateAiFunctionArtifact,
     validateFunctionArtifact,
@@ -109,8 +110,10 @@ function printRootHelp(): void {
 
 Usage:
   flow push [options]
-  flow train:openapi [spec-file-or-folder] [--context namespace.apis.{file}] [--dry-run]
-  flow delete:content [--type api|schema|variable|webhook|trigger|table|job] [--context namespace.prefix] [--dry-run]
+  flow target-env
+  flow train-openapi [spec-file-or-folder] [--context namespace.apis.{file}] [--operation-id ID] [--dry-run]
+  flow train-model <model-file> [--dry-run]
+  flow delete-content [--types api-functions,schemas] [--context namespace.prefix] [--include-children] [--apply]
   flow logs [function-id] [--keyword error] [--raw]
   flow --help
 
@@ -837,6 +840,22 @@ function printConfig(
 }
 
 async function main(): Promise<void> {
+    if (process.argv[2] === "target-env") {
+        const { values, positionals } = parseNodeArgs({
+            args: process.argv.slice(3),
+            options: { help: { type: "boolean", short: "h" } },
+            allowPositionals: true,
+        });
+        if (positionals.length) throw new Error("target-env does not accept positional arguments.");
+        if (values.help) {
+            process.stdout.write("Read the authenticated environment ID from saved Poly setup or connection overrides. Prints TARGET_ENV_ID=<id>; does not edit files.\n");
+            return;
+        }
+        loadEnv();
+        const { environmentId } = await fetchRemoteEnvironment();
+        process.stdout.write(`TARGET_ENV_ID=${environmentId}\n`);
+        return;
+    }
     const maintenance = parseMaintenanceArgs(process.argv.slice(2));
     if (maintenance) {
         if (maintenance.help) {
@@ -847,6 +866,9 @@ async function main(): Promise<void> {
         const workspaceRoot = findWorkspaceRoot(invocationDirectory);
         process.chdir(path.join(workspaceRoot, "workflows"));
         const envFile = loadEnv();
+        const offlineTrainingPreview = maintenance.dryRun &&
+            ["train-openapi", "train-model"].includes(maintenance.command);
+        if (!offlineTrainingPreview) await enforceTargetEnvironment(envFile);
         if (maintenance.command !== "logs") {
             const preflight = buildDeploymentPreflight(process.cwd(), envFile);
             const safetyArgs = { dryRun: maintenance.dryRun, skipValidationAcknowledged: false };
@@ -882,6 +904,7 @@ async function main(): Promise<void> {
             return;
         }
 
+        await enforceTargetEnvironment(envFile);
         await maybeConfirmBranchEnvFileMatch(projectRoot, preflight, cliArgs);
         cliArgs = await maybePromptForInitialScope(projectRoot, cliArgs);
         await enforceProductionSafeguards(preflight, cliArgs);
@@ -1215,4 +1238,7 @@ async function main(): Promise<void> {
 
 // Run the CLI
 installSignalHandlers();
-main();
+main().catch(error => {
+    logger.error(error instanceof Error ? error.message : "Flow command failed.");
+    exitProcess(1);
+});

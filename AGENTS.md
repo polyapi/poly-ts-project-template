@@ -42,13 +42,21 @@ checked-in implementation and call out the drift clearly.
 - Formatter and linter: Biome.
 - SDK dependency lives in `workflows/package.json`. Do not upgrade casually.
 - Never commit secrets or log them.
-- Required environment variables:
+- Required settings in the selected Flow environment file:
 
 ```env
 POLYAPI_NAMESPACE=example
-BASE_URL=https://eu1.polyapi.io
-API_KEY=replace-with-your-api-key
+TARGET_ENV_ID=replace-with-environment-id
 ```
+
+- Flow uses the connection saved by the workflow SDK's `poly setup` by default.
+  `BASE_URL` and `API_KEY` (or SDK aliases) are optional per-field overrides.
+- Kickstart saves the authenticated `/whoami` environment ID automatically.
+  `pnpm flow target-env` prints it for manual setup without editing files.
+- Preserve the selected file's target pin and live identity check for all remote
+  Flow commands, including deployment dry runs, deletion previews, and logs.
+  Shell exports, production exemptions, and confirmation bypasses must not
+  bypass target verification. Offline training previews need no live identity.
 
 - Common command path:
 

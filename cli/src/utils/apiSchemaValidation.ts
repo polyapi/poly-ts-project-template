@@ -4,6 +4,7 @@ import Ajv, { type ValidateFunction } from 'ajv';
 import { chalk, logger, warningColor } from './logger';
 
 type EndpointSchemaName =
+  | 'CreateApiFunctionDto'
   | 'CreateSchemaDto'
   | 'UpdateSchemaDto'
   | 'CreateWebhookHandleDto'

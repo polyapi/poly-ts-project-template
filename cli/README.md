@@ -14,8 +14,8 @@ flow push --paths exampleWorkflow
 flow push --types canopy,functions,ai-functions,webhooks,triggers,subscriptions
 flow push --delete-orphans
 flow push --skip-validation "I know what am doing"
-flow train:openapi designs/ --context 'example.apis.{file}'
-flow delete:content --type api --context example.apis --dry-run
+flow train-openapi designs/ --context 'example.apis.{file}'
+flow delete-content --type api --context example.apis --dry-run
 flow logs <function-id> --keyword error
 ```
 
@@ -30,8 +30,8 @@ From the workspace root, the operational commands also have package shortcuts
 that build Flow before running it:
 
 ```bash
-pnpm flow train:openapi [spec-file-or-folder] --context 'example.apis.{file}'
-pnpm flow delete:content --type api --context example.apis --dry-run
+pnpm flow train-openapi [spec-file-or-folder] --context 'example.apis.{file}'
+pnpm flow delete-content --type api --context example.apis --dry-run
 pnpm flow logs <function-id> --logs-page-size 100 --keyword error
 ```
 
@@ -42,15 +42,38 @@ are no longer needed.
 
 ### OpenAPI training
 
-`flow train:openapi` accepts a spec file or a folder containing OpenAPI 3 or
-Swagger 2 JSON/YAML files. Missing path and context arguments are prompted for
-interactively. `{file}` in the context is replaced by each spec's base name.
-Generated `*.poly-model.json` files are saved beside the source specs and are
-excluded from subsequent spec discovery. Flow trains each generated model and
-regenerates the workflow SDK after a successful run. `--dry-run` previews the
-specs and contexts without writing files or changing PolyAPI. YAML parsing
-runs within Flow; Swagger 2 conversion uses the workspace's installed
-`swagger2openapi`, so no global `jq` or `yq` installation is needed.
+```bash
+pnpm flow train-openapi designs/crm.json --context example.crm --operation-id validatePhone --operation-id getProfile
+pnpm flow train-openapi designs/crm.json --context example.crm --generate-only
+pnpm flow train-model designs/crm.poly.json
+```
+
+Training accepts OpenAPI 3 and Swagger 2 JSON/YAML, a file or recursively searched
+folder, and `{file}` in the target context. Omit source/context to be prompted.
+Repeat `--operation-id ID` to select original specification operation IDs before
+translation and AI enrichment. Each ID must match exactly once in each input
+specification; only selected operations and their referenced schemas are retained.
+Selection requires bundled local references; bundle external `$ref` files first.
+Omitting the option trains all operations. `hostUrl` remains a function argument.
+
+Descriptions become readable plain text, including argument and schema metadata,
+after AI enrichment. Source specifications, request payloads, examples and defaults
+stay unchanged. Invalid schema identifiers such as `200` become `Schema200` in a
+temporary copy with references updated. `--disable-ai` keeps translated names and
+metadata; repeat `--rename FROM TO` to explicitly rename generated identifiers.
+
+`--generate-only` writes `*.poly.json` models without training resources. Existing
+models require `--overwrite-model`; saved models can be retried with `train-model`,
+including legacy `*.poly-model.json` files. `--dry-run` previews inputs without
+provider calls or writes; for `train-model` it validates and previews resources.
+Flow validates all models and cross-file identities before writing resources,
+orders schemas by dependency, preserves valid recursive references, and verifies resource existence
+after training. Writes run in bounded batches; an error prevents later batches.
+Saved models remain available for retry after partial failure. SDK generation runs
+after successful training unless `--skip-generate` is supplied.
+
+The `train:openapi` command and workflows shortcut remain aliases. New models use
+`*.poly.json`; both model suffixes are excluded from specification discovery.
 
 ### Function logs
 
@@ -63,21 +86,34 @@ or production confirmations.
 
 ### Content deletion
 
-`flow delete:content` lists resources under an exact context and its
-dot-separated descendants. Supported types are `api`, `schema`, `variable`,
-`webhook`, `trigger`, `table`, and `job`; missing type/context arguments are
-prompted for. The context must belong to a configured namespace. The command
-prints a preview and requires the exact confirmation `DELETE` before making
-any deletes. `--dry-run` previews the matches without deleting.
+```bash
+pnpm flow delete-content --types api-functions,schemas --context example.crm
+pnpm flow delete-content --types api-functions,schemas --context example.crm --include-children --apply
+```
 
-Training and content deletion reuse Flow's branch/environment and production
-safeguards. Content deletion uses the shared API client and OTP handling;
-training delegates model generation/training and SDK generation to the
-workflow's installed Poly CLI, which retains its authentication handling.
+Deletion previews only by default and selects the exact context. Add
+`--include-children` to include dot-separated descendant contexts, and `--apply`
+to request deletion with the separate exact `DELETE` confirmation. `--dry-run`
+also previews only. Types may be combined: `api-functions`, `client-functions`,
+`server-functions`, `ai-functions`, `schemas`, `variables`, `webhooks`, `triggers`,
+`tables`, `jobs`, and `subscriptions`. Singular names and `--type` remain aliases.
+The `delete:content` alias uses these same safer defaults.
+
+Every delete must be followed by a 404 readback; uncertainty stops the command.
+Jobs and triggers qualify only when every referenced server function is known
+and inside the selected scope. Dependents are deleted before functions/schemas.
+Scope is namespace-owned and context-based, without an inferred cross-context
+cascade. Previews show metadata only, never resource values.
+
+Training and deletion use Flow's branch/environment and production safeguards.
+Resource writes, readbacks and deletion use its shared authenticated API client
+and OTP handling. Model translation/enrichment and TypeScript SDK generation use
+the workflow's installed Poly CLI with Flow's resolved connection.
 
 `--skip-validation` bypasses interactive scope, branch-environment, and
 production confirmation prompts only when its value exactly matches
-`I know what am doing`. It does not bypass the production execution key,
+`I know what am doing`. It does not bypass target identity, the production
+execution key,
 schema validation, artefact validation, or unresolved environment-value checks.
 
 After a successful push, Flow regenerates the workflow SDK with
@@ -89,11 +125,12 @@ Direct SDK-generation commands outside Flow do not use this filtering.
 
 ## Environment
 
-Required project setting in `workflows/dev.env` (or the file selected by
+Required project settings in `workflows/dev.env` (or the file selected by
 `ENVPATH`):
 
 ```env
 POLYAPI_NAMESPACE=example
+TARGET_ENV_ID=replace-with-environment-id
 ```
 
 Flow reuses the connection saved by `pnpm workflows exec poly setup` for the
@@ -111,6 +148,19 @@ setup, then legacy root environment settings. Flow supports the SDK names
 `POLY_API_BASE_URL` and `POLY_API_KEY` and the older `POLYAPI_*` aliases as well.
 It resolves the workflow SDK's own configuration rather than another installed
 SDK version's setup.
+
+Kickstart obtains the environment ID from authenticated `GET /whoami` and saves
+the pin automatically. For existing projects, run `pnpm flow target-env` and
+copy the printed `TARGET_ENV_ID=<id>` into the selected file after verifying the
+target. The lookup is read-only and does not change files.
+
+Flow verifies the file's pin against `/whoami` before push (including dry runs),
+training/model generation, deletion previews or application, and logs. Missing
+or mismatched pins stop the command before resource requests. The pin must be
+declared in the selected file; shell exports, saved SDK setup, and legacy root
+fallback cannot supply it. Production exemptions and `--skip-validation` do
+not bypass this check. Offline `train-openapi --dry-run`, `train-model --dry-run`,
+help, and `--show-config` do not require target verification.
 
 Optional values:
 

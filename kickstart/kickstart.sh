@@ -111,6 +111,10 @@ git clone --depth 1 --single-branch --branch main \
 for category in general polyapi-common polyapi-typescript; do
   [[ -d "$download_dir/skills/$category/skills" ]]
 done
+if [[ ! -s "$download_dir/skills/polyapi-typescript/skills/api-function-training/SKILL.md" ]]; then
+  printf 'kickstart: api-function-training is missing from poly-skills/main. Publish the TypeScript training skill there before retrying.\n' >&2
+  exit 1
+fi
 
 mkdir -p -- "$parent_dir"
 mkdir -- "$project_dir"
@@ -127,6 +131,7 @@ mkdir -p .agents/skills
 for category in general polyapi-common polyapi-typescript; do
   cp -R "$download_dir/skills/$category/skills/." .agents/skills/
 done
+[[ -s .agents/skills/api-function-training/SKILL.md ]]
 
 (
   umask 077
@@ -180,15 +185,30 @@ printf 'Verifying Flow configuration from saved Poly setup...\n'
 const { loadEnv, getBaseUrl } = require('./cli/dist/utils/apiClient.js');
 const { resolveWorkflowPolyConfig } = require('./cli/dist/utils/environment.js');
 const { getRequiredNamespaces } = require('./cli/dist/utils/namespace.js');
-if (!resolveWorkflowPolyConfig(process.cwd())) {
-  throw new Error('Poly setup did not save a connection for the workflow SDK.');
+const { fetchRemoteEnvironment, getTargetEnvId } = require('./cli/dist/utils/targetEnvironment.js');
+const fs = require('node:fs');
+async function verifyAndPin() {
+  if (!resolveWorkflowPolyConfig(process.cwd())) {
+    throw new Error('Poly setup did not save a connection for the workflow SDK.');
+  }
+  loadEnv();
+  if (getBaseUrl() !== process.env.KICKSTART_EXPECTED_BASE_URL ||
+      process.env.API_KEY !== process.env.KICKSTART_EXPECTED_API_KEY ||
+      getRequiredNamespaces().join(',') !== process.env.KICKSTART_EXPECTED_NAMESPACE) {
+    throw new Error('Flow configuration does not match the project settings entered during kickstart.');
+  }
+  const { environmentId } = await fetchRemoteEnvironment();
+  // Only the non-secret identity pin is added; URL and key stay in SDK setup.
+  fs.appendFileSync('workflows/dev.env', `\nTARGET_ENV_ID=${environmentId}\n`);
+  if (getTargetEnvId(loadEnv()) !== environmentId) {
+    throw new Error('Flow could not save the verified target environment pin.');
+  }
+  console.log(`Target environment verified and pinned: ${environmentId}`);
 }
-loadEnv();
-if (getBaseUrl() !== process.env.KICKSTART_EXPECTED_BASE_URL ||
-    process.env.API_KEY !== process.env.KICKSTART_EXPECTED_API_KEY ||
-    getRequiredNamespaces().join(',') !== process.env.KICKSTART_EXPECTED_NAMESPACE) {
-  throw new Error('Flow configuration does not match the project settings entered during kickstart.');
-}
+verifyAndPin().catch(error => {
+  console.error(error instanceof Error ? error.message : 'Flow target verification failed.');
+  process.exitCode = 1;
+});
 NODE
 )
 unset api_key

@@ -10,12 +10,16 @@
   "scripts": {
     "build:no-schema": "tsc",
     "build": "tsc",
+    "target-env": "pnpm run build && node dist/cli.js target-env",
     "build:with-schema": "pnpm generate && tsc",
     "train:openapi": "pnpm run build && node dist/cli.js train:openapi",
     "delete:content": "pnpm run build && node dist/cli.js delete:content",
     "logs": "pnpm run build && node dist/cli.js logs",
     "postinstall": "pnpm generate",
-    "generate": "pnpm exec tsx src/codegen/generate.ts"
+    "generate": "pnpm exec tsx src/codegen/generate.ts",
+    "train-openapi": "pnpm run build && node dist/cli.js train-openapi",
+    "train-model": "pnpm run build && node dist/cli.js train-model",
+    "delete-content": "pnpm run build && node dist/cli.js delete-content"
   },
   "keywords": [
     "polyapi",

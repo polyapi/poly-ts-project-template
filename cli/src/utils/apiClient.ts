@@ -93,12 +93,13 @@ export function loadEnv(): EnvLoadResult {
         if (result.error) throw new Error(`Unable to load environment configuration: ${filename}`);
         return result.parsed ?? {};
     };
+    const selectedValues = readLayer(selectedEnvPath);
     // Selected env file > shell settings > this workflow SDK's setup > legacy root env.
     Object.assign(process.env, mergeEnvironmentLayers(
         readLayer(rootEnvPath),
         readLayer(polyEnvPath),
         process.env,
-        readLayer(selectedEnvPath),
+        selectedValues,
     ));
 
     if (!process.env.TENANT_ID && process.env.POLY_TENANT_ID) {
@@ -152,6 +153,7 @@ export function loadEnv(): EnvLoadResult {
         resolvedPath: selectedEnvPath,
         exists: fs.existsSync(selectedEnvPath),
         fromEnvPath: Boolean(envPathOverride),
+        declaredTargetEnvId: selectedValues.TARGET_ENV_ID?.trim(),
     };
 }
 
