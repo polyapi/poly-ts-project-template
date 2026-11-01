@@ -138,7 +138,7 @@ function scaffold(root, incoming) {
   );
   json(root, 'cli/package.json', {
     name: 'flow-cli',
-    version: '1.0.0',
+    version: incoming ? '1.1.0' : '1.0.0',
     private: true,
     scripts: incoming
       ? { build: 'tsc', 'self-update': 'node bin/self-update.cjs' }
@@ -155,6 +155,7 @@ function scaffold(root, incoming) {
   );
   write(root, 'cli/bin/flow.js', "require('../dist/cli.js');\n");
   if (incoming) {
+    fs.chmodSync(path.join(root, 'cli/bin/flow.js'), 0o755);
     write(root, 'cli/bin/self-update.cjs', fs.readFileSync(updater, 'utf8'));
     write(
       root,
@@ -293,6 +294,8 @@ test('bootstrap preview reports changes and conflicts without modifying the proj
   const result = f.run(['--check']);
   assert.equal(result.status, 0, result.output);
   assert.match(result.output, new RegExp(f.sourceCommit));
+  assert.match(result.output, /Installed Flow version: 1\.0\.0/);
+  assert.match(result.output, /Incoming Flow version: 1\.1\.0/);
   assert.match(result.output, /push|conflict/i);
   assertUntouched(f.project, before);
   assert.equal(git(f.project, 'status', '--porcelain'), status);
@@ -359,6 +362,10 @@ test('bootstrap replaces old CLI and adds missing launchers while preserving cus
     before['workflows/src/customer.ts']
   );
   const backup = onlyBackup(f.project);
+  const manifest = parse(backup, 'manifest.json');
+  assert.equal(manifest.previousVersion, '1.0.0');
+  assert.equal(manifest.incomingVersion, '1.1.0');
+  assert.match(result.output, /Flow CLI updated to version 1\.1\.0/);
   assert.equal(
     read(backup, 'previous/src/custom-command.ts'),
     before['cli/src/custom-command.ts']
@@ -518,7 +525,7 @@ test('piped bootstrap preview requires no terminal and leaves local files unchan
   assert.equal(backups(f.project).length, 0);
 });
 
-test('a bootstrapped project can preview updates with its newly installed self-updater', t => {
+test('bootstrap preserves Git file modes so the installed updater reports no changes', t => {
   const f = fixture(t);
   assert.equal(
     fs.existsSync(path.join(f.project, 'cli/bin/self-update.cjs')),
@@ -526,13 +533,26 @@ test('a bootstrapped project can preview updates with its newly installed self-u
   );
   const updated = f.piped(['--yes']);
   assert.equal(updated.status, 0, updated.output);
+  // upgrade.sh uses umask 077; fetched source must still retain Git's modes.
+  assert.equal(
+    fs.statSync(path.join(f.project, 'cli/package.json')).mode & 0o777,
+    0o644
+  );
+  assert.equal(
+    fs.statSync(path.join(f.project, 'cli/bin/flow.js')).mode & 0o777,
+    0o755
+  );
   const root = read(f.project, 'package.json');
   const workflows = read(f.project, 'workflows/package.json');
   const cli = read(f.project, 'cli/src/cli.ts');
   const backupDirectories = backups(f.project);
   const preview = spawnSync(
-    process.execPath,
+    'bash',
     [
+      '-c',
+      'umask 022; exec "$@"',
+      'flow-update-preview',
+      process.execPath,
       path.join(f.project, 'cli/bin/self-update.cjs'),
       '--check',
       '--source',
@@ -548,6 +568,7 @@ test('a bootstrapped project can preview updates with its newly installed self-u
   const output = `${preview.stdout || ''}${preview.stderr || ''}`;
   assert.equal(preview.status, 0, output);
   assert.match(output, new RegExp(f.sourceCommit));
+  assert.doesNotMatch(output, /^(ADD|REPLACE|REMOVE) cli\//m);
   assert.equal(read(f.project, 'package.json'), root);
   assert.equal(read(f.project, 'workflows/package.json'), workflows);
   assert.equal(read(f.project, 'cli/src/cli.ts'), cli);

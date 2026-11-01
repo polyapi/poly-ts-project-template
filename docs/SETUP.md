@@ -87,20 +87,8 @@ You only need to add `BASE_URL` and `API_KEY` to the selected environment file
 if you want to override that saved connection, for example for a different
 environment selected through `ENVPATH`.
 
-For manual setup or an existing project, obtain the ID from your configured
-connection:
-
-```bash
-pnpm flow target-env
-```
-
-Copy the printed `TARGET_ENV_ID=<id>` into the selected environment file after
-checking it is the intended target. Kickstart does this automatically. Flow
-checks the file's pin against authenticated `GET /whoami` before remote commands,
-including deployment dry runs, training, deletion previews, and logs. A
-mismatched key is rejected even when both environments use the same base URL.
-Exporting a pin in the shell does not replace the file's pin. Offline training
-dry runs and help do not need a pin or connection.
+Next, [select your Flow environment](#select-a-flow-environment) and
+[pin its target](#pin-the-target-environment). Kickstart already saves this pin.
 
 Before deployment, align the selected sample's namespace and complete its
 training and configuration prerequisites. Start with the
@@ -152,6 +140,63 @@ shell assignment; it may not reach commands launched afterward.
 This selects a file for Flow; it does not export that file's contents into your
 shell or configure direct SDK calls. Keep `TARGET_ENV_ID` in the selected file,
 and use the namespace in that file for owned resources and training contexts.
+
+## Pin the target environment
+
+`TARGET_ENV_ID` is the ID of the PolyAPI environment you intend to use. It is
+separate from your namespace or tenant ID. The URL and API key choose the
+connection; this setting checks that the connection reaches the expected
+environment. Changing the pin does not switch credentials.
+
+Kickstart saves the verified ID automatically. For manual setup or an
+intentional target change, [select your Flow file](#select-a-flow-environment),
+then ask Flow which environment your configured connection belongs to:
+
+```bash
+pnpm flow target-env
+```
+
+Check that the reported environment is the one you intend to use, then copy the
+printed `TARGET_ENV_ID=<id>` into the selected file, replacing its placeholder:
+
+```env
+TARGET_ENV_ID=replace-with-environment-id
+```
+
+Flow compares this file's pin with authenticated `GET /whoami` before remote
+commands, including deployment dry runs, training, deletion previews, and logs.
+A missing or mismatched pin stops the command. On a mismatch, confirm the
+intended environment and connection before changing the pin; do not replace it
+just to silence the error. Exporting `TARGET_ENV_ID` in your shell does not
+replace the file's pin. Offline training previews and help do not need a
+connection. Direct SDK calls and tests do not run this Flow check.
+
+## Skip sample deployments
+
+To keep the learning samples in your checkout while deploying your own
+integrations, add this setting to the selected Flow file:
+
+```env
+POLY_DEPLOY_SKIP_PATHS=src/sampleWorkflow,src/sampleAiFx
+```
+
+This comma-separated list contains paths **relative to `workflows/`**, so use
+`src/sampleWorkflow`, not `workflows/src/sampleWorkflow`. Each folder entry
+also skips its contents; these are paths, not namespaces or wildcard patterns.
+Add the entries to any existing list instead of replacing other exclusions.
+The example skips both sample workflows and leaves shared utilities available.
+
+The exclusions apply to deployment previews and pushes, including commands
+with `--paths`. To deploy a tutorial, first remove that sample's entry (or any
+parent-folder entry covering it) from the selected file; `--paths` does not
+override the skip list. Add it back when you want to exclude the sample again.
+
+Skipping does not remove local files or delete existing deployments. While the
+sample files remain in the checkout, Flow still includes them in its orphan
+inventory, so excluding them does not make their resources deletion candidates.
+This setting controls deployment scanning; it does not block explicit API
+training, `delete-content`, or direct SDK calls. It also does not replace the
+`TARGET_ENV_ID` check.
 
 ## Commands
 

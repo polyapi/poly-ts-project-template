@@ -3,6 +3,10 @@
 Flow is the workspace-local CLI used to validate and sync TypeScript PolyAPI
 functions and JSON artefacts.
 
+For the step-by-step upgrade paths, see [Upgrading Flow](../docs/UPGRADING_FLOW.md).
+Check the installed version with `pnpm flow run version` (or `flow --version`).
+The version comes from `cli/package.json` and is separate from the PolyAPI SDK.
+
 ## Commands
 
 Run commands from the repository root. For dependency setup and the full local
@@ -93,6 +97,12 @@ reapplying customizations, install dependencies if needed using
 pnpm --filter flow-cli run build
 pnpm --filter flow-cli run test:self-update
 ```
+
+Older projects may also need `TARGET_ENV_ID` in their selected Flow environment
+file before remote commands, including deployment dry runs, can run. Retrieve
+the ID using `ENVPATH=workflows/dev.env pnpm flow target-env`, confirm that it is
+the intended environment, then add the returned setting to that file. The
+upgrade does not change environment files or choose this pin automatically.
 
 Review any resulting lockfile changes within your project. Future upgrades can
 use the [self-update command](#self-update). If a custom root `flow` script was
@@ -313,6 +323,11 @@ POLYAPI_NAMESPACE=example
 TARGET_ENV_ID=replace-with-environment-id
 ```
 
+`TARGET_ENV_ID` is the intended environment's ID, not a namespace or tenant ID.
+It verifies the connection described below; changing it does not switch
+credentials. See [pin the target environment](../docs/SETUP.md#pin-the-target-environment)
+for the setup walkthrough.
+
 Flow reuses the connection saved by `pnpm workflows exec poly setup` for the
 workflow's installed SDK. You do not need to duplicate its base URL or API key
 in `dev.env`. To override that connection for a specific environment, set:
@@ -341,6 +356,21 @@ declared in the selected file; shell exports, saved SDK setup, and legacy root
 fallback cannot supply it. Production exemptions and `--skip-validation` do
 not bypass this check. Offline `train-openapi --dry-run`, `train-model --dry-run`,
 help, and `--show-config` do not require target verification.
+
+To omit bundled samples from deployment scanning, set this in the selected
+environment file, adding to any existing exclusions:
+
+```env
+POLY_DEPLOY_SKIP_PATHS=src/sampleWorkflow,src/sampleAiFx
+```
+
+These comma-separated paths are relative to `workflows/`; folder entries include
+their descendants. Both deployment previews and pushes honor them, even with
+`--paths`. Remove a covering entry before deploying that tutorial. Shared
+utilities remain available with the example above. Skipping keeps local files
+and existing deployments; skipped local resources still count in orphan
+detection. It does not block explicit API training, `delete-content`, or SDK
+calls. See [skip sample deployments](../docs/SETUP.md#skip-sample-deployments).
 
 Optional values:
 

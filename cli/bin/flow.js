@@ -4,6 +4,12 @@ const { spawnSync } = require('node:child_process');
 const { existsSync } = require('node:fs');
 const path = require('node:path');
 
+// The version must be available before dependencies or compiled output exist.
+if (['--version', '-V'].includes(process.argv[2])) {
+  console.log(`Flow CLI ${require('../package.json').version}`);
+  process.exit(0);
+}
+
 // Updating and recovery must work before TypeScript has been built.
 if (process.argv[2] === 'self-update') {
   const update = spawnSync(

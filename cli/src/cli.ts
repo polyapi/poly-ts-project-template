@@ -89,6 +89,7 @@ type CliArgs = {
 };
 
 const SKIP_VALIDATION_ACKNOWLEDGEMENT = 'I know what am doing';
+const FLOW_VERSION: string = require('../package.json').version;
 
 const DEFAULT_ENABLED_TYPES: ArtifactType[] = [
   'canopy',
@@ -117,7 +118,7 @@ const SUPPORTED_TYPE_SELECTIONS = [
 ] as const;
 
 function printRootHelp(): void {
-  logger.info(`Flow is the PolyAPI deployment CLI for this repository.
+  logger.info(`Flow CLI ${FLOW_VERSION} is the PolyAPI deployment CLI for this repository.
 
 Usage:
   flow push [options]
@@ -128,6 +129,7 @@ Usage:
   flow delete-content [--types api-functions,schemas] [--context namespace.prefix] [--include-children] [--apply]
   flow logs [function-id] [--keyword error] [--raw]
   flow --help
+  flow --version
 
 Examples:
   flow push
@@ -1001,6 +1003,10 @@ function printConfig(
 }
 
 async function main(): Promise<void> {
+  if (['--version', '-V'].includes(process.argv[2])) {
+    process.stdout.write(`Flow CLI ${FLOW_VERSION}\n`);
+    return;
+  }
   if (process.argv[2] === 'target-env') {
     const { values, positionals } = parseNodeArgs({
       args: process.argv.slice(3),

@@ -120,6 +120,8 @@ file before copying training commands or SDK calls.
 The context root groups owned resources; it does not select a server or grant
 access. The SDK/Flow connection selects the instance and environment, and
 `TARGET_ENV_ID` verifies the authenticated target for remote Flow commands.
+Keep that pin in the selected environment file; see
+[pin the target environment](SETUP.md#pin-the-target-environment).
 Advanced projects can explicitly configure multiple owned roots with
 `POLYAPI_NAMESPACES`; this takes precedence over the single-root setting.
 
@@ -195,6 +197,12 @@ Use `vari` for configuration and `tabi` for persisted workflow state.
 Scoped Flow pushes skip orphan detection. Full pushes report orphans but delete
 them only when `--delete-orphans` is explicitly passed. External resources used
 only as portable references must never widen namespace-owned orphan deletion.
+
+Use `POLY_DEPLOY_SKIP_PATHS` to retain sample source without deploying it.
+Paths are relative to `workflows/`, and `--paths` does not override exclusions.
+Skipped local resources still count in orphan detection. See
+[skip sample deployments](SETUP.md#skip-sample-deployments) for the example and
+how to re-enable a tutorial.
 
 ## Tests
 

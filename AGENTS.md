@@ -102,6 +102,13 @@ Recommended skill categories:
 
 ## Repo Guardrails
 
+- Flow's version lives in `cli/package.json`, independently of the workflow SDK.
+  Starting with the versioned 1.1.0 baseline, bump the patch for fixes, the minor
+  version for backward-compatible features, and the major version for breaking
+  changes when preparing the next release. Group related unreleased changes in
+  one release; do not bump again for every edit to that release. Keep version
+  commands and upgrade reports reading that single source of truth. Creating
+  release commits, tags, or pushes still requires the user's instruction.
 - Do not loosen schemas or webhook contracts just to make a change pass.
 - Version breaking contract changes instead of silently mutating existing
   behaviour.

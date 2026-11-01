@@ -58,8 +58,12 @@ pnpm workflows push --dry-run --paths sampleWorkflow
 ```
 
 Keep your owned `POLYAPI_NAMESPACE` and verified `TARGET_ENV_ID` in the selected
-environment file. Review the target and deployment preview before a real push.
-Keep real environment files and secrets out of Git.
+environment file. The [target pin](docs/SETUP.md#pin-the-target-environment)
+makes Flow reject a connection to a different environment. To keep samples in
+the checkout but omit them from deployment, configure
+[`POLY_DEPLOY_SKIP_PATHS`](docs/SETUP.md#skip-sample-deployments).
+Review the deployment preview before a real push, and keep real environment
+files and secrets out of Git.
 
 See the [full command list](docs/SETUP.md#commands) for formatting, deployed tests,
 API training, logs, and cleanup. Tests that mutate external systems require an
@@ -81,7 +85,8 @@ workflows/src/ workflows, shared utilities, and runtime tests
 | Guide | Covers |
 | --- | --- |
 | [Setup and development](docs/SETUP.md) | Manual setup, SDK selection, environment pins, namespaces, and the full check/test commands. |
-| [Flow CLI](cli/README.md) · [CLI updates](cli/README.md#self-update) | Deployment, OpenAPI training, logs, cleanup, upgrades, and production safeguards. |
+| [Flow CLI](cli/README.md) | Deployment, OpenAPI training, logs, cleanup, and production safeguards. |
+| [Upgrading Flow](docs/UPGRADING_FLOW.md) | Upgrade older projects, use Flow's self-updater, and check versions. |
 | [Project conventions](docs/CONVENTIONS.md) | Workflow layout, artefacts, naming, SDK patterns, and tests. |
 | [Agent guidance](AGENTS.md) · [Installing skills](docs/SETUP.md#agent-skills) | Repository rules and skills from [poly-skills](https://github.com/polyapi/poly-skills). |
 

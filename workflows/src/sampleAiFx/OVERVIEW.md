@@ -63,8 +63,10 @@ owned namespace are ready before deployment.
 ## Deploy and test
 
 Run from the repository root after [project setup](../../../docs/SETUP.md),
-including the selected Flow file's `TARGET_ENV_ID`. Select that file once for
-this terminal session:
+including [pinning the target environment](../../../docs/SETUP.md#pin-the-target-environment).
+`TARGET_ENV_ID` checks that your connection reaches the intended environment;
+it is separate from the namespace and does not switch credentials. Kickstart
+saves it automatically. Select that file once for this terminal session:
 
 ```bash
 export ENVPATH=workflows/dev.env
@@ -73,6 +75,11 @@ export ENVPATH=workflows/dev.env
 The commands below reuse this selection. TypeScript Flow also accepts
 `export ENVPATH=dev.env`, looking in `workflows/` first. Its default without
 `ENVPATH` is `workflows/dev.env`.
+
+If `POLY_DEPLOY_SKIP_PATHS` includes `src/sampleAiFx` or a parent folder,
+remove that entry before this lesson's preview and push. The `--paths` option
+does not override exclusions. See [skip sample deployments](../../../docs/SETUP.md#skip-sample-deployments)
+for the setting and how to exclude the sample again afterward.
 
 ```bash
 pnpm workflows push --dry-run --paths sampleAiFx
@@ -185,6 +192,7 @@ missing activity, ambiguous locations, and provider failures.
 
 | Symptom | Check |
 | --- | --- |
+| Sample missing from the deployment preview | Remove its covering `POLY_DEPLOY_SKIP_PATHS` entry; `--paths` does not override exclusions. |
 | Missing generated AI function | Correct namespace, successful push, SDK generation, and selected environment. |
 | Tool cannot be resolved | Both external tool names, access permissions, and argument keys match the artefact. |
 | Weather authentication failure | The SECRET has a value and the tools map it to the current provider contract. |

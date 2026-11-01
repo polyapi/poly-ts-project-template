@@ -62,8 +62,11 @@ is separate from the [Weather AI lesson](../sampleAiFx/OVERVIEW.md).
 ### 1. Confirm setup and namespace
 
 Use a development environment with permission to manage the sample resources,
-generate the SDK, and execute functions. Setup saves the verified `TARGET_ENV_ID`
-in the selected Flow environment file.
+generate the SDK, and execute functions. `TARGET_ENV_ID` in the selected Flow
+file pins the intended PolyAPI environment, separately from your namespace.
+Kickstart saves it automatically; for manual setup, follow
+[pin the target environment](../../../docs/SETUP.md#pin-the-target-environment).
+The pin verifies your connection; it does not switch credentials.
 
 This tutorial assumes you are using `example` as your namespace in
 `workflows/dev.env`. **Check this setting in the file**, rather than entering it
@@ -158,6 +161,12 @@ preview alone cannot generate these declarations. See
 or models already exist when you retry.
 
 ### 3. Preview and deploy the workflow
+
+Check `POLY_DEPLOY_SKIP_PATHS` in the selected Flow file. If it includes
+`src/sampleWorkflow` (or a parent folder), remove that entry for this lesson;
+otherwise Flow skips the sample even with `--paths sampleWorkflow`. You can keep
+the AI sample excluded. See [skip sample deployments](../../../docs/SETUP.md#skip-sample-deployments)
+to exclude the lesson again afterward without deleting its files or resources.
 
 Use a branch based on `develop`; see [development branches](#development-branches)
 if your checkout is not already configured. **In your terminal**, preview this
@@ -417,7 +426,8 @@ cannot establish whether a matching platform error event was delivered.
 | Symptom | Check |
 | --- | --- |
 | Generated function missing | Confirm training, namespace, and generation all used the same environment; inspect the translated names. |
-| Target mismatch | Check the selected Flow file and authenticated identity; preserve the target pin. |
+| Target mismatch | Check the selected Flow file and connection against the intended environment; see [target pinning](../../../docs/SETUP.md#pin-the-target-environment). |
+| Sample missing from the deployment preview | Remove its covering `POLY_DEPLOY_SKIP_PATHS` entry; `--paths` does not override exclusions. |
 | `wise` works, `funny` fails | Set the SECRET Object value in Canopy and check the API Function's `hostUrl` argument. |
 | Advice configuration error | Confirm the OBSCURED object contains a nonempty `hostUrl`. |
 | Request rejected | Check the full deployed URL, matching key, nonblank name, and allowed mood. |

@@ -65,7 +65,7 @@ function scaffold(root, label) {
   );
   json(root, 'cli/package.json', {
     name: 'flow-cli',
-    version: '1.0.0',
+    version: label === 'incoming-template' ? '1.1.0' : '1.0.0',
     private: true,
     bin: { flow: 'bin/flow.js' },
     scripts: { build: 'tsc', 'self-update': 'node bin/self-update.cjs' },
@@ -227,7 +227,9 @@ test('preview reports the fetched revision without changing project source or cr
   const before = git(f.project, 'status', '--porcelain');
   const result = f.run(['--check']);
   assert.equal(result.status, 0, result.output);
-  assert.match(result.output, new RegExp(f.sourceCommit.slice(0, 7)));
+  assert.match(result.output, /Installed Flow version: 1\.0\.0/);
+  assert.match(result.output, /Incoming Flow version: 1\.1\.0/);
+  assert.match(result.output, new RegExp(f.sourceCommit));
   assert.equal(git(f.project, 'status', '--porcelain'), before);
   assert.equal(backups(f.project).length, 0);
   assert.equal(
@@ -296,7 +298,17 @@ test('replacement saves dirty and added source, retains installed dependencies, 
     false
   );
   assert.equal(fs.existsSync(path.join(backup, 'previous/dist')), false);
-  assert.ok(read(backup, 'manifest.json').includes(f.sourceCommit));
+  const manifest = JSON.parse(read(backup, 'manifest.json'));
+  assert.equal(manifest.commit, f.sourceCommit);
+  assert.equal(manifest.previousVersion, '1.0.0');
+  assert.equal(manifest.incomingVersion, '1.1.0');
+  assert.match(result.output, /Flow CLI updated to version 1\.1\.0/);
+  assert.match(read(backup, 'report.md'), /Installed Flow version: 1\.0\.0/);
+  assert.match(read(backup, 'report.md'), /Incoming Flow version: 1\.1\.0/);
+  assert.match(
+    read(backup, 'agent-prompt.md'),
+    /Flow version: 1\.0\.0 -> 1\.1\.0/
+  );
   assert.ok(read(backup, 'agent-prompt.md').includes(f.project));
   assert.ok(read(backup, 'agent-prompt.md').includes(backup));
   assert.match(read(backup, 'agent-prompt.md'), /custom/i);
@@ -313,6 +325,56 @@ test('replacement saves dirty and added source, retains installed dependencies, 
       args => !args.includes('install') && !args.includes('generate')
     )
   );
+});
+
+test('matching package versions still compare and update changed source', t => {
+  const f = fixture(t);
+  const pkg = JSON.parse(read(f.source, 'cli/package.json'));
+  pkg.version = '1.0.0';
+  json(f.source, 'cli/package.json', pkg);
+  const revision = commit(f.source);
+  const preview = f.run(['--check']);
+  assert.equal(preview.status, 0, preview.output);
+  assert.match(preview.output, /Installed Flow version: 1\.0\.0/);
+  assert.match(preview.output, /Incoming Flow version: 1\.0\.0/);
+  assert.match(preview.output, /REPLACE cli\/src\/cli\.ts/);
+  assert.match(preview.output, new RegExp(revision));
+  const update = f.run(['--yes']);
+  assert.equal(update.status, 0, update.output);
+  assert.equal(
+    read(f.project, 'cli/src/cli.ts'),
+    read(f.source, 'cli/src/cli.ts')
+  );
+});
+
+test('unversioned projects and older recovery manifests remain supported', t => {
+  const f = fixture(t);
+  for (const root of [f.project, f.source]) {
+    const pkg = JSON.parse(read(root, 'cli/package.json'));
+    delete pkg.version;
+    json(root, 'cli/package.json', pkg);
+  }
+  commit(f.source);
+  const original = read(f.project, 'cli/src/cli.ts');
+  const update = f.run(['--yes']);
+  assert.equal(update.status, 0, update.output);
+  assert.match(
+    update.output,
+    /Installed Flow version: unknown \(unversioned\)/
+  );
+  assert.match(update.output, /Incoming Flow version: unknown \(unversioned\)/);
+  const backup = onlyBackup(f.project);
+  const manifest = JSON.parse(read(backup, 'manifest.json'));
+  assert.equal(manifest.previousVersion, null);
+  assert.equal(manifest.incomingVersion, null);
+  // Backups created before version reporting have neither field.
+  delete manifest.previousVersion;
+  delete manifest.incomingVersion;
+  json(backup, 'manifest.json', manifest);
+  const restored = f.run(['--rollback', '--yes']);
+  assert.equal(restored.status, 0, restored.output);
+  assert.match(restored.output, /Flow unknown \(unversioned\)/);
+  assert.equal(read(f.project, 'cli/src/cli.ts'), original);
 });
 
 test('replacement works when launched from the CLI being replaced', t => {

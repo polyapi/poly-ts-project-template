@@ -139,6 +139,16 @@ function copySource(from, to, files) {
 function readJson(filename) {
   return JSON.parse(fs.readFileSync(regular(filename), 'utf8'));
 }
+function packageVersion(manifest) {
+  const version = manifest.version;
+  return typeof version === 'string' &&
+    /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/.test(version)
+    ? version
+    : null;
+}
+function versionLabel(version) {
+  return version ?? 'unknown (unversioned)';
+}
 function writeJson(filename, value) {
   const temporary = `${filename}.tmp`;
   fs.writeFileSync(temporary, `${JSON.stringify(value, null, 2)}\n`, {
@@ -240,6 +250,8 @@ function fetchTemplate(temporary, source, ref) {
     fs.writeFileSync(target, content, {
       mode: mode === '100755' ? 0o755 : 0o644,
     });
+    // Preserve Git modes even when the bootstrap uses a restrictive umask.
+    fs.chmodSync(target, mode === '100755' ? 0o755 : 0o644);
   }
   for (const filename of [
     'package.json',
@@ -558,6 +570,7 @@ function writePrompt(backup, manifest) {
     `Previous CLI source: ${path.join(backup, 'previous')}\n` +
     `Pristine incoming CLI: ${path.join(backup, 'incoming')}\n` +
     `Update report: ${path.join(backup, 'report.md')}\n` +
+    `Flow version: ${versionLabel(manifest.previousVersion)} -> ${versionLabel(manifest.incomingVersion)}\n` +
     `Template commit: ${manifest.commit}\n\n` +
     (manifest.bootstrap
       ? `Project manifests before upgrade: ${path.join(backup, 'project-before')}\nProject manifests after upgrade: ${path.join(backup, 'project-after')}\nThis was a source-only bootstrap: dependencies were not installed and compilation/tests were not run. Existing custom script values were kept; review conflicts listed in the report, including aliases that still point to removed legacy scripts. Preserve all project-specific dependencies and settings.\n\n`
@@ -665,21 +678,20 @@ async function update(root, args, temporary) {
   console.log(`Fetching template ${args.ref || 'main'}...`);
   const template = fetchTemplate(temporary, source, args.ref || 'main');
   const incoming = inventory(template.destination);
+  const previousPackage = readJson(path.join(live, 'package.json'));
+  const incomingPackage = readJson(
+    path.join(template.destination, 'package.json')
+  );
+  const previousVersion = packageVersion(previousPackage);
+  const incomingVersion = packageVersion(incomingPackage);
   const bootstrap = args.bootstrap ? planBootstrap(root, template) : null;
   if (bootstrap) {
     regular(path.join(template.destination, 'bin/self-update.cjs'));
     regular(path.join(template.destination, 'bin/bootstrap-manifests.cjs'));
-    if (
-      !readJson(path.join(template.destination, 'package.json')).scripts?.[
-        'self-update'
-      ]
-    )
+    if (!incomingPackage.scripts?.['self-update'])
       fail('The selected template does not support Flow self-update yet.');
   }
-  const dependencies = dependencyDiff(
-    readJson(path.join(live, 'package.json')),
-    readJson(path.join(template.destination, 'package.json'))
-  );
+  const dependencies = dependencyDiff(previousPackage, incomingPackage);
   const supporting = supportingDifferences(
     root,
     template.repo,
@@ -687,6 +699,8 @@ async function update(root, args, temporary) {
   );
   const changes = fileDiff(before, incoming);
   const report = [
+    `Installed Flow version: ${versionLabel(previousVersion)}`,
+    `Incoming Flow version: ${versionLabel(incomingVersion)}`,
     `Template commit: ${template.commit}`,
     `Source: ${source}`,
     '',
@@ -745,6 +759,8 @@ async function update(root, args, temporary) {
       project: root,
       source,
       commit: template.commit,
+      previousVersion,
+      incomingVersion,
       createdAt: new Date().toISOString(),
       status: 'prepared',
       previous: before,
@@ -800,7 +816,7 @@ async function update(root, args, temporary) {
       ? 'One-time source upgrade complete. Dependencies were not installed; build and tests have not been run.\nAfter reviewing dependency requirements, run pnpm install --ignore-scripts if needed, then pnpm --filter flow-cli run build.\nFuture upgrades: pnpm --filter flow-cli run self-update'
       : 'Local checks passed.';
     console.log(
-      `\nFlow CLI updated to ${template.commit.slice(0, 12)}. ${outcome}\nCustomizations have not yet been reviewed.\nCopy this prompt into your AI coding agent:\n\n${prompt}`
+      `\nFlow CLI updated to version ${versionLabel(incomingVersion)} (commit ${template.commit}). ${outcome}\nCustomizations have not yet been reviewed.\nCopy this prompt into your AI coding agent:\n\n${prompt}`
     );
   } finally {
     unlock();
@@ -852,7 +868,12 @@ async function rollback(root, args) {
         ['beforeHash', 'afterHash']
       );
     }
-    console.log(`Restore previous CLI source from ${backup}`);
+    const restoredVersion = packageVersion(
+      readJson(path.join(backup, 'previous/package.json'))
+    );
+    console.log(
+      `Restore previous CLI source (Flow ${versionLabel(restoredVersion)}) from ${backup}`
+    );
     await confirm(
       'Restore this backup? Current CLI source will also be saved.',
       args.yes
