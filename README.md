@@ -1,27 +1,27 @@
 # PolyAPI TypeScript Project Template
 
+![Your next integration. Built in TypeScript. A PolyAPI project template with workflows, artefacts, and development tools.](.images/project-template-banner.svg)
+
 Generic TypeScript workspace for PolyAPI workflow projects.
 
 The template keeps deployable workflow code under `workflows/src/` and uses a
 workspace-local Flow CLI under `cli/` to validate and sync TypeScript functions
 and JSON artefacts to PolyAPI.
 
-New to PolyAPI? Start with the sample workflow tutorial:
-[workflows/src/sampleWorkflow/README.md](workflows/src/sampleWorkflow/README.md).
-It walks through the core runtime flow from webhook to trigger to functions.
+> **New to PolyAPI?** Start with the
+> [sample workflow tutorial](workflows/src/sampleWorkflow/README.md).
+> It walks through the core runtime flow from webhook to trigger to functions.
 
 ## Table of contents
 
-- [Structure](#structure)
-- [Setup](#setup)
-  - [Getting started](#getting-started)
-  - [Manual setup](#manual-setup)
-- [Add or update the Flow CLI in your project](#add-or-update-the-flow-cli-in-your-project)
-- [Commands](#commands)
-- [Adding a workflow](#adding-a-workflow)
-- [Flow CLI](#flow-cli)
-- [OpenAPI training](#openapi-training)
-- [Agent skills](#agent-skills)
+| I want to… | Start here |
+| --- | --- |
+| Start a project | [Setup](#setup): [Getting started](#getting-started) · [Manual setup](#manual-setup) |
+| Explore the workspace | [Structure](#structure) · [Conventions](CONVENTIONS.md) |
+| Build and test a workflow | [Commands](#commands) · [Adding a workflow](#adding-a-workflow) |
+| Work with Flow | [Flow CLI](#flow-cli) · [Add or update the Flow CLI](#add-or-update-the-flow-cli-in-your-project) |
+| Train API Functions | [OpenAPI training](#openapi-training) |
+| Set up coding agents | [Agent skills](#agent-skills) · [Repository instructions](AGENTS.md) |
 
 ## Structure
 
