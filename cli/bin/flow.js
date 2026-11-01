@@ -4,6 +4,17 @@ const { spawnSync } = require('node:child_process');
 const { existsSync } = require('node:fs');
 const path = require('node:path');
 
+// Updating and recovery must work before TypeScript has been built.
+if (process.argv[2] === 'self-update') {
+  const update = spawnSync(
+    process.execPath,
+    [path.join(__dirname, 'self-update.cjs'), ...process.argv.slice(3)],
+    { stdio: 'inherit' }
+  );
+  if (update.error) console.error(update.error.message);
+  process.exit(update.status ?? 1);
+}
+
 const cliPath = path.join(__dirname, '..', 'dist', 'cli.js');
 
 if (!existsSync(cliPath)) {

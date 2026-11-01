@@ -12,8 +12,17 @@ import {
   type WalkDirOptions,
   walkDir,
 } from '../utils/fileSystem';
-import { chalk, createHeader, createLogger, warningColor } from '../utils/logger';
-import { getRequiredNamespaces, matchesAnyRequiredNamespace, validateNamespace } from '../utils/namespace';
+import {
+  chalk,
+  createHeader,
+  createLogger,
+  warningColor,
+} from '../utils/logger';
+import {
+  getRequiredNamespaces,
+  matchesAnyRequiredNamespace,
+  validateNamespace,
+} from '../utils/namespace';
 import { filterOrphansByContext } from '../utils/orphans';
 import { areComparisonPayloadsEqual } from '../utils/payloadComparison';
 import { validateSchemaArtifact } from '../utils/validation';
@@ -316,7 +325,7 @@ export async function syncSchemas(
   );
   log.info(
     chalk.gray(
-      `Fetched ${existingSchemas.length} schema(s) from API in namespace(s) "${namespaces.join(", ")}"`
+      `Fetched ${existingSchemas.length} schema(s) from API in namespace(s) "${namespaces.join(', ')}"`
     )
   );
 

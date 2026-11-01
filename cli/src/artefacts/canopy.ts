@@ -278,7 +278,7 @@ function writeBackId(filePath: string, appId: string): void {
     const raw = fs.readFileSync(filePath, 'utf-8');
     const parsed = JSON.parse(raw) as Record<string, unknown>;
     parsed.id = appId;
-    fs.writeFileSync(filePath, JSON.stringify(parsed, null, 2) + '\n', 'utf-8');
+    fs.writeFileSync(filePath, `${JSON.stringify(parsed, null, 2)}\n`, 'utf-8');
   } catch {
     // non-fatal: the sync succeeded, the user can add the id manually
   }

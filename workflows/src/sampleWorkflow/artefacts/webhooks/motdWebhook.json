@@ -24,7 +24,7 @@
   },
   "securityFunctions": [
     {
-      "id": "{{sample.sampleWorkflow.validateMotdPayload}}",
+      "id": "{{example.sampleWorkflow.validateMotdPayload}}",
       "message": "Invalid or missing field in event payload."
     }
   ]

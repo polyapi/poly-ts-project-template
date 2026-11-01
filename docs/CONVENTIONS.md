@@ -1,5 +1,8 @@
 # Project Conventions
 
+[Getting started](../README.md#getting-started) · [Setup](SETUP.md) ·
+[Flow CLI](../cli/README.md)
+
 This file is the human-readable conventions reference for a TypeScript PolyAPI
 project created from this template. If this file drifts from the checked-in
 implementation under `workflows/src/` or `cli/`, follow the implementation.
@@ -40,7 +43,8 @@ paths for compatibility, but new files must use `artefacts/`.
 
 - Keep real environment files out of Git.
 - Commit only `*.env.example` files with placeholder values.
-- Use `ENVPATH` when running Flow against a specific environment file.
+- Export `ENVPATH` once per terminal when selecting a Flow environment file;
+  subsequent Flow commands inherit it.
 - Keep `POLYAPI_NAMESPACE` and the verified `TARGET_ENV_ID` in the selected file.
 - Flow uses the workflow SDK's saved setup for its connection. `BASE_URL` and
   `API_KEY` are optional overrides; SDK and older `POLYAPI_*` aliases also work.
@@ -49,10 +53,11 @@ paths for compatibility, but new files must use `artefacts/`.
   shell exports and confirmation bypasses cannot replace this file's pin.
 - Do not log environment values that may contain secrets.
 
-Example:
+Select the file once, then run Flow commands normally:
 
 ```bash
-ENVPATH=workflows/dev.env pnpm workflows push --dry-run
+export ENVPATH=workflows/dev.env
+pnpm workflows push --dry-run
 ```
 
 ## PolyAPI Patterns
@@ -80,9 +85,11 @@ variables -> canopy -> schemas -> tables -> functions -> ai-functions
 
 ## Namespaces And Portable References
 
-- `POLYAPI_NAMESPACE` is mandatory.
+- Set `POLYAPI_NAMESPACE` to the context root owned by this project.
 - Every context belonging to a locally managed artefact, plus every TypeScript
-  `polyConfig.context`, must start with that namespace.
+  `polyConfig.context`, must equal that root or start with that root followed by
+  a dot. For `POLYAPI_NAMESPACE=mycustomer`, `mycustomer.utilities` is valid;
+  `example.utilities` and `mycustomer2.utilities` are not.
 - Replace the template's `example` root consistently in artefact contexts,
   generated SDK paths, and trigger error-handler paths when adopting the
   template for another namespace.
@@ -91,17 +98,46 @@ variables -> canopy -> schemas -> tables -> functions -> ai-functions
   to any accessible environment, tenant, or public resource. Those external
   reference contexts do not need to start with `POLYAPI_NAMESPACE`.
 - Variable references remain namespace-scoped.
-- Never check in environment-specific `id`, `variableId`,
-  `systemPromptVariableId`, or `contextName` fields in portable artefacts.
+- Use portable references instead of environment-specific resource IDs. For a
+  webhook security function, `id: "{{mycustomer.sampleWorkflow.validateMotdPayload}}"`
+  is a portable reference; a deployed function UUID is not.
+
+Kickstart applies your chosen root to the starter workflows **and common
+utilities**, including their `polyConfig`, generated SDK calls, JSON context
+fields, portable security-function references, and namespace-based error
+filters. The included `log` function uses `example.utilities` before setup;
+choosing `mycustomer` makes it `mycustomer.utilities` and its calls use
+`poly.mycustomer` / `vari.mycustomer`.
+
+For a manual checkout, use the same root in the selected environment file and
+all those source locations. Changing the environment variable alone does not
+rename code or deployed resources. Keep external references such as
+`OOB.polyapi.internal.alerting` and `accuWeather.locations`, provider URLs, and
+HTTP webhook paths intact. Kickstart also personalizes the copied documentation's namespace examples.
+For a manual checkout, align the documented root with your code and selected
+file before copying training commands or SDK calls.
+
+The context root groups owned resources; it does not select a server or grant
+access. The SDK/Flow connection selects the instance and environment, and
+`TARGET_ENV_ID` verifies the authenticated target for remote Flow commands.
+Advanced projects can explicitly configure multiple owned roots with
+`POLYAPI_NAMESPACES`; this takes precedence over the single-root setting.
 
 ## Server Functions
 
 - Server functions live under `workflows/src/<workflowName>/server/`.
-- Each server function should expose one default async entrypoint.
+- Give the primary function a name matching `polyConfig.name`; maintained
+  examples use both named and default exports. Use `async` when the function
+  awaits work; synchronous validators and error formatters do not require it.
+- Flow identifies server and client functions from their `server/` and `client/`
+  folders, and reads literal inline `polyConfig` metadata from each source file.
 - Keep deployment metadata in the TypeScript file's inline `polyConfig`; do not
   create parallel server-function JSON metadata files.
 - Set HTTP status explicitly only at webhook boundary handlers that own the
   response semantics.
+- A returned object's `statusCode` field is application data. Set
+  `polyCustom.responseStatusCode` when the boundary must control the HTTP status;
+  do not assume returning `{ statusCode: 500 }` sets a transport failure.
 - Fail fast on invalid external input.
 - Keep the main path readable from top to bottom.
 
@@ -112,6 +148,8 @@ variables -> canopy -> schemas -> tables -> functions -> ai-functions
   create parallel client-function JSON metadata files.
 - Use client functions for reusable calls or transformations that are safe to
   invoke from other PolyAPI functions.
+- A client function runs in its caller's process. Logs from a client function
+  invoked inside a server function belong to that server function's execution.
 - Do not hide platform calls behind broad wrappers unless the wrapper removes
   real duplication.
 
@@ -167,6 +205,18 @@ only as portable references must never widen namespace-owned orphan deletion.
   behind an explicit environment flag.
 - Validate TypeScript, JSON artefacts, and tests together whenever a runtime
   contract changes.
+- The AVA runner does not load Flow's `ENVPATH` or enforce `TARGET_ENV_ID`.
+  Direct SDK tests use the generated SDK connection; check that target before
+  enabling a live test. `RUN_AI_INTEGRATION=true` opts into the weather AI test.
+- Run kickstart namespace regression tests with
+  `node --test kickstart/kickstart-namespace.test.cjs`; they use temporary copies
+  and require no PolyAPI connection.
+
+Current sample limitations and test prerequisites are documented in the
+[message-of-the-day guide](../workflows/src/sampleWorkflow/README.md),
+[utility guide](../workflows/src/utilities/common/OVERVIEW.md), and
+[setup guide](SETUP.md#commands). A passing mock-based test does not establish
+platform behavior or delivery to an external service.
 
 ## Error Handling
 
@@ -175,8 +225,11 @@ only as portable references must never widen namespace-owned orphan deletion.
 - Log useful identifiers and redacted context.
 - Never log secrets.
 - Keep global error handlers best-effort and non-throwing.
-- Use the common template alerting utilities as the default; customize alert
-  names or transports in project code when a workflow needs different routing.
+- Inspect the [common utilities](../workflows/src/utilities/common/OVERVIEW.md)
+  before reusing them. Their current implementation can propagate alert
+  failures and only filters a fixed set of sensitive context keys; the global
+  handler does not yet meet the non-throwing convention above. Choose an alert
+  transport available to your tenant and avoid passing sensitive free text.
 
 ## Scripts And Tooling
 
@@ -187,7 +240,7 @@ only as portable references must never widen namespace-owned orphan deletion.
   commands belong in the Flow CLI under `cli/src/commands/`.
 - Scripts should preview destructive actions and require explicit confirmation.
 
-Useful commands:
+Useful commands after selecting the Flow file for this terminal:
 
 ```bash
 pnpm install
@@ -195,25 +248,35 @@ pnpm workflows exec poly setup
 pnpm workflows exec poly generate
 pnpm check
 pnpm workflows test
-ENVPATH=workflows/dev.env pnpm workflows test:integration
-ENVPATH=workflows/dev.env pnpm workflows push --dry-run
-ENVPATH=workflows/dev.env pnpm workflows push
+pnpm workflows test:integration
+pnpm workflows push --dry-run
+pnpm workflows push
 ```
 
 ## OpenAPI Spec Training
 
 - Store source specs under `designs/` or `artefacts/specs/`.
-- Use `pnpm flow train:openapi` to generate and train PolyAPI models. The
-  `pnpm workflows train:openapi` shortcut invokes the same Flow command.
+- Use `pnpm flow train-openapi` to generate and train PolyAPI models. The
+  `train:openapi` command and `pnpm workflows train:openapi` shortcut remain aliases.
 - Use context paths that start with `POLYAPI_NAMESPACE`.
 - Use `{file}` in the context prompt when training multiple specs into
   file-based child contexts.
 - Review generated model JSON before committing it.
+- `--dry-run` is an offline preview of the training inputs. `--generate-only`
+  calls the platform translator and writes a reviewable `.poly.json` model
+  without registering resources; it is not an offline mode.
+- Retry reviewed saved models with `pnpm flow train-model <model.poly.json>`.
+  Use `--overwrite-model` only when intentionally regenerating existing models.
+- Training registers outbound API Functions. A normal Flow push does not train
+  specs, and training does not invoke the external provider. Follow the
+  [training reference](../cli/README.md#openapi-training) for naming, target
+  verification, and SDK generation.
 
 ## Agents And Skills
 
-This template intentionally does not vendor skills. Bring in relevant skills
-from:
+This template does not vendor skills. Kickstart installs the general, common,
+and TypeScript skill folders, including `api-function-training`. For a manual
+checkout, bring in relevant skills from:
 
 <https://github.com/polyapi/poly-skills>
 
@@ -231,12 +294,12 @@ implementation and update stale docs.
 
 ## Pre-Commit Checks
 
-Before committing, run:
+Before committing, run these commands with your Flow file already selected:
 
 ```bash
 pnpm check
 pnpm workflows test
-ENVPATH=workflows/dev.env pnpm workflows push --dry-run
+pnpm workflows push --dry-run
 ```
 
 Skip the dry run only when the change is documentation-only or tooling-only and

@@ -17,7 +17,7 @@ Docs: <https://docs.polyapi.io/platform_overview.html>
 1. This `AGENTS.md` for repo-wide rules
 2. Checked-in executable code and JSON artefacts under `workflows/src/`, plus
    checked-in tooling under `cli/`
-3. `CONVENTIONS.md`
+3. `docs/CONVENTIONS.md`
 4. Relevant installed skills under `./.agents/skills/`
 5. `README.md`
 6. Same-folder `OVERVIEW.md` files and maintained project docs

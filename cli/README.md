@@ -5,6 +5,9 @@ functions and JSON artefacts.
 
 ## Commands
 
+Run commands from the repository root. For dependency setup and the full local
+check/test command list, see [setup and development](../docs/SETUP.md).
+
 ```bash
 pnpm --filter flow-cli run build
 pnpm --filter flow-cli run generate
@@ -19,11 +22,13 @@ flow delete-content --type api --context example.apis --dry-run
 flow logs <function-id> --keyword error
 ```
 
-When called through the workflows package:
+When called through the workflows package, select the Flow file once for the
+terminal session:
 
 ```bash
-ENVPATH=workflows/dev.env pnpm workflows push --dry-run
-ENVPATH=workflows/dev.env pnpm workflows push
+export ENVPATH=workflows/dev.env
+pnpm workflows push --dry-run
+pnpm workflows push
 ```
 
 From the workspace root, the operational commands also have package shortcuts
@@ -40,7 +45,121 @@ shortcuts remain supported; `pnpm workflows logs` is also available. Use
 `--help` on any of these commands for options. The old common shell scripts
 are no longer needed.
 
+### Self-update
+
+Update the CLI from `polyapi/poly-ts-project-template` using your existing
+GitHub SSH access:
+
+```bash
+pnpm flow run self-update --check
+pnpm flow run self-update
+```
+
+`--check` downloads and compares the template without changing your project.
+The update command shows the replacement plan and asks for confirmation. Use
+`--yes` to authorize it without an interactive prompt. Keep `run` in these
+commands because `self-update` is also a pnpm command.
+
+The updater records the exact template commit, saves your current CLI source
+under `.flow/updates/<update-id>/`, replaces the source, and runs local build
+and test checks. Added and uncommitted custom source is included in the backup.
+Backups include checked-in schemas and type declarations; dependencies,
+compiled output, and credentials are excluded. Unsupported files
+or links stop the update before replacement.
+
+Installed dependencies are preserved. If the old and incoming CLI dependency
+declarations differ, the updater stops before replacement and reports the
+required changes. Review them with your coding agent and approve dependency
+changes before retrying. Flow does not run package installation, replace the
+project's root package configuration or lockfile, or invoke Poly setup,
+generation, or deployment during an update.
+
+After a successful update, copy the printed compatibility prompt into your
+coding agent. The prompt includes the backup and change-report paths so the
+agent can inspect extensions inside and outside `cli/`, adapt intended
+customizations, preserve upstream fixes and environment safeguards, and run
+local checks. The updater does not automatically merge custom code. Without
+an original template baseline, differences cannot all be classified as user
+customizations; the agent should flag ambiguous changes for clarification.
+Changes remain uncommitted for review.
+
+#### Recovery
+
+A failed build or local verification restores the previous source. To undo a
+completed update, restore the latest backup or select its ID:
+
+```bash
+pnpm flow run self-update --rollback
+pnpm flow run self-update --rollback UPDATE_ID
+```
+
+Rollback asks for confirmation; `--yes` also applies to rollback. Each backup
+contains an independent `restore.cjs` script. Use the exact recovery command
+printed by the updater if Flow itself can no longer run:
+
+```bash
+node .flow/updates/UPDATE_ID/restore.cjs
+```
+
+Replace `UPDATE_ID` with the printed backup ID. Keep the backup until you have
+completed the compatibility review. Backups are local recovery files and
+should remain ignored by Git.
+
+Rollback restores source and preserves installed dependencies. Rebuild with
+`pnpm --filter flow-cli run build` afterward. Source edited after an update is
+saved in the recovery folder before rollback.
+
+#### Existing projects and template revisions
+
+The updater runs directly with Node.js, even when Flow has not been built.
+For a project that does not yet contain the updater, run it from a fresh
+template checkout:
+
+```bash
+node /absolute/path/to/poly-ts-project-template/cli/bin/self-update.cjs --project /absolute/path/to/project
+```
+
+The default source is `git@github.com:polyapi/poly-ts-project-template.git`,
+and the default revision is `main`. Select a branch, tag, or commit with
+`--ref`. To test an unpublished template revision, use a local Git checkout:
+
+```bash
+pnpm flow run self-update --check --source /absolute/path/to/template --ref main
+```
+
+`--source` reads committed Git content; uncommitted template edits are not
+included. The downloaded template is temporary, and `gh` is not required.
+
+### Workflow operations
+
+The Flow CLI validates and synchronizes the artefact types documented in
+[CONVENTIONS.md](../docs/CONVENTIONS.md#artefacts). It supports scoped `--paths` and
+`--types` pushes, dry runs, production safeguards, and explicit orphan
+deletion. See the command reference below for payload details.
+
+Flow also provides OpenAPI training, scoped content deletion, and function logs:
+
+```bash
+pnpm flow train-openapi designs/ --context 'demo.apis.{file}'
+pnpm flow delete-content --types api-functions,schemas --context demo.apis
+pnpm flow logs <function-id> --keyword error
+```
+
+These commands use the same Flow environment configuration (`ENVPATH` when
+specified). Training and deletion retain branch/environment and production
+confirmations. Deletion previews matching resources and requires typing
+`DELETE`; use `--dry-run` to preview without deleting. The existing
+`pnpm workflows train:openapi` and `pnpm workflows delete:content` shortcuts
+remain available and now invoke Flow.
+
 ### OpenAPI training
+
+Keep upstream specifications under `designs/` or a workflow-local
+`artefacts/specs/` folder. For an interactive spec/context prompt, run:
+
+```bash
+pnpm flow train-openapi
+```
 
 ```bash
 pnpm flow train-openapi designs/crm.json --context example.crm --operation-id validatePhone --operation-id getProfile
@@ -169,8 +288,12 @@ POLYAPI_OPENAPI_SPEC_URL=https://eu1.polyapi.io/swagger-json
 OTP_ENABLED=true
 ```
 
-Use `ENVPATH` to point Flow at the local environment file for the target
-environment.
+Export `ENVPATH` once to select the local target file for the terminal session.
+Flow defaults to `workflows/dev.env` when it is unset. A bare filename such as
+`export ENVPATH=dev.env` searches `workflows/` first; the explicit
+`export ENVPATH=workflows/dev.env` form is unambiguous. This selects Flow
+configuration without loading that file into the parent shell or direct SDK
+calls. See [environment selection](../docs/SETUP.md#select-a-flow-environment).
 
 When `OTP_ENABLED=true`, Flow prompts for an OTP at the first write request
 and sends it as `x-otp` on its POST, PUT, PATCH, and DELETE requests, including

@@ -29,7 +29,7 @@ export async function motdServer(
   eventPayload: MotdPayload
 ): Promise<MotdResponse> {
   try {
-    const content = await poly.sample.sampleWorkflow.motdClient(
+    const content = await poly.example.sampleWorkflow.motdClient(
       eventPayload.mood
     );
     return {
@@ -37,7 +37,7 @@ export async function motdServer(
       message: `Hi ${eventPayload.name}! ${content}`,
     };
   } catch (error) {
-    const handled = await poly.sample.sampleWorkflow.motdErrorHandler({
+    const handled = await poly.example.sampleWorkflow.motdErrorHandler({
       message: error instanceof Error ? error.message : String(error),
       functionName: 'motdClient',
       functionContext: 'example.sampleWorkflow',
