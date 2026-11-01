@@ -10,6 +10,7 @@
   "scripts": {
     "self-update": "node bin/self-update.cjs",
     "test:self-update": "node --test bin/self-update.test.cjs",
+    "test:bootstrap": "node --test bin/bootstrap-manifests.test.cjs bin/bootstrap.test.cjs",
     "build:no-schema": "tsc",
     "build": "tsc",
     "target-env": "pnpm run build && node dist/cli.js target-env",

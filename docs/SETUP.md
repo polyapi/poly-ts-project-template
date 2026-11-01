@@ -104,7 +104,7 @@ dry runs and help do not need a pin or connection.
 
 Before deployment, align the selected sample's namespace and complete its
 training and configuration prerequisites. Start with the
-[message-of-the-day tutorial](../workflows/src/sampleWorkflow/README.md#configure-environment-values),
+[message-of-the-day tutorial](../workflows/src/sampleWorkflow/README.md#1-confirm-setup-and-namespace),
 then [select your Flow file once](#select-a-flow-environment) and preview only
 that sample:
 

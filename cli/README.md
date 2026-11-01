@@ -45,6 +45,65 @@ shortcuts remain supported; `pnpm workflows logs` is also available. Use
 `--help` on any of these commands for options. The old common shell scripts
 are no longer needed.
 
+### One-time upgrade for older projects
+
+If your project has an older Flow CLI without `self-update`, run this one-line
+command from your **existing project root**. It downloads a temporary template
+checkout and runs the upgrade using your existing GitHub SSH access:
+
+```bash
+(flow_tmp=$(mktemp -d) && trap 'rm -rf -- "$flow_tmp"' EXIT && git clone --depth 1 git@github.com:polyapi/poly-ts-project-template.git "$flow_tmp" && bash "$flow_tmp/cli/upgrade.sh" --source "$flow_tmp" --project "$PWD")
+```
+
+Requires Git, Node.js, pnpm, and access to the template repository. The temporary
+checkout is removed when the command finishes; GitHub CLI and HTTP tokens are
+not required.
+
+The upgrade backs up your existing CLI source and replaces `cli/` with the
+selected template version. It also saves an AI compatibility prompt so your
+coding agent can review extensions and reapply intended customizations.
+
+Your root `package.json` and `workflows/package.json` keep their existing
+settings, dependency versions, and custom script values. The upgrade adds only
+missing Flow launcher scripts. If a script already exists with a different
+value, it is preserved and reported for your coding agent to review. The
+project's workspace configuration and lockfile are not replaced with template
+copies.
+
+For a preview, add `--check` to the `bash` invocation above. You can also run the
+script from an existing template checkout:
+
+```bash
+bash /absolute/path/to/poly-ts-project-template/cli/upgrade.sh --project "$PWD" --check
+bash /absolute/path/to/poly-ts-project-template/cli/upgrade.sh --project "$PWD"
+```
+
+If the incoming **CLI** dependency requirements differ, review the displayed
+changes and rerun with `--approve-dependency-changes` to authorize replacing
+`cli/package.json`. `--yes` authorizes source replacement without a prompt; it
+does not approve dependency changes. Root and workflow dependency declarations
+remain unchanged.
+
+This initial upgrade replaces source only. It does not install dependencies,
+build Flow, regenerate the SDK, or call PolyAPI. After reviewing the report and
+reapplying customizations, install dependencies if needed using
+`pnpm install --ignore-scripts`, then run:
+
+```bash
+pnpm --filter flow-cli run build
+pnpm --filter flow-cli run test:self-update
+```
+
+Review any resulting lockfile changes within your project. Future upgrades can
+use the [self-update command](#self-update). If a custom root `flow` script was
+preserved, use `pnpm --filter flow-cli run self-update` directly until your agent
+has reconciled that launcher.
+
+The recovery command printed by the upgrade can restore the previous CLI and
+the original contents of package files it changed. If one of those files has
+been edited since the upgrade, recovery stops rather than overwrite newer edits.
+Keep the backup until the compatibility review and local checks are complete.
+
 ### Self-update
 
 Update the CLI from `polyapi/poly-ts-project-template` using your existing
@@ -112,8 +171,10 @@ saved in the recovery folder before rollback.
 #### Existing projects and template revisions
 
 The updater runs directly with Node.js, even when Flow has not been built.
-For a project that does not yet contain the updater, run it from a fresh
-template checkout:
+Use the [one-time upgrade](#one-time-upgrade-for-older-projects) to bring an
+older project onto this version and preserve its package customizations. For
+projects already using the current package layout, the updater can also run
+from a separate template checkout:
 
 ```bash
 node /absolute/path/to/poly-ts-project-template/cli/bin/self-update.cjs --project /absolute/path/to/project
