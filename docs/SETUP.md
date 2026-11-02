@@ -330,38 +330,36 @@ there before deployment.
 
 ## Agent skills
 
-If you used kickstart, the general, common, and TypeScript skills are already
-installed in `.agents/skills/`, including `api-function-training`. No additional
-skill setup is needed. Skills guide coding agents; they are optional for running
-the tutorials and are not runtime dependencies.
+Skills guide coding agents; they are optional for running the tutorials and
+are not runtime dependencies.
 
-For a manual checkout, you can install relevant skills from
-[polyapi/poly-skills](https://github.com/polyapi/poly-skills):
+If you used kickstart, the TypeScript skills are already installed in
+`.agents/skills/` and recorded in `.agents/flow-skills.json`. Kickstart requires
+`api-function-training` to be available on `poly-skills/main` and reports an
+error if it is missing. To refresh the skills and install any that have since
+been added to poly-skills, run:
 
-1. Clone or update `poly-skills` outside this project.
-2. Create `.agents/skills/` in this project if it does not exist.
-3. Copy each selected skill directory, including its supporting files, directly
-   into `.agents/skills/` using the skill directory's own name.
+```bash
+pnpm flow skills update
+```
 
-Recommended directories, relative to the `poly-skills` checkout:
+For a manual checkout, or a project whose skills were copied by hand or by an
+older kickstart, run:
 
-- `general/skills/clean-code`
-- `general/skills/markdownlint-compliance`
-- `polyapi-common/skills/canopy-ui`
-- `polyapi-common/skills/design-analysis`
-- `polyapi-common/skills/generate-overview`
-- `polyapi-common/skills/polyapi-constructs`
-- `polyapi-typescript/skills/api-function-training`
-- `polyapi-typescript/skills/artefacts-usage`
-- `polyapi-typescript/skills/coding-conventions`
-- `polyapi-typescript/skills/coding-standards`
-- `polyapi-typescript/skills/polyapi-sdk`
-- `polyapi-typescript/skills/polyapi-runtime-testing`
+```bash
+pnpm flow skills add
+```
 
-Keep the destination flat: `general/skills/clean-code` becomes
-`.agents/skills/clean-code`. Do not copy package roots or preserve parent
-folders above a skill. Kickstart requires `api-function-training` to be available
-on `poly-skills/main` and reports an error if it is missing.
+When asked what the skills are needed for, choose **Coding in TypeScript**, or
+run `pnpm flow skills add typescript` directly. Flow installs the `general`,
+`polyapi-common`, and `polyapi-typescript` skill packs from
+[polyapi/poly-skills](https://github.com/polyapi/poly-skills) using your GitHub
+SSH access. Existing folders that match poly-skills are kept; Flow asks before
+replacing any that differ. Commit `.agents/skills/` and
+`.agents/flow-skills.json`.
+
+See [agent skills](../cli/README.md#agent-skills) for local edits, dry runs,
+and other sources.
 
 See [AGENTS.md](../AGENTS.md) and [CONVENTIONS.md](CONVENTIONS.md) before making
 workflow or tooling changes.

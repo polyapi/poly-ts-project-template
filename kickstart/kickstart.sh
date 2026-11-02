@@ -187,12 +187,6 @@ const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
 pkg.name = process.argv[2];
 fs.writeFileSync('package.json', `${JSON.stringify(pkg, null, 2)}\n`);
 NODE
-  mkdir -p .agents/skills
-  for category in general polyapi-common polyapi-typescript; do
-    cp -R "$download_dir/skills/$category/skills/." .agents/skills/
-  done
-  [[ -s .agents/skills/api-function-training/SKILL.md ]]
-
   (
     umask 077
     printf '%s\n' \
@@ -240,6 +234,11 @@ NODE
 
   printf 'Building Flow CLI...\n'
   pnpm flow build
+  printf 'Installing agent skills...\n'
+  # Install from the checkout fetched above; Flow records the setup and revision
+  # in .agents/flow-skills.json so `pnpm flow skills update` can refresh them.
+  node cli/dist/cli.js skills add typescript --source "$download_dir/skills"
+  [[ -s .agents/skills/api-function-training/SKILL.md ]]
   printf 'Verifying Flow configuration from saved Poly setup...\n'
   (
     export KICKSTART_EXPECTED_BASE_URL="$base_url"

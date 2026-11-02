@@ -321,10 +321,11 @@ tree: other artefact types join only with `--paths`, `--types` or
 ## Agents And Skills
 
 This template does not vendor skills. Kickstart installs the general, common,
-and TypeScript skill folders, including `api-function-training`. For a manual
-checkout, bring in relevant skills from:
-
-<https://github.com/polyapi/poly-skills>
+and TypeScript skill packs, including `api-function-training`, from
+<https://github.com/polyapi/poly-skills> with `pnpm flow skills add typescript`.
+For a manual checkout, run `pnpm flow skills add`; refresh installed skills with
+`pnpm flow skills update`. Flow records the setup in
+`.agents/flow-skills.json`; see [agent skills](SETUP.md#agent-skills).
 
 Keep skills generic unless the repository is no longer a template. If skill
 guidance conflicts with checked-in code or artefacts, follow the checked-in
