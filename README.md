@@ -12,13 +12,19 @@ walks through a working integration and explains the pieces as you use them.
 
 ## Getting started
 
-Requires Git, GitHub SSH access to the template and skills repositories, a
-supported Node.js LTS release, pnpm 10.0.0, and the VS Code `code` command. GitHub CLI (`gh`) is not required.
+Requires curl, tar, Git, a supported Node.js LTS release, pnpm 10.0.0, and the
+VS Code `code` command. GitHub authentication and GitHub CLI (`gh`) are not required.
 
 ```bash
-git clone git@github.com:polyapi/poly-ts-project-template.git && \
-  ./poly-ts-project-template/kickstart/kickstart.sh
+curl -fsSL https://raw.githubusercontent.com/polyapi/poly-ts-project-template/main/kickstart/kickstart.sh | bash
 ```
+
+Kickstart downloads the public template into a temporary directory and fetches
+skills with a shallow HTTPS Git clone. You do not need to clone the template
+first. From an existing template checkout, `bash kickstart/kickstart.sh` also works.
+
+The parent directory defaults to your current terminal directory. Your project
+is created inside it using the project name you enter.
 
 Follow the prompts for your project location, namespace, PolyAPI instance, and
 API key. Kickstart installs the SDK for your selected instance, configures
