@@ -1,66 +1,79 @@
-import * as fs from "node:fs";
-import * as path from "node:path";
-import { createInterface } from "node:readline/promises";
-import { Writable } from "node:stream";
-import * as dotenv from "dotenv";
-import createClient from "openapi-fetch";
-import type { paths } from "../sdk/schema";
-import type { EnvLoadResult } from "./deploymentConfig";
-import { parseBooleanEnv } from "./deploymentConfig";
-import { findWorkspaceRoot } from "./fileSystem";
-import { chalk, logger, warningColor } from "./logger";
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import { createInterface } from 'node:readline/promises';
+import { Writable } from 'node:stream';
+import * as dotenv from 'dotenv';
+import createClient from 'openapi-fetch';
+import type { paths } from '../sdk/schema';
+import type { EnvLoadResult } from './deploymentConfig';
+import { parseBooleanEnv } from './deploymentConfig';
+import {
+  mergeEnvironmentLayers,
+  resolveWorkflowPolyConfig,
+} from './environment';
+import { findWorkspaceRoot } from './fileSystem';
+import { chalk, logger, warningColor } from './logger';
 
 class OtpManager {
-    private cachedOtp?: string;
+  private cachedOtp?: Promise<string>;
 
-    async getDeleteHeaders(): Promise<Record<string, string>> {
-        if (!parseBooleanEnv("OTP_ENABLED", false)) {
-            return {};
-        }
-
-        if (!this.cachedOtp) {
-            this.cachedOtp = await promptForHiddenInput("OTP is required to delete resources. Enter OTP: ");
-        }
-
-        return { "x-otp": this.cachedOtp };
+  async getHeaders(method: string): Promise<Record<string, string>> {
+    if (
+      !['POST', 'PUT', 'PATCH', 'DELETE'].includes(method.toUpperCase()) ||
+      !parseBooleanEnv('OTP_ENABLED', false)
+    ) {
+      return {};
     }
+
+    this.cachedOtp ??= promptForHiddenInput(
+      'OTP is required to modify resources. Enter OTP: '
+    ).catch(error => {
+      this.cachedOtp = undefined;
+      throw error;
+    });
+
+    return { 'x-otp': await this.cachedOtp };
+  }
 }
 
 const otpManager = new OtpManager();
 
 async function promptForHiddenInput(prompt: string): Promise<string> {
-    if (!process.stdin.isTTY || !process.stdout.isTTY) {
-        throw new Error("OTP is required to delete resources, but no interactive terminal is available");
+  if (!process.stdin.isTTY || !process.stdout.isTTY) {
+    throw new Error(
+      'OTP is required to modify resources, but no interactive terminal is available'
+    );
+  }
+
+  const mutedOutput = new Writable({
+    write(chunk, encoding, callback) {
+      if (!(mutedOutput as Writable & { muted?: boolean }).muted) {
+        process.stdout.write(chunk, encoding as BufferEncoding);
+      }
+      callback();
+    },
+  }) as Writable & { muted?: boolean };
+
+  const readline = createInterface({
+    input: process.stdin,
+    output: mutedOutput,
+    terminal: true,
+  });
+
+  try {
+    process.stdout.write(prompt);
+    mutedOutput.muted = true;
+    const answer = (await readline.question('')).trim();
+    process.stdout.write('\n');
+
+    if (!answer) {
+      throw new Error('OTP is required to modify resources');
     }
 
-    const mutedOutput = new Writable({
-        write(chunk, encoding, callback) {
-            if (!(mutedOutput as Writable & { muted?: boolean }).muted) {
-                process.stdout.write(chunk, encoding as BufferEncoding);
-            }
-            callback();
-        },
-    }) as Writable & { muted?: boolean };
-
-    const readline = createInterface({
-        input: process.stdin,
-        output: mutedOutput,
-        terminal: true,
-    });
-
-    try {
-        mutedOutput.muted = true;
-        const answer = (await readline.question(prompt)).trim();
-        process.stdout.write("\n");
-
-        if (!answer) {
-            throw new Error("OTP is required to delete resources");
-        }
-
-        return answer;
-    } finally {
-        readline.close();
-    }
+    return answer;
+  } finally {
+    readline.close();
+  }
 }
 
 /**
@@ -68,241 +81,211 @@ async function promptForHiddenInput(prompt: string): Promise<string> {
  * @throws Error if required environment variables are missing
  */
 export function loadEnv(): EnvLoadResult {
-    const workspaceRoot = findWorkspaceRoot(process.cwd());
-    const defaultWorkflowEnvPath = path.join(workspaceRoot, "workflows", "dev.env");
-    const polyEnvPath = resolvePolyEnvPath();
-    const rootEnvPath = path.join(__dirname, "../../../dev.env");
+  const workspaceRoot = findWorkspaceRoot(process.cwd());
+  const defaultWorkflowEnvPath = path.join(
+    workspaceRoot,
+    'workflows',
+    'dev.env'
+  );
+  const polyEnvPath = resolveWorkflowPolyConfig(workspaceRoot);
+  const rootEnvPath = path.join(__dirname, '../../../dev.env');
 
-    // Load root dev.env first (lowest priority)
-    if (fs.existsSync(rootEnvPath)) {
-        dotenv.config({ path: rootEnvPath });
-    }
+  const envPathOverride = process.env.ENVPATH?.trim();
+  const selectedEnvPath = envPathOverride
+    ? resolveSelectedEnvPath(envPathOverride)
+    : defaultWorkflowEnvPath;
+  if (envPathOverride && !fs.existsSync(selectedEnvPath)) {
+    throw new Error(
+      `ENVPATH points to "${envPathOverride}", but that file does not exist.`
+    );
+  }
 
-    // Load Poly CLI config if present (can override previous)
-    if (polyEnvPath && fs.existsSync(polyEnvPath)) {
-        dotenv.config({ path: polyEnvPath, override: true });
-    }
+  const readLayer = (filename: string | null): NodeJS.ProcessEnv => {
+    if (!filename || !fs.existsSync(filename)) return {};
+    const result = dotenv.config({
+      path: filename,
+      processEnv: {},
+      quiet: true,
+    });
+    if (result.error)
+      throw new Error(`Unable to load environment configuration: ${filename}`);
+    return result.parsed ?? {};
+  };
+  const selectedValues = readLayer(selectedEnvPath);
+  // Selected env file > shell settings > this workflow SDK's setup > legacy root env.
+  Object.assign(
+    process.env,
+    mergeEnvironmentLayers(
+      readLayer(rootEnvPath),
+      readLayer(polyEnvPath),
+      process.env,
+      selectedValues
+    )
+  );
 
-    const envPathOverride = process.env.ENVPATH?.trim();
-    const selectedEnvPath = envPathOverride ? resolveSelectedEnvPath(envPathOverride) : defaultWorkflowEnvPath;
+  if (!process.env.TENANT_ID && process.env.POLY_TENANT_ID) {
+    process.env.TENANT_ID = process.env.POLY_TENANT_ID;
+  }
+  if (!process.env.POLY_TENANT_ID && process.env.TENANT_ID) {
+    process.env.POLY_TENANT_ID = process.env.TENANT_ID;
+  }
+  if (!process.env.POLYAPI_NAMESPACE && process.env.POLY_API_NAMESPACE) {
+    process.env.POLYAPI_NAMESPACE = process.env.POLY_API_NAMESPACE;
+  }
+  if (!process.env.POLY_API_NAMESPACE && process.env.POLYAPI_NAMESPACE) {
+    process.env.POLY_API_NAMESPACE = process.env.POLYAPI_NAMESPACE;
+  }
+  if (!process.env.POLYAPI_NAMESPACE && process.env.POLY_NAMESPACE) {
+    process.env.POLYAPI_NAMESPACE = process.env.POLY_NAMESPACE;
+  }
 
-    if (envPathOverride && !fs.existsSync(selectedEnvPath)) {
-        throw new Error(`ENVPATH points to "${envPathOverride}", but that file does not exist.`);
+  // Validate required environment variables
+  // Deviation from upstream Flow: this project accepts either the single
+  // POLYAPI_NAMESPACE or the comma-separated POLYAPI_NAMESPACES (see utils/namespace.ts).
+  const hasNamespace = Boolean(process.env.POLYAPI_NAMESPACE?.trim());
+  const hasNamespaces = Boolean(process.env.POLYAPI_NAMESPACES?.trim());
+  if (!hasNamespace && !hasNamespaces) {
+    logger.error(
+      `\n${chalk.bold.red(
+        '══════════════════════════════════════════════════════════'
+      )}`
+    );
+    logger.error(
+      chalk.bold.red(
+        '             CONFIGURATION ERROR                          '
+      )
+    );
+    logger.error(
+      chalk.bold.red(
+        '══════════════════════════════════════════════════════════'
+      )
+    );
+    logger.error(
+      warningColor('\n[!] Missing required environment variable: ') +
+        chalk.bold('POLYAPI_NAMESPACE (or POLYAPI_NAMESPACES)')
+    );
+    logger.error(
+      chalk.gray('\nAll artifacts must be namespaced for proper organization.')
+    );
+    logger.error(
+      chalk.gray('Please add this variable to your dev.env file.\n')
+    );
+    logger.error(chalk.cyan('Example:\n'));
+    logger.error(chalk.white('  POLYAPI_NAMESPACE=example'));
+    logger.error(chalk.white('  POLYAPI_NAMESPACES=example,other'));
+    logger.error(chalk.gray('\nChecked:'));
+    logger.error(chalk.dim(`  - ${rootEnvPath}`));
+    logger.error(
+      chalk.dim(`  - ${polyEnvPath ?? 'workflow PolyAPI setup not found'}`)
+    );
+    logger.error(chalk.dim(`  - ${defaultWorkflowEnvPath} (default)`));
+    if (envPathOverride) {
+      logger.error(chalk.dim(`  - ${selectedEnvPath} (ENVPATH)`));
     }
+    logger.error(
+      chalk.bold.red(
+        '\n══════════════════════════════════════════════════════════\n'
+      )
+    );
 
-    // Load the selected workspace env file (highest priority)
-    if (fs.existsSync(selectedEnvPath)) {
-        dotenv.config({ path: selectedEnvPath, override: true });
-    }
+    process.exit(1);
+  }
 
-    // Map Poly CLI env names to this CLI's expected names
-    if (!process.env.BASE_URL && process.env.POLYAPI_BASE_URL) {
-        process.env.BASE_URL = process.env.POLYAPI_BASE_URL;
-    }
-    if (!process.env.POLYAPI_BASE_URL && process.env.BASE_URL) {
-        process.env.POLYAPI_BASE_URL = process.env.BASE_URL;
-    }
-    if (!process.env.API_KEY && process.env.POLYAPI_API_KEY) {
-        process.env.API_KEY = process.env.POLYAPI_API_KEY;
-    }
-    if (!process.env.POLYAPI_API_KEY && process.env.API_KEY) {
-        process.env.POLYAPI_API_KEY = process.env.API_KEY;
-    }
-    if (!process.env.TENANT_ID && process.env.POLY_TENANT_ID) {
-        process.env.TENANT_ID = process.env.POLY_TENANT_ID;
-    }
-    if (!process.env.POLY_TENANT_ID && process.env.TENANT_ID) {
-        process.env.POLY_TENANT_ID = process.env.TENANT_ID;
-    }
-    if (!process.env.POLYAPI_NAMESPACE && process.env.POLY_API_NAMESPACE) {
-        process.env.POLYAPI_NAMESPACE = process.env.POLY_API_NAMESPACE;
-    }
-    if (!process.env.POLY_API_NAMESPACE && process.env.POLYAPI_NAMESPACE) {
-        process.env.POLY_API_NAMESPACE = process.env.POLYAPI_NAMESPACE;
-    }
-    if (!process.env.POLYAPI_NAMESPACE && process.env.POLY_NAMESPACE) {
-        process.env.POLYAPI_NAMESPACE = process.env.POLY_NAMESPACE;
-    }
-
-    // Validate required environment variables
-    // Deviation from upstream Flow: this project accepts either the single
-    // POLYAPI_NAMESPACE or the comma-separated POLYAPI_NAMESPACES (see utils/namespace.ts).
-    const hasNamespace = Boolean(process.env.POLYAPI_NAMESPACE?.trim());
-    const hasNamespaces = Boolean(process.env.POLYAPI_NAMESPACES?.trim());
-    if (!hasNamespace && !hasNamespaces) {
-        logger.error("\n" + chalk.bold.red("══════════════════════════════════════════════════════════"));
-        logger.error(chalk.bold.red("             CONFIGURATION ERROR                          "));
-        logger.error(chalk.bold.red("══════════════════════════════════════════════════════════"));
-        logger.error(
-            warningColor("\n[!] Missing required environment variable: ") +
-                chalk.bold("POLYAPI_NAMESPACE (or POLYAPI_NAMESPACES)"),
-        );
-        logger.error(chalk.gray("\nAll artifacts must be namespaced for proper organization."));
-        logger.error(chalk.gray("Please add this variable to your dev.env file.\n"));
-        logger.error(chalk.cyan("Example:\n"));
-        logger.error(chalk.white("  POLYAPI_NAMESPACE=example"));
-        logger.error(chalk.white("  POLYAPI_NAMESPACES=example,other"));
-        logger.error(chalk.gray("\nChecked:"));
-        logger.error(chalk.dim(`  - ${rootEnvPath}`));
-        logger.error(chalk.dim(`  - ${polyEnvPath ?? "polyapi config not found (checked pnpm + node_modules/.poly)"}`));
-        logger.error(chalk.dim(`  - ${defaultWorkflowEnvPath} (default)`));
-        if (envPathOverride) {
-            logger.error(chalk.dim(`  - ${selectedEnvPath} (ENVPATH)`));
-        }
-        logger.error(chalk.bold.red("\n══════════════════════════════════════════════════════════\n"));
-
-        process.exit(1);
-    }
-
-    return {
-        displayPath: envPathOverride || "workflows/dev.env",
-        resolvedPath: selectedEnvPath,
-        exists: fs.existsSync(selectedEnvPath),
-        fromEnvPath: Boolean(envPathOverride),
-    };
+  return {
+    displayPath: envPathOverride || 'workflows/dev.env',
+    resolvedPath: selectedEnvPath,
+    exists: fs.existsSync(selectedEnvPath),
+    fromEnvPath: Boolean(envPathOverride),
+    declaredTargetEnvId: selectedValues.TARGET_ENV_ID?.trim(),
+  };
 }
 
 function resolveSelectedEnvPath(envPathOverride: string): string {
-    if (path.isAbsolute(envPathOverride)) {
-        return envPathOverride;
-    }
+  if (path.isAbsolute(envPathOverride)) {
+    return envPathOverride;
+  }
 
-    const workspaceRoot = findWorkspaceRoot(process.cwd());
-    const normalizedOverride = envPathOverride.replace(/\\/g, "/");
-    const isWorkflowsRelative = normalizedOverride === "workflows" || normalizedOverride.startsWith("workflows/");
+  const workspaceRoot = findWorkspaceRoot(process.cwd());
+  const normalizedOverride = envPathOverride.replace(/\\/g, '/');
+  const isWorkflowsRelative =
+    normalizedOverride === 'workflows' ||
+    normalizedOverride.startsWith('workflows/');
 
-    if (isWorkflowsRelative) {
-        return path.resolve(workspaceRoot, envPathOverride);
-    }
+  if (isWorkflowsRelative) {
+    return path.resolve(workspaceRoot, envPathOverride);
+  }
 
-    const workflowsCandidate = path.resolve(workspaceRoot, "workflows", envPathOverride);
-    if (fs.existsSync(workflowsCandidate)) {
-        return workflowsCandidate;
-    }
-
-    const cwdCandidate = path.resolve(process.cwd(), envPathOverride);
-    if (fs.existsSync(cwdCandidate)) {
-        return cwdCandidate;
-    }
-
-    const workspaceCandidate = path.resolve(workspaceRoot, envPathOverride);
-    if (fs.existsSync(workspaceCandidate)) {
-        return workspaceCandidate;
-    }
-
+  const workflowsCandidate = path.resolve(
+    workspaceRoot,
+    'workflows',
+    envPathOverride
+  );
+  if (fs.existsSync(workflowsCandidate)) {
     return workflowsCandidate;
-}
+  }
 
-function findUp(relativePath: string): string | null {
-    let current = process.cwd();
+  const cwdCandidate = path.resolve(process.cwd(), envPathOverride);
+  if (fs.existsSync(cwdCandidate)) {
+    return cwdCandidate;
+  }
 
-    while (true) {
-        const candidate = path.join(current, relativePath);
-        if (fs.existsSync(candidate)) {
-            return candidate;
-        }
+  const workspaceCandidate = path.resolve(workspaceRoot, envPathOverride);
+  if (fs.existsSync(workspaceCandidate)) {
+    return workspaceCandidate;
+  }
 
-        const parent = path.dirname(current);
-        if (parent === current) {
-            return null;
-        }
-        current = parent;
-    }
-}
-
-function resolvePolyEnvPath(): string | null {
-    const fromPackage = resolvePolyEnvPathFromPackage();
-    if (fromPackage) {
-        return fromPackage;
-    }
-
-    const fromPnpm = findPnpmPolyEnvPath();
-    if (fromPnpm) {
-        return fromPnpm;
-    }
-
-    const fromNodeModules = findUp("node_modules/.poly/.config.env");
-    if (fromNodeModules) {
-        return fromNodeModules;
-    }
-
-    const fallback = path.join(__dirname, "../../../node_modules/.poly/.config.env");
-    return fs.existsSync(fallback) ? fallback : null;
-}
-
-function resolvePolyEnvPathFromPackage(): string | null {
-    try {
-        const pkgJsonPath = require.resolve("polyapi/package.json", {
-            paths: [process.cwd()],
-        });
-        const pkgDir = path.dirname(pkgJsonPath);
-        const nodeModulesDir = path.dirname(pkgDir);
-        const candidate = path.join(nodeModulesDir, ".poly", ".config.env");
-        return fs.existsSync(candidate) ? candidate : null;
-    } catch {
-        return null;
-    }
-}
-
-function findPnpmPolyEnvPath(): string | null {
-    const pnpmRoot = findUp("node_modules/.pnpm");
-    if (!pnpmRoot) {
-        return null;
-    }
-
-    const pnpmDir = path.join(pnpmRoot, "node_modules/.pnpm");
-    let entries: string[] = [];
-    try {
-        entries = fs.readdirSync(pnpmDir);
-    } catch {
-        return null;
-    }
-
-    for (const entry of entries) {
-        if (!entry.startsWith("polyapi@")) {
-            continue;
-        }
-
-        const candidate = path.join(pnpmDir, entry, "node_modules/.poly/.config.env");
-        if (fs.existsSync(candidate)) {
-            return candidate;
-        }
-    }
-
-    return null;
+  return workflowsCandidate;
 }
 
 /**
  * Get the base URL for PolyAPI
  */
 export function getBaseUrl(): string {
-    return process.env.BASE_URL || "https://eu1.polyapi.io";
+  return process.env.BASE_URL || 'https://eu1.polyapi.io';
 }
 
 /**
  * Create a PolyAPI client instance
  */
 export function createPolyApiClient(): ReturnType<typeof createClient<paths>> {
-    const baseUrl = getBaseUrl();
+  const baseUrl = getBaseUrl();
 
-    return createClient<paths>({
-        baseUrl,
-        headers: {
-            "Content-Type": "application/json",
-            ...(process.env.API_KEY && {
-                Authorization: `Bearer ${process.env.API_KEY}`,
-            }),
-        },
-    });
+  const client = createClient<paths>({
+    baseUrl,
+    headers: {
+      'Content-Type': 'application/json',
+      ...(process.env.API_KEY && {
+        Authorization: `Bearer ${process.env.API_KEY}`,
+      }),
+    },
+  });
+
+  client.use({
+    async onRequest({ request }) {
+      const otpHeaders = await getOtpHeaders(request.method);
+      for (const [name, value] of Object.entries(otpHeaders)) {
+        request.headers.set(name, value);
+      }
+      return request;
+    },
+  });
+
+  return client;
 }
 
 /**
  * Sleep for a specified number of milliseconds
  */
 export function sleep(ms: number): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, ms));
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+export async function getOtpHeaders(
+  method: string
+): Promise<Record<string, string>> {
+  return otpManager.getHeaders(method);
 }
 
 export async function getDeleteHeaders(): Promise<Record<string, string>> {
-    return otpManager.getDeleteHeaders();
+  return getOtpHeaders('DELETE');
 }

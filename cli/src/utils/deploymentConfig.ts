@@ -7,6 +7,8 @@ export interface EnvLoadResult {
   resolvedPath: string;
   exists: boolean;
   fromEnvPath: boolean;
+  /** Pin declared by the selected file, never inherited from the shell/setup. */
+  declaredTargetEnvId?: string;
 }
 
 export interface BranchEnvBinding {

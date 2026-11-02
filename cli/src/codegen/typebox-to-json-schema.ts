@@ -11,9 +11,9 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import type { TSchema } from '@sinclair/typebox';
 import { logger } from '../utils/logger';
-import { pathToFileURL } from "node:url";
 
 interface GeneratorOptions {
   typeboxFilePath: string;

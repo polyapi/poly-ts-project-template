@@ -13,8 +13,12 @@
     "test:integration": "ava --config ava.config.integration.cjs",
     "test:integration:mutating": "RUN_MUTATING_INTEGRATION=true ava --config ava.config.integration.cjs",
     "test:all": "ava && ava --config ava.config.integration.cjs",
-    "train:openapi": "bash src/utilities/common/scripts/trainOpenApi.sh",
-    "delete:content": "bash src/utilities/common/scripts/deleteContent.sh"
+    "train:openapi": "pnpm --filter flow-cli run train:openapi",
+    "delete:content": "pnpm --filter flow-cli run delete:content",
+    "logs": "pnpm --filter flow-cli run logs",
+    "train-openapi": "pnpm --filter flow-cli run train-openapi",
+    "train-model": "pnpm --filter flow-cli run train-model",
+    "delete-content": "pnpm --filter flow-cli run delete-content"
   },
   "ava": {
     "extensions": [
@@ -25,12 +29,12 @@
       "!src/**/*.integration.test.ts"
     ],
     "require": [
-      "ts-node/register"
+      "ts-node/register/transpile-only"
     ],
     "timeout": "60s"
   },
   "dependencies": {
-    "polyapi": "^0.27.0"
+    "polyapi": "na1"
   },
   "devDependencies": {
     "@ava/typescript": "^6.0.0",

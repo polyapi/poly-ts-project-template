@@ -1,7 +1,7 @@
 {
   "name": "logLevel",
   "context": "example.configurations.logging",
-  "description": "Runtime level for example.utilities.log: debug, info, warn, error, fatal, or silent.",
+  "description": "Runtime log level: debug, info, warn, error, fatal, or silent.",
   "value": "{{LOG_LEVEL}}",
   "secrecy": "NONE",
   "visibility": "ENVIRONMENT"

@@ -1,6 +1,6 @@
 {
   "name": "flow-cli",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
   "description": "Flow CLI for syncing local PolyAPI TypeScript artefacts",
   "main": "dist/cli.js",
@@ -8,11 +8,23 @@
     "flow": "bin/flow.js"
   },
   "scripts": {
+    "version": "node bin/flow.js --version",
+    "test:launcher": "node --test bin/flow.test.cjs",
+    "self-update": "node bin/self-update.cjs",
+    "test:self-update": "node --test bin/self-update.test.cjs",
+    "test:bootstrap": "node --test bin/bootstrap-manifests.test.cjs bin/bootstrap.test.cjs",
     "build:no-schema": "tsc",
     "build": "tsc",
+    "target-env": "pnpm run build && node dist/cli.js target-env",
     "build:with-schema": "pnpm generate && tsc",
+    "train:openapi": "pnpm run build && node dist/cli.js train:openapi",
+    "delete:content": "pnpm run build && node dist/cli.js delete:content",
+    "logs": "pnpm run build && node dist/cli.js logs",
     "postinstall": "pnpm generate",
-    "generate": "pnpm exec tsx src/codegen/generate.ts"
+    "generate": "pnpm exec tsx src/codegen/generate.ts",
+    "train-openapi": "pnpm run build && node dist/cli.js train-openapi",
+    "train-model": "pnpm run build && node dist/cli.js train-model",
+    "delete-content": "pnpm run build && node dist/cli.js delete-content"
   },
   "keywords": [
     "polyapi",

@@ -25,8 +25,8 @@ export async function motdClient(mood: Mood): Promise<string> {
      * placeholder that the platform resolves server-side — the real value
      * never exists in this code.
      */
-    const joke = await poly.sample.sampleWorkflow.getRandomJoke(
-      vari.sample.sampleWorkflow.jokeApiConfig.inject('hostUrl')
+    const joke = await poly.example.sampleWorkflow.getRandomJoke(
+      vari.example.sampleWorkflow.jokeApiConfig.inject('hostUrl')
     );
     if (
       !isSuccessStatus(joke.status) ||
@@ -43,10 +43,10 @@ export async function motdClient(mood: Mood): Promise<string> {
    * masked from view in Canopy UI, not restricted from code.
    */
   const { hostUrl } =
-    (await vari.sample.sampleWorkflow.adviceApiConfig.get()) as {
+    (await vari.example.sampleWorkflow.adviceApiConfig.get()) as {
       hostUrl: string;
     };
-  const advice = await poly.sample.sampleWorkflow.getRandomAdvice(hostUrl);
+  const advice = await poly.example.sampleWorkflow.getRandomAdvice(hostUrl);
   if (!isSuccessStatus(advice.status) || !advice.data?.slip?.advice) {
     throw new Error(`getRandomAdvice failed with status ${advice.status}`);
   }

@@ -1,7 +1,7 @@
 import * as fs from 'node:fs';
 import type { CanopyFile } from '../types';
 import type { ArtifactSummary } from '../types/summary';
-import { getBaseUrl } from '../utils/apiClient';
+import { getBaseUrl, getOtpHeaders } from '../utils/apiClient';
 import {
   getSrcPath,
   isInArtefactDirectory,
@@ -10,7 +10,12 @@ import {
   type WalkDirOptions,
   walkDir,
 } from '../utils/fileSystem';
-import { chalk, createHeader, createLogger, warningColor } from '../utils/logger';
+import {
+  chalk,
+  createHeader,
+  createLogger,
+  warningColor,
+} from '../utils/logger';
 
 type FindCanopyFileOptions = WalkDirOptions;
 
@@ -18,6 +23,7 @@ type ApplicationRecord = {
   id?: string;
   name?: string;
   subpath?: string;
+  description?: string;
 };
 
 type CanopySyncOptions = {
@@ -145,6 +151,7 @@ async function fetchJson(
     headers: {
       ...buildAuthHeaders(),
       ...(init.headers || {}),
+      ...(await getOtpHeaders(init.method || 'GET')),
     },
   });
 
@@ -236,8 +243,12 @@ async function createApplication(
   name: string,
   config: Record<string, unknown>,
   visibility?: string,
+  description?: string
 ): Promise<string | null> {
   const body: Record<string, unknown> = { name, config };
+  if (description !== undefined) {
+    body.description = description;
+  }
   if (visibility) {
     body.visibility = visibility;
   }
@@ -267,7 +278,7 @@ function writeBackId(filePath: string, appId: string): void {
     const raw = fs.readFileSync(filePath, 'utf-8');
     const parsed = JSON.parse(raw) as Record<string, unknown>;
     parsed.id = appId;
-    fs.writeFileSync(filePath, JSON.stringify(parsed, null, 2) + '\n', 'utf-8');
+    fs.writeFileSync(filePath, `${JSON.stringify(parsed, null, 2)}\n`, 'utf-8');
   } catch {
     // non-fatal: the sync succeeded, the user can add the id manually
   }
@@ -333,9 +344,14 @@ export async function syncCanopy(
   for (const canopy of canopyFiles) {
     const name = canopy.content.name || canopy.fileName;
     const subpath = canopy.content.subpath || '(no subpath)';
+    const { id: _id, description, visibility, ...config } = canopy.content;
 
     try {
-      const resolvedId = selectApplicationId(canopy, applications, appOverrides);
+      const resolvedId = selectApplicationId(
+        canopy,
+        applications,
+        appOverrides
+      );
       let appId: string;
 
       if (!resolvedId) {
@@ -349,8 +365,9 @@ export async function syncCanopy(
 
         const newId = await createApplication(
           canopy.content.name ?? canopy.fileName,
-          canopy.content,
-          typeof canopy.content.visibility === 'string' ? canopy.content.visibility : undefined,
+          config,
+          typeof visibility === 'string' ? visibility : undefined,
+          description
         );
 
         if (!newId) {
@@ -360,7 +377,12 @@ export async function syncCanopy(
         }
 
         appId = newId;
-        applications.push({ id: appId, name: canopy.content.name, subpath: canopy.content.subpath });
+        applications.push({
+          id: appId,
+          name: canopy.content.name,
+          subpath: canopy.content.subpath,
+          description,
+        });
         writeBackId(canopy.filePath, appId);
         summary.updated++;
         log.info(chalk.green(`    [OK] Created (id: ${appId})`));
@@ -378,6 +400,9 @@ export async function syncCanopy(
 
       // 404 means the app exists but has no config yet — treat as empty.
       const remoteConfigMissing = remoteConfigResponse.status === 404;
+      const descriptionUnchanged =
+        description === undefined ||
+        applications.find(app => app.id === appId)?.description === description;
 
       if (
         !remoteConfigMissing &&
@@ -395,11 +420,15 @@ export async function syncCanopy(
 
       if (!remoteConfigMissing) {
         const comparableRemoteConfig = projectRemoteToLocalShape(
-          canopy.content,
+          config,
           remoteConfigResponse.data
         );
 
-        if (!options.force && payloadEquals(comparableRemoteConfig, canopy.content)) {
+        if (
+          !options.force &&
+          descriptionUnchanged &&
+          payloadEquals(comparableRemoteConfig, config)
+        ) {
           summary.skipped++;
           log.info(chalk.gray('    [SKIP] Unchanged'));
           continue;
@@ -412,23 +441,21 @@ export async function syncCanopy(
         continue;
       }
 
-      // When the app has no config yet, PUT /config 404s — use PATCH /applications/{id}
-      // with the config field instead, which works for both new and existing apps.
-      const updateResponse = remoteConfigMissing
-        ? await fetchJson(
-            `/applications/${encodeURIComponent(appId)}`,
-            {
+      // Application descriptions belong on the metadata endpoint, outside config.
+      // PATCH also handles applications that do not have a config yet.
+      const updateResponse =
+        remoteConfigMissing || !descriptionUnchanged
+          ? await fetchJson(`/applications/${encodeURIComponent(appId)}`, {
               method: 'PATCH',
-              body: JSON.stringify({ config: canopy.content }),
-            }
-          )
-        : await fetchJson(
-            `/applications/${encodeURIComponent(appId)}/config`,
-            {
-              method: 'PUT',
-              body: JSON.stringify(canopy.content),
-            }
-          );
+              body: JSON.stringify({ config, description }),
+            })
+          : await fetchJson(
+              `/applications/${encodeURIComponent(appId)}/config`,
+              {
+                method: 'PUT',
+                body: JSON.stringify(config),
+              }
+            );
 
       if (updateResponse.status >= 200 && updateResponse.status < 300) {
         summary.updated++;

@@ -23,6 +23,7 @@ type EndpointSchemaTarget = {
 };
 
 const ENDPOINT_SCHEMA_TARGETS: Record<string, EndpointSchemaTarget> = {
+  CreateApiFunctionDto: { path: '/functions/api', method: 'post' },
   CreateSchemaDto: { path: '/schemas', method: 'post' },
   UpdateSchemaDto: { path: '/schemas/{id}', method: 'patch' },
   CreateWebhookHandleDto: { path: '/webhooks', method: 'post' },
@@ -283,6 +284,30 @@ export async function generateEndpointSchemas(
       buildSchemaDocument(requestBodySchema, spec)
     ) as Record<string, unknown>;
     patchKnownSchemaQuirks(schemaName, schemaDocument);
+    if (schemaName === 'CreateApiFunctionDto') {
+      const schemas = (schemaDocument.components as any).schemas;
+      const used: Record<string, unknown> = {};
+      const visit = (node: any): void => {
+        if (Array.isArray(node)) {
+          node.forEach(visit);
+          return;
+        }
+        if (!node || typeof node !== 'object') return;
+        if (
+          typeof node.$ref === 'string' &&
+          node.$ref.startsWith('#/components/schemas/')
+        ) {
+          const name = node.$ref.slice('#/components/schemas/'.length);
+          if (!(name in used)) {
+            used[name] = schemas[name];
+            visit(schemas[name]);
+          }
+        }
+        Object.values(node).forEach(visit);
+      };
+      visit({ $ref: schemaDocument.$ref });
+      schemaDocument.components = { schemas: used };
+    }
 
     // Safety net: OpenAPI currently marks this as required in some specs, but
     // existing webhook artefacts and API behavior do not require it for updates.

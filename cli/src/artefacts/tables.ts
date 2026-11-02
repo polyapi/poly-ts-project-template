@@ -12,8 +12,17 @@ import {
   type WalkDirOptions,
   walkDir,
 } from '../utils/fileSystem';
-import { chalk, createHeader, createLogger, warningColor } from '../utils/logger';
-import { getRequiredNamespaces, matchesAnyRequiredNamespace, validateNamespace } from '../utils/namespace';
+import {
+  chalk,
+  createHeader,
+  createLogger,
+  warningColor,
+} from '../utils/logger';
+import {
+  getRequiredNamespaces,
+  matchesAnyRequiredNamespace,
+  validateNamespace,
+} from '../utils/namespace';
 import { filterOrphansByContext } from '../utils/orphans';
 import { areComparisonPayloadsEqual } from '../utils/payloadComparison';
 import { validateTableArtifact } from '../utils/validation';
@@ -425,10 +434,12 @@ export async function syncTables(
 
   const namespaces = getRequiredNamespaces();
   const allTables = await getExistingTables(client);
-  const existingTables = allTables.filter(table => matchesAnyRequiredNamespace(table.context));
+  const existingTables = allTables.filter(table =>
+    matchesAnyRequiredNamespace(table.context)
+  );
   log.info(
     chalk.gray(
-      `Fetched ${existingTables.length} table(s) from API in namespace(s) "${namespaces.join(", ")}"`
+      `Fetched ${existingTables.length} table(s) from API in namespace(s) "${namespaces.join(', ')}"`
     )
   );
 

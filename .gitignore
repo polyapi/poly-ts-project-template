@@ -48,3 +48,6 @@ Thumbs.db
 # scratchpad files
 scratch/
 local/
+
+# local Flow update backups and AI compatibility reports
+/.flow/updates/

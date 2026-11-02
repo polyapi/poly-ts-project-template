@@ -1,453 +1,521 @@
-# Sample Workflow
+# Message of the day: your first PolyAPI workflow
 
-## Purpose
+Build a protected endpoint that greets someone with advice or a joke. This lesson
+introduces webhooks, triggers, server and client functions, trained API Functions,
+and Vari. After your first request works, explore validation, errors, and the
+optional scheduled job.
 
-A small, self-contained example for learning core PolyAPI constructs
-(webhook, trigger, server function, client function, trained API Function,
-security function, error handler, vari, scheduled job) before working on a
-real Boomi migration.
-Not a Boomi migration — see the root
-[`GETTING_STARTED.md`](../../../GETTING_STARTED.md) for how this fits into
-the overall onboarding flow.
+New to the template? Complete [Getting started](../../../README.md#getting-started)
+first. Open a Bash terminal in your **project root**: the folder containing
+`package.json`, `cli/`, and `workflows/`. Run all terminal commands below from
+that folder. File settings and Canopy values are labeled separately.
 
-## Recommended Agent Skills
+Using a coding agent? Kickstart installs the relevant skills. For a manual
+checkout, follow [agent skills setup](../../../docs/SETUP.md#agent-skills) if you
+want agent assistance. You can complete this lesson without an agent.
 
-Before using AI agents to edit or extend this sample, add PolyAPI skills from
-[polyapi/poly-skills](https://github.com/polyapi/poly-skills). They give
-agents project-specific guidance for TypeScript, artefacts, SDK usage,
-documentation, and PolyAPI constructs.
+## What you are building
 
-1.  Clone or update `poly-skills` outside this project.
-2.  Create `.agents/skills/` in this project if it does not already exist.
-3.  Copy each recommended skill directory below directly into
-    `.agents/skills/` using the skill directory's own name. Do not copy package
-    roots such as `poly-skills/polyapi-common/` or
-    `poly-skills/polyapi-typescript/` into `.agents/skills/`, and do not
-    preserve parent folders from below `skills/`.
-
-Recommended TypeScript PolyAPI skills:
-
--   `poly-skills/general/skills/clean-code`
--   `poly-skills/general/skills/markdownlint-compliance`
--   `poly-skills/polyapi-common/skills/canopy-ui`
--   `poly-skills/polyapi-common/skills/design-analysis`
--   `poly-skills/polyapi-common/skills/generate-overview`
--   `poly-skills/polyapi-common/skills/polyapi-constructs`
--   `poly-skills/polyapi-typescript/skills/artefacts-usage`
--   `poly-skills/polyapi-typescript/skills/coding-conventions`
--   `poly-skills/polyapi-typescript/skills/coding-standards`
--   `poly-skills/polyapi-typescript/skills/polyapi-sdk`
-
-The destination stays flat. For example, copy
-`polyapi-common/skills/canopy-ui/clean-code` to
-`.agents/skills/clean-code`, not to
-`.agents/skills/canopy-ui/clean-code`.
-
-## Key Concepts
-
-PolyAPI building blocks used in this sandbox, before you dive into the flow
-below:
-
-| Concept                  | What it is                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Webhook**              | A public HTTP endpoint PolyAPI hosts for you (`artefacts/webhooks/`). Defines method, path, payload schema, and optional security functions.                                                                                                                                                                                                                                                                                                        |
-| **Trigger**              | Wiring that connects an event source (a webhook, in this sandbox) to a destination function (`artefacts/triggers/`). Can run synchronously (`waitForResponse: true`) or fire-and-forget.                                                                                                                                                                                                                                                            |
-| **Server function**      | TypeScript functions (`server/*.ts`) deployed and executed on the PolyAPI platform, each running in its own autoscaling container. Can call other `poly.*` functions, vari, and client/server functions.                                                                                                                                                                                                                                                                                                    |
-| **Client function**      | TypeScript helper functions (`client/*.ts`) that also run server-side, but not in their own containers. Instead, they are deployed within the container of the server function that uses them. Can call other `poly.*` functions, vari, and client/server functions.                                                                                                                                                                                                                                                             |
-| **Trained API Function** | A typed `poly.*` wrapper generated from an OpenAPI spec (`pnpm workflows train:openapi`). Never throws on a downstream failure — it resolves with a non-2xx `status` and incomplete `data` instead.                                                                                                                                                                                                                                                 |
-| **Security function**    | A function attached to a webhook's `securityFunctions` that runs _before_ the trigger fires and can veto the request (e.g. `validateMotdPayload`, returning a 403).                                                                                                                                                                                                                                                                                 |
-| **Error handler**        | A function that normalizes and logs a failure. This sandbox uses it two ways at once: called directly from a server function's `catch` block (for response shaping, scoped to that one call site), and wired as the destination of a platform error-handler trigger scoped to a webhook `path` (a broader, fire-and-forget safety net that catches _any_ function's uncaught exception on that path) — see [Error handler](#flow-motdserver) below. |
-| **Vari**                 | A platform-managed variable (`artefacts/vari/`) with a secrecy level (`NONE`, `OBSCURED`, `SECRET`, `PARTIAL`) controlling how code and humans can read it. This sandbox demonstrates two levels — see the vari table below.                                                                                                                                                                                                                        |
-| **Scheduled job**        | A cron-like definition (`artefacts/jobs/`) that calls a destination function directly on an interval, with no webhook or trigger involved.                                                                                                                                                                                                                                                                                                          |
-
-## Environment Setup
-
-Before deploying this sandbox, make sure Node.js and pnpm are installed. If
-you already completed the root
-[`GETTING_STARTED.md`](../../../GETTING_STARTED.md) setup, skip ahead to
-[Flow: motdServer](#flow-motdserver).
-
-You need two things installed:
-
--   **Node.js 18+ (20+ recommended)** — runs Flow, this repo's PolyAPI CLI,
-    and is what lets you deploy and test this sandbox's TypeScript functions
-    (`pnpm workflows push`, `pnpm workflows test`).
--   **pnpm** (this repo is pinned to `pnpm@10.0.0` via `packageManager` in
-    `package.json`) — the package manager this workspace uses instead of npm.
-
-### macOS
-
-Install [Homebrew](https://brew.sh) first if you don't already have it — it's
-the standard macOS package manager, and there's no built-in alternative:
-
-```bash
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-```
-
-Follow the prompts it prints at the end — on Apple Silicon Macs it will ask
-you to add `brew` to your shell's `PATH` with a couple of extra commands, do
-that before continuing. Then:
-
-```bash
-brew install node
-corepack enable
-corepack prepare pnpm@10.0.0 --activate
-```
-
-### Windows
-
-Check whether you already have [winget](https://learn.microsoft.com/en-us/windows/package-manager/winget/)
-by opening PowerShell and running `winget --version`. It ships built in on
-Windows 11 and recent Windows 10 updates. If it's not recognized, install the
-**App Installer** package from the Microsoft Store (search "App Installer")
-— that provides `winget`.
-
-Then, from PowerShell or Command Prompt:
-
-```powershell
-winget install OpenJS.NodeJS.LTS --scope user
-```
-
-`corepack enable` needs script execution allowed first. **Open PowerShell as
-Administrator** and run:
-
-```powershell
-Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope LocalMachine
-```
-
-When prompted, choose **[A] Yes to All**:
-
-```text
-Do you want to change the execution policy?
-[Y] Yes  [A] Yes to All  [N] No  [L] No to All  [S] Suspend  [?] Help (default is "N"): A
-```
-
-Now finish setting up pnpm:
-
-```powershell
-corepack enable
-corepack prepare pnpm@10.0.0 --activate
-```
-
-Close that terminal and switch to Git Bash for the rest of this guide.
-
-### Verify your installation
-
-```bash
-node -v      # v18.x.x or higher
-pnpm -v      # 10.0.0
-```
-
-### Get the project and install dependencies
-
-```bash
-git clone <this-repo-url> sample
-cd sample
-pnpm install
-```
-
-This is a pnpm workspace (see `pnpm-workspace.yaml`) with two packages:
-`workflows` (the PolyAPI implementation, including this sandbox) and `cli`
-(Flow, the sync tool). `pnpm install` sets up both.
-
-### Configure environment values
-
-Copy the example environment file:
-
-```bash
-cp dev.env.example dev.env
-```
-
-`dev.env` stays at the repo root and holds both Boomi and PolyAPI
-credentials — this sandbox only needs the `POLYAPI_*` values filled in, since
-it never touches Boomi:
-
-```env
-POLYAPI_NAMESPACE="sample"
-POLYAPI_BASE_URL="https://na2.polyapi.io"
-POLYAPI_API_KEY=""
-POLYAPI_TENANT_ID=""
-```
-
-Ask your lead for these values if you don't have them. `dev.env` is never
-read directly by an agent — only by the runtime scripts and CLI commands
-that need it.
-
-Next, initialize the local PolyAPI CLI config used by tests and by
-post-push SDK generation:
-
-```bash
-pnpm workflows poly:setup
-```
-
-It stores your base URL and API key locally in a spot the `polyapi` package
-resolves automatically, so the CLI and workflow tests can authenticate
-without you having to reference the file directly.
-
-You're now ready to deploy this sandbox through the same `pnpm workflows
-push` command used for a real migration — see
-[Deployment order](#deployment-order) below.
-
-## Project Structure
-
-```text
-workflows/src/sampleWorkflow/
-  README.md                # this document
-  artefacts/
-    webhooks/              # public HTTP endpoint definitions — motdWebhook.json
-    triggers/              # motdTrigger.json (webhook -> server function), motdErrorHandlerTrigger.json (path -> error handler)
-    vari/                  # platform-managed variables — jokeApiConfig.json, adviceApiConfig.json
-    jobs/                  # scheduled job definitions — motdSchedulerJob.json
-    specs/                 # OpenAPI specs trained into API Functions, plus the trained model output
-  server/
-    motdServer.ts          # orchestrator - entrypoint for both the webhook and the scheduler
-    validateMotdPayload.ts # security function wired onto motdWebhook
-    motdErrorHandler.ts    # error handler — called directly by motdServer's catch block, and by motdErrorHandlerTrigger
-  client/
-    motdClient.ts          # reusable step called by motdServer - picks a trained API Function by mood
-```
-
-Each `.ts` file under `server/` and `client/` has a matching `.json` with
-the same metadata as its `polyConfig` export. This sandbox has no
-`artefacts/schemas/` or `artefacts/tabi/` folder, since it validates its
-payload inline in `validateMotdPayload` and keeps no persisted state — see
-`submitOrderProcessCore` and `concurNetsuiteInvoices` for real examples of
-those.
-
-## Components Diagram
-
-```mermaid
-graph LR
-    WH["motdWebhook<br/>(webhook)"]
-    SEC["validateMotdPayload<br/>(security function)"]
-    TR["motdTrigger<br/>(trigger)"]
-    JOB["motdSchedulerJob<br/>(job)"]
-    SF["motdServer"]
-    CF["motdClient"]
-    ERR["motdErrorHandler<br/>(error handler)"]
-    V1["jokeApiConfig<br/>(vari, SECRET)"]
-    V2["adviceApiConfig<br/>(vari, OBSCURED)"]
-    API1["getRandomJoke"]
-    API2["getRandomAdvice"]
-
-    WH -- security check --> SEC
-    WH --> TR
-    TR -- "waitForResponse: true" --> SF
-    JOB -- "every 60 min" --> SF
-    SF --> CF
-    SF -- "on catch, direct call" --> ERR
-    CF -- "mood: funny" --> API1
-    CF -- "mood: wise" --> API2
-    V1 -. ".inject('hostUrl')" .-> API1
-    V2 -. ".get('hostUrl')" .-> CF
-
-    ERRTR[["motdErrorHandlerTrigger<br/>path-scoped safety net<br/>(not wired to any one component)"]]
-    class ERRTR aside
-    classDef aside fill:#20232a,stroke:#888,stroke-width:1px,stroke-dasharray: 4 3;
-```
-
-This is a structural view — which files reference which. `motdErrorHandlerTrigger`
-is drawn on its own, with no arrows to or from it, because it isn't wired to
-any single component the way everything else here is — it's a platform
-trigger scoped to the `/apis/sample-workflow-motd/motd` path as a whole, so
-it independently covers _any_ function invoked on that path
-(`validateMotdPayload`, `motdServer`, and anything they call). It's a
-fire-and-forget safety net and doesn't shape the caller's response — only
-`motdServer`'s direct call to `motdErrorHandler` does that. For the runtime
-request/scheduler flow, see the [Flow Diagram](#flow-diagram) below.
-
----
-
-# Flow: motdServer
-
-**Trigger:** [artefacts/webhooks/motdWebhook.json](artefacts/webhooks/motdWebhook.json)
-(`POST /apis/sample-workflow-motd/motd`) → [artefacts/triggers/motdTrigger.json](artefacts/triggers/motdTrigger.json)
-→ [server/motdServer.ts](server/motdServer.ts)
-
-**Entrypoint type:** webhook (synchronous — `waitForResponse: true`)
-
-**Security function:** [server/validateMotdPayload.ts](server/validateMotdPayload.ts)
-rejects requests missing `name` or with an invalid `mood` before the trigger
-fires, returning a 403.
-
-**Error handler:** [server/motdErrorHandler.ts](server/motdErrorHandler.ts),
-wired two ways at once to demonstrate both PolyAPI error-handling
-mechanisms:
-
-1.  **Direct call** — `motdServer`'s own `catch` block calls it directly when
-    `motdClient` throws (e.g. a downstream `getRandomJoke`/`getRandomAdvice`
-    call failing). It builds one message from the error, logs it, and
-    returns it; `motdServer` returns `{ statusCode: 500, message }` instead
-    of re-throwing, so the caller always gets a consistent shape instead of
-    the platform's raw `{ type, message, stack }` default for an uncaught
-    exception. This is the only mechanism that shapes the caller's response.
-2.  **Platform trigger** — [artefacts/triggers/motdErrorHandlerTrigger.json](artefacts/triggers/motdErrorHandlerTrigger.json)
-    fires `motdErrorHandler` for any uncaught exception on the
-    `/apis/sample-workflow-motd/motd` path, independently of `motdServer`'s
-    own `catch` block. It's scoped to the _path_, not to one function — it
-    would also fire if `validateMotdPayload` threw instead of returning
-    `false`, or from any other bug on that path that never reaches
-    `motdServer`'s `catch`. It's a fire-and-forget safety net — it does
-    **not** shape the caller's response, confirmed by testing. Since it's
-    path-scoped, it can't cover the scheduler (which has no path at all).
-
-Because this function now has two callers with different payload shapes,
-`motdErrorHandler` treats its input fields as optional and falls back
-gracefully — see the comment in
-[server/motdErrorHandler.ts](server/motdErrorHandler.ts).
-
-**Scheduler (second entrypoint):** [artefacts/jobs/motdSchedulerJob.json](artefacts/jobs/motdSchedulerJob.json)
-calls `motdServer` directly, every 60 minutes, with a fixed payload
-(`{ name: "Scheduler", mood: "wise" }`) — no webhook, trigger, or HTTP request
-involved. Ships `enabled: false` so it does nothing until deliberately turned
-on.
-
-**Client function:** [client/motdClient.ts](client/motdClient.ts), called
-from `motdServer` to pick a trained API Function by `mood`.
-
-**Pre-trained API functions:** (see [artefacts/specs/](artefacts/specs/)):
-
--   `poly.sample.sampleWorkflow.getRandomJoke` — trained from [artefacts/specs/jokeApi.yaml](artefacts/specs/jokeApi.yaml), model output at [artefacts/specs/official-joke-api.json](artefacts/specs/official-joke-api.json)
--   `poly.sample.sampleWorkflow.getRandomAdvice` — trained from [artefacts/specs/adviceApi.yaml](artefacts/specs/adviceApi.yaml), model output at [artefacts/specs/advice-slip-api.json](artefacts/specs/advice-slip-api.json)
-
-`motdClient` supplies each trained function's base URL from **vari** —
-deliberately classified at two different secrecy levels here, even though
-both are really just public API base URLs, to demonstrate how access differs
-per level:
-
-**Vari:**
-
--   `jokeApiConfig` — [artefacts/vari/jokeApiConfig.json](artefacts/vari/jokeApiConfig.json), `SECRET`, read via `.inject("hostUrl")` only
--   `adviceApiConfig` — [artefacts/vari/adviceApiConfig.json](artefacts/vari/adviceApiConfig.json), `OBSCURED`, read via `.get()`
-
-## Flow Diagram
+Your first request follows the advice path:
 
 ```mermaid
 flowchart TD
-    S0["POST /apis/sample-workflow-motd/motd"]
-    S1["validateMotdPayload security function"]
-    D1{"name present and mood is funny or wise"}
-    END_403["Return 403 — Invalid or missing field in event payload"]
-    S2["motdTrigger fires — waitForResponse true"]
-    J0["motdSchedulerJob — every 60 min, enabled=false"]
-    S3["motdServer runs"]
-    S4["motdClient — pick API Function by mood"]
-    D2{"mood"}
-    S5a["Inject jokeApiConfig vari (SECRET) — hostUrl"]
-    S5["getRandomJoke trained API Function"]
-    S6a["Read adviceApiConfig vari (OBSCURED) — hostUrl"]
-    S6["getRandomAdvice trained API Function"]
-    D3{"downstream call threw"}
-    S7["motdErrorHandler — build message, log it"]
-    S8err["motdServer returns statusCode 500 with the message"]
-    END_ERR["Caller/job receives statusCode 500 with error message"]
-    S8["motdServer returns statusCode 200 with Hi name plus content"]
-    END_OK["Caller/job receives statusCode 200 with greeting message"]
-    SAFETY["motdErrorHandlerTrigger — fires on ANY uncaught exception on this path"]
-    END_SAFETY["motdErrorHandler runs — logs only, does not shape caller's response"]
-
-    S0 --> S1
-    S1 --> D1
-    D1 -->|no| END_403
-    D1 -->|yes| S2
-    S2 --> S3
-    J0 --> S3
-    S3 --> S4
-    S4 --> D2
-    D2 -->|funny| S5a
-    S5a --> S5
-    D2 -->|wise| S6a
-    S6a --> S6
-    S5 --> D3
-    S6 --> D3
-    D3 -->|yes| S7
-    S7 --> S8err
-    S8err --> END_ERR
-    D3 -->|no| S8
-    S8 --> END_OK
-    S0 -.->|uncaught exception anywhere while handling this path| SAFETY
-    SAFETY -.-> END_SAFETY
+    R[Send a name and wise mood] --> V{Webhook security accepts request}
+    V -->|no| X[Reject before workflow runs]
+    V -->|yes| T[Trigger calls server and waits]
+    T --> S[Server coordinates and client selects advice]
+    S --> A[Trained API gets advice from provider]
+    A --> G[Server adds the name and returns the greeting]
+    classDef blue fill:#EDF3FF,color:#172B4D,stroke:#3D77EE
+    classDef yellow fill:#FFF7DF,color:#172B4D,stroke:#F9B528
+    classDef green fill:#EAF6EE,color:#172B4D,stroke:#2F9E4B
+    classDef red fill:#FDEDEB,color:#172B4D,stroke:#E63F35
+    class R,T blue
+    class V,A yellow
+    class S,G green
+    class X red
 ```
 
-The dashed path is `motdErrorHandlerTrigger` — a platform-level safety net,
-not part of the normal request flow above it. It's drawn from `S0` because
-that's literally what it's configured against: its JSON artifact has no
-`functionIds`, only `path: "/apis/sample-workflow-motd/motd"` — the exact
-same path as `S0`. It only matters if something throws in a way the
-diagram's own boxes don't already handle (`D1`'s 403 check, or `motdServer`'s
-`try/catch`), which shouldn't happen in normal operation.
+**Flow** is this project's command-line tool for creating and updating resources
+in PolyAPI. The **generated SDK** gives you TypeScript functions for those
+resources, such as `poly.*` calls and `vari.*` configuration reads. **Vari** stores
+configuration values; **Canopy** is the PolyAPI web interface used below to
+manage them. The **PolyAPI runtime** hosts the endpoint and server functions;
+client helpers run in their caller's process.
 
-## Deployment order
+Here, **training an API** means reading its OpenAPI description and creating a
+function that your code can call. Training does not call the external API, and
+is separate from the [Weather AI lesson](../sampleAiFx/OVERVIEW.md).
+
+| Building block | Why it exists in this sample | Read the implementation |
+| --- | --- | --- |
+| Webhook and security function | Accept authenticated HTTP requests and reject invalid input | [Webhook](artefacts/webhooks/motdWebhook.json), [validator](server/validateMotdPayload.ts) |
+| Trigger | Route the webhook to a function and wait for its result | [Webhook trigger](artefacts/triggers/motdTrigger.json) |
+| Server function | Coordinate the request and choose the response | [motdServer](server/motdServer.ts) |
+| Client function | Select an API by mood and check its result | [motdClient](client/motdClient.ts) |
+| API Functions | Make the outbound joke/advice HTTP calls through PolyAPI | [Joke spec](artefacts/specs/jokeApi.yaml), [advice spec](artefacts/specs/adviceApi.yaml) |
+| Vari | Demonstrate protected injection and readable configuration | [SECRET joke config](artefacts/vari/jokeApiConfig.json), [OBSCURED advice config](artefacts/vari/adviceApiConfig.json) |
+| Error handler and job | Explore failure handling and scheduled calls | [Error handler](server/motdErrorHandler.ts), [error trigger](artefacts/triggers/motdErrorHandlerTrigger.json), [job](artefacts/jobs/motdSchedulerJob.json) |
+
+## Run your first request
+
+### 1. Confirm setup and namespace
+
+Use a development environment with permission to manage the sample resources,
+generate the SDK, and execute functions. `TARGET_ENV_ID` in the selected Flow
+file pins the intended PolyAPI environment, separately from your namespace.
+Kickstart saves it automatically; for manual setup, follow
+[pin the target environment](../../../docs/SETUP.md#pin-the-target-environment).
+The pin verifies your connection; it does not switch credentials.
+
+**Align the SDK with your instance before continuing.** Kickstart does this
+during project creation. For a manual or older checkout pointing to
+`https://na1.polyapi.io`, run these commands from the project root:
 
 ```bash
-# 1. Train the API Functions (interactive — prompts for spec path and context)
-pnpm workflows train:openapi
-# spec path:   src/sampleWorkflow/artefacts/specs
-# context:     sample.sampleWorkflow
-
-# 2. Deploy vari, then client function, then server functions, then the
-#    webhook/trigger artifacts, then the scheduler job (requires motdServer
-#    to already exist — Flow syncs jobs last, so this is one command)
-ENVPATH=dev.env pnpm workflows push -- --paths sampleWorkflow
+pnpm --filter workflows add polyapi@na1
+pnpm workflows exec poly setup
+pnpm workflows exec poly generate
 ```
 
-Enter the spec folder path and the context `sample.sampleWorkflow` when
-prompted. Once training succeeds, `getRandomJoke` and `getRandomAdvice` exist
-as API Functions on the PolyAPI platform under that context, callable as
-`poly.sample.sampleWorkflow.getRandomJoke` / `getRandomAdvice` after the
-next SDK regeneration.
+Use the [matching SDK tag](../../../docs/SETUP.md#align-the-sdk-with-your-polyapi-instance)
+for another instance (`develop` for `dev`, or `na2` / `eu1`). Repeat SDK
+alignment if Poly later reports a version mismatch. Decline its npm-based
+update prompt and update with pnpm instead. The tag selects the SDK release;
+setup selects the connection, and `TARGET_ENV_ID` verifies that connection.
 
-After the push, set `jokeApiConfig`'s real `hostUrl` value once via Canopy UI
-or the PolyAPI API — its JSON artifact ships with no `value` field since it's
-`SECRET`, so the push alone doesn't populate it, and `motdClient`'s `"funny"`
-path won't work until a human sets it. In Canopy, open the `jokeApiConfig`
-vari, choose the **Object** type for its value, and enter:
+This tutorial assumes you are using `example` as your namespace in
+`workflows/dev.env`. **Check this setting in the file**, rather than entering it
+as a terminal command:
+
+```env
+POLYAPI_NAMESPACE=example
+```
+
+A namespace groups your project's functions and other resources in PolyAPI.
+The names in this tutorial must match that setting: for example,
+`example.sampleWorkflow` belongs to the `example` namespace.
+
+If you used **kickstart**, this guide and the sample files already use the
+namespace you chose. You can continue with those values.
+
+If you set up manually and chose a different namespace, follow the
+[manual namespace setup](../../../docs/SETUP.md#manual-setup)
+before continuing. It updates the starter code and tutorial examples to match.
+Changing `POLYAPI_NAMESPACE` in `dev.env` alone does not update those files.
+For an existing customized or deployed project, see
+[changing a namespace](../../../docs/CONVENTIONS.md#namespaces-and-portable-references).
+
+**In your terminal**, select your environment file once per session:
+
+```bash
+export ENVPATH=workflows/dev.env
+```
+
+Use your setup-selected file if different. TypeScript Flow also accepts
+`export ENVPATH=dev.env`: it looks in `workflows/` first for a bare filename.
+Without `ENVPATH`, it defaults to `workflows/dev.env`. Exporting the path selects
+the file for Flow; it does not export that file's contents into your shell.
+
+**Checkpoint:** the namespace in your environment file matches the first part
+of the sample's context (`example.sampleWorkflow`) and its SDK calls
+(`poly.example.sampleWorkflow` and `vari.example.sampleWorkflow`). Keep the
+`TARGET_ENV_ID` saved during setup in that file. Flow checks it before remote
+commands, including deployment previews. Keep real environment files out of Git.
+
+### 2. Train the two outbound APIs
+
+An OpenAPI specification describes an HTTP API. Training makes that API
+available as functions your workflow can call. Train **both** bundled
+specifications: the client function refers to both APIs even though your first
+request will use only advice.
+
+This folder also has older JSON reference files. Select the two YAML
+specifications below to avoid processing duplicate APIs.
+
+**In your terminal**, preview the two bundled API descriptions:
+
+```bash
+pnpm flow train-openapi workflows/src/sampleWorkflow/artefacts/specs/jokeApi.yaml --context example.sampleWorkflow --operation-id getRandomJoke --disable-ai --dry-run
+pnpm flow train-openapi workflows/src/sampleWorkflow/artefacts/specs/adviceApi.yaml --context example.sampleWorkflow --operation-id getRandomAdvice --disable-ai --dry-run
+```
+
+**Check the preview:** it should pair `jokeApi.yaml` with `getRandomJoke` and
+`adviceApi.yaml` with `getRandomAdvice`, both under `example.sampleWorkflow`.
+These commands check local inputs only; they do not create functions in PolyAPI.
+Each preview reports that no models were written or trained.
+
+**In your terminal**, register both APIs once the preview is correct:
+
+```bash
+pnpm flow train-openapi workflows/src/sampleWorkflow/artefacts/specs/jokeApi.yaml --context example.sampleWorkflow --operation-id getRandomJoke --disable-ai
+pnpm flow train-openapi workflows/src/sampleWorkflow/artefacts/specs/adviceApi.yaml --context example.sampleWorkflow --operation-id getRandomAdvice --disable-ai
+```
+
+Real training verifies the target, translates each spec with a `hostUrl`
+argument, saves its model, creates the API Functions, and regenerates the SDK.
+`--disable-ai` skips optional AI-generated descriptions and names, retaining
+the translator's names. Training does not call the joke or advice provider.
+
+**Checkpoint — files:** these new files appear next to the original API
+descriptions. A **model** is the generated JSON description of the resources
+PolyAPI will register. Open each file in your editor and check the `name` and
+`context` in its `functions` array:
+
+| Generated file, relative to the project root | Expected function name | Expected context |
+| --- | --- | --- |
+| `workflows/src/sampleWorkflow/artefacts/specs/jokeApi.poly.json` | `getRandomJoke` | `example.sampleWorkflow` |
+| `workflows/src/sampleWorkflow/artefacts/specs/adviceApi.poly.json` | `getRandomAdvice` | `example.sampleWorkflow` |
+
+**Checkpoint — SDK:** open [motdClient](client/motdClient.ts) in your editor and
+use **Go to Definition** on `getRandomAdvice` and `getRandomJoke`. The expected
+calls are `poly.example.sampleWorkflow.getRandomAdvice(hostUrl)` and
+`poly.example.sampleWorkflow.getRandomJoke(hostUrl)`. Each name should resolve to
+its generated TypeScript declaration, with a `hostUrl` argument. An offline
+preview alone cannot generate these declarations. See
+[training and SDK reference](#training-and-sdk-reference) if a name is missing
+or models already exist when you retry.
+
+### 3. Preview and deploy the workflow
+
+Check `POLY_DEPLOY_SKIP_PATHS` in the selected Flow file. If it includes
+`src/sampleWorkflow` (or a parent folder), remove that entry for this lesson;
+otherwise Flow skips the sample even with `--paths sampleWorkflow`. You can keep
+the AI sample excluded. See [skip sample deployments](../../../docs/SETUP.md#skip-sample-deployments)
+to exclude the lesson again afterward without deleting its files or resources.
+
+Use a branch based on `develop`; see [development branches](#development-branches)
+if your checkout is not already configured. **In your terminal**, preview this
+sample's deployment:
+
+```bash
+pnpm workflows push --dry-run --paths sampleWorkflow
+```
+
+**Check the preview:** confirm the intended environment and namespace. The plan
+should include the sample's two variables, four functions, webhook, two
+triggers, and disabled job. The job should stay disabled while you learn the
+request flow.
+
+**In your terminal**, deploy the workflow once the plan is correct:
+
+```bash
+pnpm workflows push --paths sampleWorkflow
+```
+
+Flow verifies the environment for both commands and normally regenerates the
+SDK after deployment. It orders resources by dependency; a push does not train
+APIs from the specs folder. Keep the branch, target, and OTP safeguards in place.
+
+**Checkpoint:** deployment completes without errors. In Canopy, select the same
+environment and confirm the resources appear under `example.sampleWorkflow`.
+Your first request uses `wise`, which reads the public host already stored in
+`adviceApiConfig`. You can configure the joke branch's secret
+[after this first request](#5-configure-injection-and-try-a-joke).
+
+### 4. Invoke the advice path
+
+**In Canopy**, select the environment used for deployment and open the webhook
+named `motdWebhook` under `example.sampleWorkflow`. Copy its **full URL**, including
+the environment subdomain; do not build it from the gateway base URL or the path
+in its JSON file. These direct HTTP requests use the URL and key you supply;
+they do not run Flow's target check.
+
+**In your terminal**, run these prompts. Paste the complete deployed webhook
+URL and a PolyAPI key for that same environment, pressing Enter after each.
+The key stays hidden while you enter it:
+
+```bash
+read -r -p "Paste the full deployed webhook URL: " POLY_TEST_WEBHOOK_URL
+read -r -s -p "Paste the PolyAPI key for that environment: " POLY_API_KEY
+printf '\n'
+```
+
+These values stay in this shell session; do not save them in tracked files.
+A value in an env file does not automatically become a Bash variable.
+
+**In your terminal**, send the request from the same session. `curl -i` shows
+the HTTP status as well as the JSON body:
+
+```bash
+curl -i -X POST "$POLY_TEST_WEBHOOK_URL" \
+  --header 'Content-Type: application/json' \
+  --header "Authorization: Bearer $POLY_API_KEY" \
+  --data '{ "name": "Ada", "mood": "wise" }'
+```
+
+Expect a body with this shape; the advice text varies:
+
+```json
+{ "statusCode": 200, "message": "Hi Ada! <advice returned by the provider>" }
+```
+
+**Checkpoint:** the message starts with `Hi Ada!` and includes advice. Provider
+text changes between calls. You have exercised webhook → security function →
+trigger → server → client → trained API Function. Find `motdServer` in Canopy to
+inspect its logs; `motdClient` runs inside that server function and has no
+separate log stream. The advice configuration ships with its public host URL,
+so this path needs no extra provider account or secret.
+
+**Your first integration works.** You can stop here or continue below to learn
+how to use secrets and change the sample.
+
+### 5. Configure injection and try a joke
+
+This is an optional next step after the advice request succeeds.
+
+**In Canopy**, open `jokeApiConfig` under `example.sampleWorkflow` in the same
+environment. Set its value as an **Object**. Paste this JSON as the variable's
+value, not into your terminal:
 
 ```json
 { "hostUrl": "https://official-joke-api.appspot.com" }
 ```
 
-`motdSchedulerJob` ships with `"enabled": false`. Flip it to `true` in
-[artefacts/jobs/motdSchedulerJob.json](artefacts/jobs/motdSchedulerJob.json)
-and redeploy only once you actually want it running on a schedule.
+This URL is public, but the sample deliberately stores it as `SECRET` to teach
+injection. Its JSON artefact has no value, so deployment alone does not populate
+it. The API Function receives the injected `hostUrl`; the client function does
+not read the secret itself. See [Vari details](#vari-details) for how the two
+configuration values differ.
 
-## Test it end-to-end
-
-```bash
-curl -X POST 'https://94021a50.na2.polyapi.io/apis/sample-workflow-motd/motd' \
-  --header 'Content-Type: application/json' \
-  --header 'Authorization: Bearer <your-poly-api-key>' \
-  --data '{ "name": "Ada", "mood": "funny" }'
-```
+Repeat the request from [step 4](#4-invoke-the-advice-path) with
+`"mood": "funny"` and the original `"name": "Ada"`. Expect a greeting that joins
+a joke's setup and punchline:
 
 ```json
-{ "statusCode": 200, "message": "Hi Ada! What did the beaver say to the tree? ... It's been nice gnawing you." }
+{ "statusCode": 200, "message": "Hi Ada! <setup> ... <punchline>" }
 ```
 
-Send `"mood": "wise"` to hit `getRandomAdvice` instead, or an invalid payload
-(missing `name`, or a `mood` other than `funny`/`wise`) to see
-`validateMotdPayload` reject it with a 403 before `motdServer` ever runs:
+**Checkpoint:** `.inject("hostUrl")` passes an opaque reference to the API
+Function. The platform resolves it at that boundary; the client never reads
+the SECRET value.
 
-```json
-{ "statusCode": 403, "message": "Invalid or missing field in event payload." }
+## Try it yourself
+
+These exercises are optional. Start with the small greeting change, then explore
+the other behavior when you are ready.
+
+- In [motdServer](server/motdServer.ts), change the greeting from
+  `Hi` to `Hello`. Repeat the [deployment preview and push](#3-preview-and-deploy-the-workflow),
+  then send the [advice request](#4-invoke-the-advice-path) again. You should now
+  see `Hello Ada!` followed by the advice. Restore `Hi` and redeploy afterward
+  so the response examples still match.
+- Change `Ada` to your name and switch between `wise` and `funny`. Trace the two
+  branches in [motdClient](client/motdClient.ts).
+- Send a whitespace-only name or `"mood": "sleepy"`. Expect rejection before the
+  main server runs; inspect both the HTTP status and the platform's response.
+  The webhook supplies `Invalid or missing field in event payload.` as its
+  rejection message.
+- Explain why advice uses a read while the joke uses injection. Neither value
+  is cached, and only one can be read by the client.
+- Read the [scheduled job](artefacts/jobs/motdSchedulerJob.json). It calls the
+  server directly every 60 minutes with `Scheduler` / `wise`, bypassing webhook
+  security. Leave the job disabled unless you intend recurring calls.
+- Follow the provider-failure branch in [motdClient](client/motdClient.ts) and
+  the `catch` block in [motdServer](server/motdServer.ts). Observe how an invalid
+  API result becomes a handled response through the error handler.
+
+## Runtime reference
+
+The remaining sections are reference material for understanding or extending
+the working sample; they are not extra steps needed for your first request.
+
+### Request and response
+
+```mermaid
+flowchart TD
+    W[Authenticated webhook] --> V[Security validation]
+    V -->|invalid| R[Platform rejection]
+    V -->|valid| T[Synchronous trigger]
+    T --> S[Server coordinates request]
+    J[Disabled scheduled job] --> S
+    D[Direct SDK call] --> S
+    S --> C[Client selects mood]
+    C -->|funny| I[Inject SECRET host reference]
+    C -->|wise| O[Read OBSCURED host]
+    I --> A[Call joke API Function]
+    O --> P[Call advice API Function]
+    A --> Q[Check status and required content]
+    P --> Q
+    Q -->|success| G[Return greeting with statusCode 200]
+    Q -->|failure| E[Call error handler]
+    E -->|success| F[Return message with statusCode 500]
+    E -->|failure| U[Unhandled execution error]
+    X[Matching platform error event] --> H[Error trigger invokes handler]
+    H --> L[Log diagnostic]
 ```
 
-A genuine runtime error — e.g. a downstream API Function call failing —
-returns a `statusCode: 500` instead, built by `motdErrorHandler`:
+The [webhook](artefacts/webhooks/motdWebhook.json) hosts
+`POST /apis/sample-workflow-motd/motd`, requires a PolyAPI key, and declares the
+payload schema. Its [security function](server/validateMotdPayload.ts) returns
+`false` when the name is missing or blank, or the mood is not `funny` or `wise`.
+PolyAPI constructs the rejection response before the trigger fires.
+
+The [trigger](artefacts/triggers/motdTrigger.json) uses `waitForResponse: true`
+to return the server's result to the caller. The
+[server](server/motdServer.ts) accepts one `eventPayload` argument and calls
+[motdClient](client/motdClient.ts) through the generated SDK. A client function
+runs in its caller's process; here its logs belong to `motdServer`, with no
+separate hosted client execution or log stream.
+
+The installed SDK returns API HTTP/transport failures as results with `status`
+and `data`. The client checks for a 2xx status and the expected content:
+`setup` / `punchline` for a joke, or `slip.advice` for advice. An unsuitable
+result throws; the server's `catch` block handles that failure.
+
+Each deployable `.ts` file carries its own `polyConfig` export. This sample has
+no metadata sidecar JSON files or separate `artefacts/schemas/` folder: the
+webhook declares its input schema. It keeps no persisted state and uses no Tabi
+tables. See the [artefact conventions](../../../docs/CONVENTIONS.md#artefacts)
+and platform [function types](https://docs.polyapi.io/functions/index.html) /
+[client-function guide](https://docs.polyapi.io/generated_sdks/client_functions.html)
+for the wider resource model and execution boundaries.
+
+### Error handling
+
+The [error handler](server/motdErrorHandler.ts) has two callers with different
+payload shapes, so its input fields are optional. It uses the supplied function
+name or `unknown function`, builds a message from the error detail, logs it,
+and returns it.
+
+When the client throws, the server calls this handler directly from its `catch`
+block. If the handler succeeds, the server returns a body like:
 
 ```json
 { "statusCode": 500, "message": "motd request failed in motdClient: getRandomAdvice failed with status 500" }
 ```
 
-This exercises `motdErrorHandler`'s **direct-call** path only:
-`motdClient`'s own status check throws, `motdServer`'s `try/catch` catches
-it before anything escapes to the platform, so `motdErrorHandlerTrigger`
-never has anything to fire on. There's no safe way to deliberately test the
-trigger itself without breaking `motdServer`'s own code first, so in
-practice it's only ever exercised by a genuine, unexpected bug.
+`statusCode` is application data here. `motdServer` does not set
+`polyCustom.responseStatusCode`, so a body containing `500` does not by itself
+set HTTP status 500 or mark a scheduled execution as failed. This response
+depends on the handler call succeeding; the handler's own failure remains
+unhandled. Platform rejection and uncaught-error responses are separate.
 
-## Known gaps
+The [error trigger](artefacts/triggers/motdErrorHandlerTrigger.json) independently
+selects platform error events on `/apis/sample-workflow-motd/motd`. It has a
+`path` filter and no `functionIds` filter. Its return value does not shape the
+response produced by the server's direct handler call. Catching an SDK error
+does not establish whether a remote error event was already emitted or whether
+nested failures match that path. Verify matching and delivery in development;
+see the [error-trigger guide](https://docs.polyapi.io/error_handlers/error-handler-trigger.html).
 
--   `motdSchedulerJob` bypasses `validateMotdPayload` (see
-    [Scheduler](#flow-motdserver) above) — expected, since a job's payload
-    comes from its own config, not the public internet.
+### Scheduled calls
+
+The [job](artefacts/jobs/motdSchedulerJob.json) calls `motdServer` directly every
+60 minutes with `{ name: "Scheduler", mood: "wise" }`. It ships with
+`enabled: false`, so it does nothing until deliberately enabled and redeployed.
+No webhook, webhook security check, or HTTP request participates in this path.
+The server uses the supplied payload; its TypeScript type does not add runtime
+validation to a direct call.
+
+The server can call the error handler for a scheduled failure, just as it does
+for a webhook request. A returned `statusCode: 500` is still application data;
+the path-filtered platform error trigger does not establish coverage for the
+scheduled entrypoint.
+
+## Verification
+
+Use the requests in [step 4](#4-invoke-the-advice-path) and
+[step 5](#5-configure-injection-and-try-a-joke) to check both deployed paths.
+Then send the invalid input from [Try it yourself](#try-it-yourself) and confirm
+that webhook security rejects it before the main server runs. Inspect the HTTP
+status as well as the response body, and find `motdServer` in Canopy to view its
+logs. The separate error handler has its own logs.
+
+For the template's shared utilities, local checks are available with:
+
+```bash
+pnpm workflows test
+```
+
+Those tests use mocked SDK calls to check utility behavior. They do not exercise
+this deployed webhook or prove live secret resolution. The direct HTTP requests
+above use the URL and key you provide, without Flow's `TARGET_ENV_ID` check.
+Confirm both belong to the intended development environment.
+
+To verify the platform error trigger, use a separate, deliberately failing
+development fixture and inspect the handler's logs. A handled response alone
+cannot establish whether a matching platform error event was delivered.
+
+## Troubleshooting
+
+| Symptom | Check |
+| --- | --- |
+| Generated function missing | Confirm training, namespace, and generation all used the same environment; inspect the translated names. |
+| Target mismatch | Check the selected Flow file and connection against the intended environment; see [target pinning](../../../docs/SETUP.md#pin-the-target-environment). |
+| Sample missing from the deployment preview | Remove its covering `POLY_DEPLOY_SKIP_PATHS` entry; `--paths` does not override exclusions. |
+| `wise` works, `funny` fails | Set the SECRET Object value in Canopy and check the API Function's `hostUrl` argument. |
+| Advice configuration error | Confirm the OBSCURED object contains a nonempty `hostUrl`. |
+| Request rejected | Check the full deployed URL, matching key, nonblank name, and allowed mood. |
+| Body contains `statusCode: 500` | Inspect the HTTP status and error-handler logs; check provider status and required fields. |
+| Model already exists | Inspect and train the saved `.poly.json` model, or deliberately regenerate with `--overwrite-model`. |
+| No client-function logs | Inspect the parent `motdServer` logs. The separate error handler has its own logs. |
+
+## Training and SDK reference
+
+The YAML specs' operation IDs declare the expected API names. Selecting those
+operations avoids training other operations from the same specification.
+Optional AI enrichment can change names, descriptions, and arguments; omit
+`--disable-ai` only when you intend to review those changes. `--generate-only`
+saves a translated model for review but still calls the platform and, unless
+disabled, its AI enrichment service.
+
+Use `train-model` to retry a saved `.poly.json` model. Regeneration from a spec
+requires `--overwrite-model`; `--rename FROM TO` can align changed identifiers.
+The older [official-joke-api.json](artefacts/specs/official-joke-api.json) and
+[advice-slip-api.json](artefacts/specs/advice-slip-api.json) files are historical
+reference models, not current training output or proof the functions exist in
+your environment. See [Flow training](../../../cli/README.md#openapi-training).
+
+Flow normally generates the SDK after successful training and pushes. For a
+separate refresh, first confirm the native SDK connection, then run:
+
+```bash
+pnpm workflows exec poly generate
+```
+
+This native command uses the workflow SDK's selected connection. It does not
+load Flow's `ENVPATH` or enforce `TARGET_ENV_ID`. Use the same environment as
+training and deployment. After generation, open [motdClient](client/motdClient.ts)
+and use **Go to Definition** on the two trained calls to inspect their names
+and `hostUrl` arguments. If they are missing, check the training output and
+model files before retrying. Change source specifications and regenerate rather
+than editing generated declarations.
+
+### Vari details
+
+Vari secrecy levels control how code and humans can access a stored value.
+The platform supports `NONE`, `OBSCURED`, `SECRET`, and `PARTIAL`; this sample
+uses two levels to demonstrate the difference, even though both values are
+public API base URLs.
+
+The [joke config](artefacts/vari/jokeApiConfig.json) is SECRET. Its `.inject()`
+reference must go unchanged into `getRandomJoke`; the API Function's gateway
+boundary resolves it. A client function cannot resolve an injected value or
+read the secret itself with `.get()`.
+
+The [advice config](artefacts/vari/adviceApiConfig.json) is OBSCURED and starts
+with `{ "hostUrl": "https://api.adviceslip.com" }`. It permits runtime reads
+while masking the UI. Here `.get()` returns an object and the client reads its
+`hostUrl` property on every request. Neither configuration nor the injection
+reference is cached. Both upstream APIs are public and need no account or API key.
+
+### Development branches
+
+Kickstart creates `develop`. For a manual checkout, create it once from `main`
+with `git switch -c develop main` if needed. To start a feature:
+
+```bash
+git switch develop
+git switch -c feature/my-workflow
+```
+
+The default branch settings associate `develop` with `dev.env` and `main` with
+`prod.env`. Flow checks branch ancestry and prompts when the selected file does
+not match the branch's expected environment. Review the selected target and
+preview instead of bypassing those checks; the selected file's verified target
+pin still applies.
+
+A full push also includes [common utilities](../utilities/common/OVERVIEW.md) and
+[Weather AI](../sampleAiFx/OVERVIEW.md). Configure their dependencies before
+invoking them; keep this lesson's push scoped to `sampleWorkflow` while learning.

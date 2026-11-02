@@ -10,15 +10,15 @@ Docs: <https://docs.polyapi.io/platform_overview.html>
 - Applies to all work started from this repo.
 - Covers repo-wide source-of-truth order, runtime model, environment, and task
   routing.
-- Optional local implementation guidance can live under `./agents/skills/`.
+- Optional local implementation guidance can live under `./.agents/skills/`.
 
 ## Source Of Truth
 
 1. This `AGENTS.md` for repo-wide rules
 2. Checked-in executable code and JSON artefacts under `workflows/src/`, plus
    checked-in tooling under `cli/`
-3. `CONVENTIONS.md`
-4. Relevant installed skills under `./agents/skills/`
+3. `docs/CONVENTIONS.md`
+4. Relevant installed skills under `./.agents/skills/`
 5. `README.md`
 6. Same-folder `OVERVIEW.md` files and maintained project docs
 
@@ -41,14 +41,25 @@ checked-in implementation and call out the drift clearly.
 - Package manager: `pnpm` workspaces.
 - Formatter and linter: Biome.
 - SDK dependency lives in `workflows/package.json`. Do not upgrade casually.
+- The default workflow SDK uses the `na1` package tag, with its resolved release
+  recorded in `pnpm-lock.yaml`. Kickstart installs the tag for the user's chosen
+  instance instead; SDK selection does not select credentials or the target pin.
 - Never commit secrets or log them.
-- Required environment variables:
+- Required settings in the selected Flow environment file:
 
 ```env
 POLYAPI_NAMESPACE=example
-BASE_URL=https://eu1.polyapi.io
-API_KEY=replace-with-your-api-key
+TARGET_ENV_ID=replace-with-environment-id
 ```
+
+- Flow uses the connection saved by the workflow SDK's `poly setup` by default.
+  `BASE_URL` and `API_KEY` (or SDK aliases) are optional per-field overrides.
+- Kickstart saves the authenticated `/whoami` environment ID automatically.
+  `pnpm flow target-env` prints it for manual setup without editing files.
+- Preserve the selected file's target pin and live identity check for all remote
+  Flow commands, including deployment dry runs, deletion previews, and logs.
+  Shell exports, production exemptions, and confirmation bypasses must not
+  bypass target verification. Offline training previews need no live identity.
 
 - Common command path:
 
@@ -94,6 +105,13 @@ Recommended skill categories:
 
 ## Repo Guardrails
 
+- Flow's version lives in `cli/package.json`, independently of the workflow SDK.
+  Starting with the versioned 1.1.0 baseline, bump the patch for fixes, the minor
+  version for backward-compatible features, and the major version for breaking
+  changes when preparing the next release. Group related unreleased changes in
+  one release; do not bump again for every edit to that release. Keep version
+  commands and upgrade reports reading that single source of truth. Creating
+  release commits, tags, or pushes still requires the user's instruction.
 - Do not loosen schemas or webhook contracts just to make a change pass.
 - Version breaking contract changes instead of silently mutating existing
   behaviour.
