@@ -401,7 +401,8 @@ Optional values:
 ```env
 POLYAPI_OPENAPI_SPEC_URL=https://eu1.polyapi.io/swagger-json
 OTP_ENABLED=true
-FLOW_EXECUTION_API_KEY=replace-with-your-execution-key   # push-dynamic only: key for deployed server functions
+# Optional but recommended for server functions deployed with push-dynamic.
+# FLOW_EXECUTION_API_KEY=replace-with-your-execution-key
 ```
 
 Export `ENVPATH` once to select the local target file for the terminal session.

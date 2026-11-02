@@ -122,6 +122,8 @@ Keep the project namespace and target environment pin in your environment file:
 ```env
 POLYAPI_NAMESPACE=mycustomer
 TARGET_ENV_ID=replace-with-environment-id
+# Optional but recommended for server functions deployed with push-dynamic.
+# FLOW_EXECUTION_API_KEY=replace-with-your-execution-key
 ```
 
 For a fresh manual checkout, align its starter code, artefacts, and documentation
