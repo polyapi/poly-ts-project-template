@@ -252,6 +252,8 @@ RUN_MUTATING_INTEGRATION=true pnpm workflows test:integration:mutating
 pnpm workflows test:all
 pnpm workflows push
 pnpm workflows push:dry-run
+pnpm workflows push:dynamic -- <file|directory|context.name ...>
+pnpm workflows push:dynamic:dry-run
 pnpm flow train-openapi
 pnpm flow delete-content --dry-run
 pnpm flow logs <function-id>
@@ -275,6 +277,18 @@ CLI commands:
 ```bash
 pnpm flow build
 pnpm flow generate
+```
+
+`push-dynamic` is `push` with a dependency-aware function step (a changed
+client function plus every function that embeds it; same artefact types,
+prompts and safeguards; see [push-dynamic](../cli/push-dynamic.md)). The root
+`dyn:*` shortcuts select the Flow file themselves:
+
+```bash
+pnpm dyn:dev:dry                                                  # plan what differs from dev
+pnpm dyn:dev:dry -- ./workflows/src/<workflow>/client/<file>.ts   # force one function + its tree (functions only)
+pnpm dyn:dev -- ./workflows/src/<workflow>/client/<file>.ts       # deploy it (exec key optional, as for push)
+pnpm dyn:prod:dry
 ```
 
 ## Adding a workflow

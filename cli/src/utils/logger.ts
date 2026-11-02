@@ -1,23 +1,34 @@
 import chalk from 'chalk';
 import pino from 'pino';
+import pretty from 'pino-pretty';
 import { BRAND_COLORS } from './colors';
 
 /**
  * Create a configured pino logger instance
  */
-export const logger = pino({
-  level: process.env.LOG_LEVEL || 'info',
-  transport: {
-    target: 'pino-pretty',
-    options: {
-      colorize: false,
-      translateTime: false,
-      ignore: 'pid,hostname,context,level,time',
-      messageFormat: '{msg}',
-      singleLine: true,
-    },
-  },
-});
+// `flow push-dynamic --json` reserves stdout for the JSON plan, so every log
+// line goes to stderr in that mode. The destination is fixed at construction,
+// hence the argv check here.
+const logToStderr =
+  process.argv.includes('push-dynamic') && process.argv.includes('--json');
+
+// Pretty-print in-process with synchronous writes instead of the pino-pretty
+// worker-thread transport. The transport buffers lines in another thread, so a
+// readline prompt written straight to stdout could appear ABOVE the plan it
+// asks about, and lines still queued at exit were lost. Synchronous writes keep
+// log lines, prompts and exit in program order.
+export const logger = pino(
+  { level: process.env.LOG_LEVEL || 'info' },
+  pretty({
+    colorize: false,
+    translateTime: false,
+    ignore: 'pid,hostname,context,level,time',
+    messageFormat: '{msg}',
+    singleLine: true,
+    destination: logToStderr ? 2 : 1,
+    sync: true,
+  })
+);
 
 export { chalk };
 export const warningColor = chalk.hex(BRAND_COLORS.orange);

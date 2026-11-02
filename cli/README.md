@@ -21,6 +21,9 @@ flow push --paths exampleWorkflow
 flow push --types canopy,functions,ai-functions,webhooks,triggers,subscriptions
 flow push --delete-orphans
 flow push --skip-validation "I know what am doing"
+flow push-dynamic --dry-run
+flow push-dynamic --dry-run src/utilities/common/client/log.ts
+flow push-dynamic --hubs
 flow train-openapi designs/ --context 'example.apis.{file}'
 flow delete-content --type api --context example.apis --dry-run
 flow logs <function-id> --keyword error
@@ -33,7 +36,23 @@ terminal session:
 export ENVPATH=workflows/dev.env
 pnpm workflows push --dry-run
 pnpm workflows push
+pnpm workflows push:dynamic:dry-run
+pnpm workflows push:dynamic -- src/<workflow>/client/<file>.ts
 ```
+
+`push-dynamic` is `push` with a dependency-aware function step: the same
+pipeline, options, scope prompt and safeguards, but functions are handled by
+building the local `poly.*` call graph, seeding it with the functions named
+on the command line (forced: deployed even when unchanged; the run then skips
+the other artefact types unless `--paths`, `--types` or `--seed-from` is given,
+and never touches orphans) or, when none
+are named, with the files whose code differs from the target environment,
+expanding each seed through its client-function callers up to the first
+server function on every path, and deploying the whole tree in dependency
+order. `--dry-run` prints the seeds, the caller tree and the ordered plan
+without touching the platform; `--json` exports the plan; `--hubs`, `--why` and
+`--json` are report-only and imply `--dry-run`. See
+`flow push-dynamic --help` and [push-dynamic.md](push-dynamic.md).
 
 From the workspace root, the operational commands also have package shortcuts
 that build Flow before running it:
@@ -382,6 +401,7 @@ Optional values:
 ```env
 POLYAPI_OPENAPI_SPEC_URL=https://eu1.polyapi.io/swagger-json
 OTP_ENABLED=true
+FLOW_EXECUTION_API_KEY=replace-with-your-execution-key   # push-dynamic only: key for deployed server functions
 ```
 
 Export `ENVPATH` once to select the local target file for the terminal session.
