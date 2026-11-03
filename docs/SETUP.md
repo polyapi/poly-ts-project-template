@@ -25,9 +25,31 @@ pnpm --version
 
 Use pnpm for this repository's dependencies. The npm command above installs the
 package manager only. Commands in these guides use Bash syntax and also run in
-zsh, the default shell on macOS; on Windows, use Git Bash or WSL. There is no
-need to change the machine-wide PowerShell execution
-policy to follow the Bash instructions.
+zsh, the default shell on macOS; on Windows, see [Windows](#windows). There is
+no need to change the machine-wide PowerShell execution policy to follow the
+Bash instructions.
+
+### Windows
+
+These recommendations have not yet been verified on a Windows machine; report
+problems with your Windows and WSL versions.
+
+Use [WSL 2](https://learn.microsoft.com/windows/wsl/install) with a Linux
+distribution such as Ubuntu, and run kickstart and all project commands in its
+terminal. Kickstart then follows the Linux path: it installs Node.js and pnpm
+inside WSL and ignores Windows copies reached through `/mnt/<drive>/`, which
+cannot build a Linux project. Official Linux builds of Node.js 25 and newer
+need the `libatomic1` library; on a distribution without it, kickstart installs
+Node.js 24 LTS instead, and `sudo apt install libatomic1` followed by
+`pnpm env use --global lts` switches to the current LTS later. Keep projects in
+the Linux file system, such as `~/projects`, rather than under `/mnt/c`;
+kickstart warns when the parent directory is on a Windows drive. Install VS Code
+on Windows with the [WSL extension](https://code.visualstudio.com/docs/remote/wsl);
+`code` in a WSL terminal then opens the project through it.
+
+Git Bash also provides the Bash, curl, and tar that kickstart needs, and pnpm's
+installer supports it, but WSL is the recommended Windows setup. Kickstart does
+not run in PowerShell or Command Prompt.
 
 ## Manual setup
 

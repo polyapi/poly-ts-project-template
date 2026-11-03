@@ -97,6 +97,9 @@ main() {
     esac
     parent_dir=$(node -e 'process.stdout.write(require("node:path").resolve(process.argv[1]))' "$parent_dir")
     project_dir="$parent_dir/$project_name"
+    if kickstart_is_wsl && [[ "$parent_dir" == /mnt/[a-zA-Z]/* ]]; then
+      printf 'Note: %s is on a Windows drive. WSL projects are much faster in the Linux file system, such as ~/projects.\n' "$parent_dir" >&2
+    fi
     if [[ ( -e "$parent_dir" || -L "$parent_dir" ) && ! -d "$parent_dir" ]]; then
       printf 'The parent path is not a directory. Choose another location.\n' >&2
     elif [[ -e "$project_dir" || -L "$project_dir" ]]; then

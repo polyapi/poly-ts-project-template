@@ -29,10 +29,18 @@ kickstart_confirm() {
   done
 }
 
-# Print a usable command's path.
+kickstart_is_wsl() {
+  [[ -n "${WSL_DISTRO_NAME:-}" ]] || grep -qi microsoft /proc/version 2>/dev/null
+}
+
+# Print a usable command's path. Under WSL, Windows tools reached through
+# interop (/mnt/<drive>/...) cannot build a Linux project, so they do not count.
 toolchain_command() {
   local resolved
   resolved="$(command -v "$1" 2>/dev/null)" || return 1
+  if kickstart_is_wsl && [[ "$resolved" == /mnt/[a-zA-Z]/* ]]; then
+    return 1
+  fi
   printf '%s' "$resolved"
 }
 
@@ -45,6 +53,13 @@ kickstart_pnpm_home() {
   else
     case "$(uname -s)" in
       Darwin) printf '%s/Library/pnpm' "$HOME" ;;
+      MINGW* | MSYS* | CYGWIN*)
+        if [[ -n "${LOCALAPPDATA:-}" ]] && command -v cygpath >/dev/null 2>&1; then
+          printf '%s/pnpm' "$(cygpath -u "$LOCALAPPDATA")"
+        else
+          printf '%s/AppData/Local/pnpm' "$HOME"
+        fi
+        ;;
       *) printf '%s/.local/share/pnpm' "$HOME" ;;
     esac
   fi
