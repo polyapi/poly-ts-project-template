@@ -113,3 +113,31 @@ workflows/src/ workflows, shared utilities, and runtime tests
 | [Agent guidance](AGENTS.md) · [Installing skills](docs/SETUP.md#agent-skills) | Repository rules and skills from [poly-skills](https://github.com/polyapi/poly-skills). |
 
 New to the platform? Read the [PolyAPI overview](https://docs.polyapi.io/platform_overview.html).
+
+## Contributing
+
+Bug fixes, clearer documentation, and better examples are welcome.
+
+1. For larger changes, [open an issue](https://github.com/polyapi/poly-ts-project-template/issues)
+   first so we can agree on the approach.
+2. Fork and clone this repository, then create a branch for your change. Use a
+   direct clone rather than kickstart, which creates a personalised project.
+3. Follow the [project conventions](docs/CONVENTIONS.md). Keep code, artefacts,
+   tests, and affected guides aligned. Never include credentials or customer data.
+4. For code changes, install dependencies with `pnpm install`, then run the local
+   checks below and any relevant [Flow CLI checks](cli/README.md). For documentation
+   changes, verify links and examples against the current implementation.
+5. Open a focused pull request against `main`, explaining the change and how you
+   checked it. A maintainer will review it.
+
+Run local checks from the repository root:
+
+```bash
+pnpm check
+pnpm workflows test
+pnpm flow build
+```
+
+## License
+
+Licensed under the [MIT License](LICENSE).
