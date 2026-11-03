@@ -57,6 +57,21 @@ export interface AiToolFunction extends AiFunctionReference {
   argumentConfig?: AiFunctionArgumentConfig[];
 }
 
+export interface McpServerFile {
+  filePath: string;
+  fileName: string;
+  content: {
+    name: string;
+    description?: string;
+    enabled?: boolean;
+    isPublic?: boolean;
+    toolFunctions?: AiToolFunction[];
+    oauthClientId?: string | null;
+    oauthClientSecretVariable?: AiVariableReference | null;
+    oauthRedirectUris?: string[];
+  };
+}
+
 export interface AiFunctionFile {
   filePath: string;
   fileName: string;

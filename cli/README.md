@@ -18,7 +18,7 @@ pnpm --filter flow-cli run generate
 flow push
 flow push --dry-run
 flow push --paths exampleWorkflow
-flow push --types canopy,functions,ai-functions,webhooks,triggers,subscriptions
+flow push --types canopy,functions,ai-functions,mcp-servers,webhooks,triggers,subscriptions
 flow push --delete-orphans
 flow push --skip-validation "I know what am doing"
 flow push-dynamic --dry-run
@@ -385,7 +385,7 @@ To omit bundled samples from deployment scanning, set this in the selected
 environment file, adding to any existing exclusions:
 
 ```env
-POLY_DEPLOY_SKIP_PATHS=src/sampleWorkflow,src/sampleAiFx
+POLY_DEPLOY_SKIP_PATHS=src/sampleWorkflow
 ```
 
 These comma-separated paths are relative to `workflows/`; folder entries include
@@ -434,6 +434,7 @@ handling.
 - `src/**/artefacts/tabi/*.json`
 - `src/**/artefacts/jobs/*.json`
 - `src/**/artefacts/ai-functions/*.json`
+- `src/**/artefacts/mcp-servers/*.json`
 - `src/**/artefacts/canopy/*.json`
 
 The legacy `artifacts/` spelling is also supported for the same artefact folders.
@@ -453,101 +454,107 @@ across accessible environment, tenant, and public resources. Their contexts do
 not need to start with `POLYAPI_NAMESPACE`; namespace filtering still applies
 to locally managed artefacts and orphan detection/deletion.
 
+See the [weather AI artefact](../workflows/src/sampleWorkflow/artefacts/ai-functions/upliftingWeather.json)
+for a complete example. Its two Open-Meteo tools are trained from the sample's
+bundled specifications and need no weather account or API key for evaluation.
+Follow [the weather setup](../workflows/src/sampleWorkflow/OVERVIEW.md#weather-ai)
+to train those tools in the project namespace before deploying the AI function.
+The target still needs the selected AI model and provider.
+
+Each tool argument comes from the model (`ai`), a fixed value (`hardcoded`), a
+caller argument (`argument`), or a Vari (`variable`). The sample fixes provider
+hosts and units with `hardcoded` bindings; a Vari-backed credential looks like
+this:
+
 ```json
 {
-  "name": "upliftingWeather",
-  "context": "example.sampleAiFx",
-  "description": "Returns accurate, practical, and encouraging weather guidance tailored to an optional activity.",
-  "visibility": "ENVIRONMENT",
-  "state": "ALPHA",
-  "enabled": true,
-  "type": "TEXT",
-  "provider": "openai",
-  "apiType": "responses",
-  "model": "gpt-5.5",
-  "arguments": [
+  "functionName": "lookup",
+  "functionContext": "example.tools",
+  "argumentConfig": [
+    { "key": "query", "source": "ai" },
     {
-      "key": "location",
-      "type": "string",
-      "required": true,
-      "description": "A village, city, region, country, or other location description."
-    },
-    {
-      "key": "activity",
-      "type": "string",
-      "required": false,
-      "description": "An optional activity for which the weather is relevant."
+      "key": "token",
+      "source": "variable",
+      "variableName": "providerToken",
+      "variableContext": "example.configuration"
     }
-  ],
-  "systemPrompt": "Use the weather tools for all weather facts. Resolve the requested location, retrieve current conditions, and provide concise practical guidance tailored to the activity when supplied. Preserve safety warnings, avoid invented facts, and close with a brief sincere uplifting message.",
-  "inputTemplate": "Provide weather guidance for {{location}} in the context of {{activity}} when supplied.",
-  "clientPromptEnabled": false,
-  "clientPromptRequired": false,
-  "clientPromptArgName": "",
-  "toolFunctions": [
-    {
-      "functionName": "search",
-      "functionContext": "accuWeather.locations",
-      "argumentConfig": [
-        { "key": "locationText", "source": "ai" },
-        {
-          "key": "apiKey",
-          "source": "variable",
-          "variableName": "weatherApiKey",
-          "variableContext": "example.sampleAiFx"
-        }
-      ]
-    },
-    {
-      "functionName": "getByLocationKey",
-      "functionContext": "accuWeather.currentConditions",
-      "argumentConfig": [
-        { "key": "locationId", "source": "ai" },
-        {
-          "key": "apiKey",
-          "source": "variable",
-          "variableName": "weatherApiKey",
-          "variableContext": "example.sampleAiFx"
-        }
-      ]
-    }
-  ],
-  "outputSchema": {
-    "type": "object",
-    "additionalProperties": false,
-    "required": [
-      "location",
-      "currentWeather",
-      "description",
-      "recommendedItems",
-      "upliftingMessage"
-    ],
-    "properties": {
-      "location": { "type": "string" },
-      "currentWeather": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": ["condition", "temperature", "unit"],
-        "properties": {
-          "condition": { "type": "string" },
-          "temperature": { "type": "number" },
-          "unit": { "type": "string", "enum": ["C", "F"] }
-        }
-      },
-      "description": { "type": "string" },
-      "recommendedItems": {
-        "type": "array",
-        "items": { "type": "string" }
-      },
-      "upliftingMessage": { "type": "string" }
-    }
-  }
+  ]
 }
 ```
 
 Use `--types ai-functions` to sync only these artefacts. Flow creates them with
 `POST /functions/ai`, sends changed mutable fields only with `PATCH
 /functions/ai/{id}`, and supports safe orphan reporting/deletion.
+
+## MCP servers
+
+An MCP server exposes selected PolyAPI functions as tools to MCP clients such as
+coding agents and chat assistants. Keep each server in
+`artefacts/mcp-servers/<name>.json`:
+
+```json
+{
+  "name": "example-weather-tools",
+  "description": "Current weather lookup for MCP clients.",
+  "enabled": true,
+  "isPublic": false,
+  "toolFunctions": [
+    {
+      "functionName": "searchLocations",
+      "functionContext": "example.sampleWorkflow",
+      "argumentConfig": [
+        { "key": "name", "source": "ai" },
+        {
+          "key": "hostUrl",
+          "source": "hardcoded",
+          "value": "https://geocoding-api.open-meteo.com"
+        }
+      ]
+    }
+  ]
+}
+```
+
+Tool references use `functionName` and `functionContext` and resolve against
+accessible API, server, and client functions, the same set used for AI Function
+tools. Each `argumentConfig` entry uses the AI Function sources: `ai` (the MCP
+client supplies it), `hardcoded`, `argument`, or a namespace-owned `variable`.
+For OAuth, set `oauthClientId`, `oauthRedirectUris`, and
+`oauthClientSecretVariable` with `variableName` and `variableContext`; use
+`null` to clear the client ID or secret. Never commit remote IDs such as
+`toolFunctionIds`, `oauthClientSecretVariableId`, `environmentId`, or `mcpUrl`.
+
+MCP servers have no namespace context. Flow therefore identifies each one by
+its exact `name` in the environment verified by `TARGET_ENV_ID`: it creates the
+server when that name is absent and PATCHes only changed fields when it exists.
+Choose a name that is unique in the target environment; duplicate local or
+remote names stop the sync instead of updating an arbitrary server. Because Flow
+cannot tell which remote servers belong to this project, it never reports or
+deletes MCP servers as orphans, and `delete-content` does not cover them.
+Remove retired servers deliberately in PolyAPI.
+
+Flow prints each server's MCP URL, `https://<instance>/mcp-servers/<id>/mcp`,
+after it is created, updated, or found unchanged; only `GET /mcp-servers/{id}`
+returns it. Use `--types mcp-servers` to sync only these artefacts; deploy the
+tool functions first, because unresolved tools stop the server's sync.
+
+MCP clients see each tool as its context and name joined with underscores, for
+example `example_sampleWorkflow_searchLocations`, with the function's own
+description. Only `ai` arguments become tool inputs: PolyAPI applies
+`hardcoded`, `argument`, and `variable` bindings without showing them to the
+client, and hardcoded values keep their JSON type.
+
+Access depends on `isPublic`:
+
+- `isPublic: true`: any client with the URL can list and call the tools without
+  signing in. Flow warns about it on every push.
+- `isPublic: false`: PolyAPI rejects anonymous requests and PolyAPI keys and
+  expects an OAuth access token. Without OAuth settings, the server's OAuth
+  metadata names no authorization server, so MCP clients cannot sign in.
+  Configure `oauthClientId` and `oauthClientSecretVariable` before sharing a
+  private server; a complete OAuth sign-in has not yet been verified with Flow.
+  When `oauthRedirectUris` is omitted, PolyAPI adds the claude.ai and ChatGPT
+  connector callbacks.
 
 All artefact payloads also support `{{ENV_VAR_NAME}}` placeholders. During sync,
 placeholders are substituted from the selected env file values. Missing values are

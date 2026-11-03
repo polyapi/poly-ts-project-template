@@ -11,9 +11,11 @@ and this workspace's pinned `pnpm@10.0.0`. Node.js 18 and 20 are end-of-life;
 see the [Node.js release schedule](https://nodejs.org/en/about/previous-releases).
 The Node.js version on your laptop is separate from the hosted PolyAPI runtime.
 
-Install Node.js using the [official download instructions](https://nodejs.org/en/download),
-then follow the [pnpm installation guide](https://pnpm.io/installation), selecting
-version `10.0.0` instead of `latest`. For an npm-based pnpm installation:
+[Kickstart](../README.md#getting-started) installs both for your user account
+when they are missing. For a manual checkout, install Node.js using the
+[official download instructions](https://nodejs.org/en/download), then follow
+the [pnpm installation guide](https://pnpm.io/installation), selecting version
+`10.0.0` instead of `latest`. For an npm-based pnpm installation:
 
 ```bash
 npm install --global pnpm@10.0.0
@@ -22,9 +24,32 @@ pnpm --version
 ```
 
 Use pnpm for this repository's dependencies. The npm command above installs the
-package manager only. Commands in these guides use Bash syntax; on Windows, use
-Git Bash or WSL. There is no need to change the machine-wide PowerShell execution
-policy to follow the Bash instructions.
+package manager only. Commands in these guides use Bash syntax and also run in
+zsh, the default shell on macOS; on Windows, see [Windows](#windows). There is
+no need to change the machine-wide PowerShell execution policy to follow the
+Bash instructions.
+
+### Windows
+
+These recommendations have not yet been verified on a Windows machine; report
+problems with your Windows and WSL versions.
+
+Use [WSL 2](https://learn.microsoft.com/windows/wsl/install) with a Linux
+distribution such as Ubuntu, and run kickstart and all project commands in its
+terminal. Kickstart then follows the Linux path: it installs Node.js and pnpm
+inside WSL and ignores Windows copies reached through `/mnt/<drive>/`, which
+cannot build a Linux project. Official Linux builds of Node.js 25 and newer
+need the `libatomic1` library; on a distribution without it, kickstart installs
+Node.js 24 LTS instead, and `sudo apt install libatomic1` followed by
+`pnpm env use --global lts` switches to the current LTS later. Keep projects in
+the Linux file system, such as `~/projects`, rather than under `/mnt/c`;
+kickstart warns when the parent directory is on a Windows drive. Install VS Code
+on Windows with the [WSL extension](https://code.visualstudio.com/docs/remote/wsl);
+`code` in a WSL terminal then opens the project through it.
+
+Git Bash also provides the Bash, curl, and tar that kickstart needs, and pnpm's
+installer supports it, but WSL is the recommended Windows setup. Kickstart does
+not run in PowerShell or Command Prompt.
 
 ## Manual setup
 
@@ -108,7 +133,8 @@ node kickstart/kickstart-namespace.cjs mycustomer
 
 Replace `mycustomer` with the exact `POLYAPI_NAMESPACE` you put in the selected
 file. Kickstart already performs this step. The helper replaces the starter
-root locally; it does not edit environment settings or rename deployed
+root locally in code, artefacts, documentation, and `workflows/dev.env.example`.
+It does not edit your selected environment file or rename deployed
 resources. Renaming an already customized project requires updating its
 existing root and reviewing the remote resources separately.
 
@@ -124,10 +150,11 @@ Before deployment, align the selected sample's namespace and complete its
 training and configuration prerequisites. Start with the
 [message-of-the-day tutorial](../workflows/src/sampleWorkflow/README.md#1-confirm-setup-and-namespace),
 then [select your Flow file once](#select-a-flow-environment) and preview only
-that sample:
+that sample. The explicit types leave out its optional weather AI Function until
+the weather tools are trained:
 
 ```bash
-pnpm workflows push --dry-run --paths sampleWorkflow
+pnpm workflows push --dry-run --paths sampleWorkflow --types functions,variables,schemas,webhooks,triggers,jobs
 ```
 
 The context root must match `POLYAPI_NAMESPACE`. For example,
@@ -150,7 +177,7 @@ Do not commit real environment files or secrets.
 
 ## Select a Flow environment
 
-Run this once in each Bash terminal session, from the project root:
+Run this once in each Bash or zsh terminal session, from the project root:
 
 ```bash
 export ENVPATH=workflows/dev.env
@@ -207,14 +234,15 @@ To keep the learning samples in your checkout while deploying your own
 integrations, add this setting to the selected Flow file:
 
 ```env
-POLY_DEPLOY_SKIP_PATHS=src/sampleWorkflow,src/sampleAiFx
+POLY_DEPLOY_SKIP_PATHS=src/sampleWorkflow
 ```
 
 This comma-separated list contains paths **relative to `workflows/`**, so use
 `src/sampleWorkflow`, not `workflows/src/sampleWorkflow`. Each folder entry
 also skips its contents; these are paths, not namespaces or wildcard patterns.
 Add the entries to any existing list instead of replacing other exclusions.
-The example skips both sample workflows and leaves shared utilities available.
+The example skips the sample workflow, including its optional weather AI
+lesson, and leaves shared utilities available.
 
 The exclusions apply to deployment previews and pushes, including commands
 with `--paths`. To deploy a tutorial, first remove that sample's entry (or any

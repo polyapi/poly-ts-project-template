@@ -242,6 +242,24 @@ function rewriteMarkdown(file) {
   if (updated !== original) fs.writeFileSync(file, updated);
 }
 
+// Keep environment files later copied from the example aligned with the code.
+// Only active assignments change; comments and the selected env file do not.
+function rewriteEnvExample(file) {
+  let stats;
+  try {
+    stats = fs.lstatSync(file);
+  } catch {
+    return;
+  }
+  if (!stats.isFile()) return;
+  const original = fs.readFileSync(file, 'utf8');
+  const updated = original.replace(
+    /^(POLYAPI_NAMESPACES?=)example(?=\r?$|,)/gm,
+    (_match, assignment) => assignment + namespace
+  );
+  if (updated !== original) fs.writeFileSync(file, updated);
+}
+
 function walk(directory) {
   for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
     const file = path.join(directory, entry.name);
@@ -252,6 +270,7 @@ function walk(directory) {
   }
 }
 walk(path.join(projectRoot, 'workflows/src'));
+rewriteEnvExample(path.join(projectRoot, 'workflows/dev.env.example'));
 for (const file of ['README.md', 'cli/README.md'])
   rewriteMarkdown(path.join(projectRoot, file));
 const docs = path.join(projectRoot, 'docs');

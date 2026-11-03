@@ -21,6 +21,7 @@ import {
   writePolyGenerateProvenance,
 } from './artefacts/functions';
 import { findJobFiles, syncJobs } from './artefacts/jobs';
+import { findMcpServerFiles, syncMcpServers } from './artefacts/mcpServers';
 import { findSchemaFiles, syncSchemas } from './artefacts/schemas';
 import { findTableFiles, syncTables } from './artefacts/tables';
 import { findTriggerFiles, syncTriggers } from './artefacts/triggers';
@@ -72,6 +73,7 @@ import {
   validateAiFunctionArtifact,
   validateFunctionArtifact,
   validateJobArtifact,
+  validateMcpServerArtifact,
   validateSchemaArtifact,
   validateTableArtifact,
   validateTriggerArtifact,
@@ -86,6 +88,7 @@ type ArtifactType =
   | 'tables'
   | 'functions'
   | 'ai-functions'
+  | 'mcp-servers'
   | 'webhooks'
   | 'triggers'
   | 'jobs';
@@ -117,6 +120,7 @@ const DEFAULT_ENABLED_TYPES: ArtifactType[] = [
   'tables',
   'functions',
   'ai-functions',
+  'mcp-servers',
   'webhooks',
   'triggers',
   'jobs',
@@ -131,6 +135,7 @@ const SUPPORTED_TYPE_SELECTIONS = [
   'client-functions',
   'server-functions',
   'ai-functions',
+  'mcp-servers',
   'webhooks',
   'triggers',
   'jobs',
@@ -209,7 +214,7 @@ Usage:
   --verbose           Print debug logging while scanning and diffing
   --delete-orphans    Delete remote artefacts that no longer exist locally
   --build-schema      Regenerate OpenAPI SDK/schemas before sync
-  --types             Comma-separated types: canopy,variables,schemas,tables,functions,client-functions,server-functions,ai-functions,webhooks,triggers,jobs
+  --types             Comma-separated types: canopy,variables,schemas,tables,functions,client-functions,server-functions,ai-functions,mcp-servers,webhooks,triggers,jobs
   --paths             Comma-separated scope filters, e.g. exampleWorkflow or src/utilities
   --show-config       Print resolved CLI config and exit
   --skip-generate     Skip pnpm workflows exec poly generate after sync
@@ -220,6 +225,7 @@ Usage:
 Notes:
   - Interactive runs without --paths prompt for full-repo sync or a specific scope.
   - Scoped runs skip orphan detection to avoid false orphan reports.
+  - MCP servers have no namespace context: they match by exact name and are never orphans.
   - Production safeguards are skipped for --dry-run.
 `);
 }
@@ -471,6 +477,7 @@ function printSummary(
     { name: 'Webhooks', data: summary.webhooks },
     { name: 'Functions', data: summary.functions },
     { name: 'AI Functions', data: summary.aiFunctions },
+    { name: 'MCP Servers', data: summary.mcpServers },
     { name: 'Triggers', data: summary.triggers },
     { name: 'Variables', data: summary.variables },
     { name: 'Tables', data: summary.tables },
@@ -1091,8 +1098,8 @@ function printPushDynamicHelp(): void {
   logger.info(`\`flow push\` whose function step follows the call graph (dependency-aware deploy).
 
 Everything else is identical to push: the same discovery, validation, artefact types in the
-same order (variables, canopy, schemas, tables, functions, ai-functions, webhooks, triggers,
-jobs), scope prompt, production safeguards, summary and post-push \`poly generate\`. Only the
+same order (variables, canopy, schemas, tables, functions, ai-functions, mcp-servers, webhooks,
+triggers, jobs), scope prompt, production safeguards, summary and post-push \`poly generate\`. Only the
 functions step differs: a changed client function (CFX) is picked up by a server function (SFX)
 only when that SFX is rebuilt, so changed functions are expanded to their transitive
 client-function callers up to the first server function on every path, the trees are merged,
@@ -1114,7 +1121,8 @@ Shared with push:
                       are compared for changes (the function closure is never scoped). A bare
                       workflow name means src/<workflow>
   --types <csv>       canopy,variables,schemas,tables,functions,client-functions,server-functions,
-                      ai-functions,webhooks,triggers,jobs (function sub-types select functions)
+                      ai-functions,mcp-servers,webhooks,triggers,jobs (function sub-types
+                      select functions)
   --force             Update unchanged artefacts (functions are governed by seeds, not --force)
   --delete-orphans, --build-schema, --skip-invalid, --show-config, --skip-generate, --verbose
                       as for push
@@ -1436,7 +1444,7 @@ async function main(): Promise<void> {
       return;
     }
 
-    await enforceTargetEnvironment(envFile);
+    const targetEnvironment = await enforceTargetEnvironment(envFile);
     await maybeConfirmBranchEnvFileMatch(projectRoot, preflight, cliArgs);
     // The report-only modes, and named functions with nothing else selected,
     // already say what to look at.
@@ -1493,6 +1501,9 @@ async function main(): Promise<void> {
     const aiFunctionFiles = cliArgs.enabledTypes.includes('ai-functions')
       ? findAiFunctionFiles(discoveryOptions)
       : [];
+    const mcpServerFiles = cliArgs.enabledTypes.includes('mcp-servers')
+      ? findMcpServerFiles(discoveryOptions)
+      : [];
     const webhookFiles = cliArgs.enabledTypes.includes('webhooks')
       ? findWebhookFiles(discoveryOptions)
       : [];
@@ -1513,6 +1524,7 @@ async function main(): Promise<void> {
         ...variableFiles,
         ...jobFiles,
         ...aiFunctionFiles,
+        ...mcpServerFiles,
       ],
       cliArgs
     );
@@ -1624,6 +1636,7 @@ async function main(): Promise<void> {
     let validWebhooks = 0;
     let validFunctions = 0;
     let validAiFunctions = 0;
+    let validMcpServers = 0;
     let validTriggers = 0;
     let validTables = 0;
     let validJobs = 0;
@@ -1712,6 +1725,20 @@ async function main(): Promise<void> {
       }
     }
 
+    for (const mcpServer of mcpServerFiles) {
+      totalArtifacts++;
+      if (
+        validateMcpServerArtifact(
+          mcpServer.content,
+          mcpServer.filePath,
+          cliArgs.skipInvalid
+        )
+      ) {
+        validMcpServers++;
+        totalValidated++;
+      }
+    }
+
     for (const webhook of webhookFiles) {
       totalArtifacts++;
       if (
@@ -1794,6 +1821,14 @@ async function main(): Promise<void> {
         chalk.green(checkMark) +
           chalk.gray(
             ` AI Functions: ${validAiFunctions}/${aiFunctionFiles.length} validated`
+          )
+      );
+    }
+    if (mcpServerFiles.length > 0) {
+      logger.info(
+        chalk.green(checkMark) +
+          chalk.gray(
+            ` MCP Servers: ${validMcpServers}/${mcpServerFiles.length} validated`
           )
       );
     }
@@ -1966,6 +2001,13 @@ async function main(): Promise<void> {
         cliArgs.skipInvalid,
         syncOptions
       );
+    }
+    if (cliArgs.enabledTypes.includes('mcp-servers')) {
+      await syncMcpServers(client, summary.mcpServers, cliArgs.skipInvalid, {
+        dryRun: cliArgs.dryRun,
+        discoveryOptions,
+        environmentId: targetEnvironment.environmentId,
+      });
     }
     if (cliArgs.enabledTypes.includes('webhooks')) {
       await syncWebhooks(

@@ -59,7 +59,9 @@ main() {
   trap 'exit 130' INT
   trap 'exit 143' TERM
 
-  for tool in tar git node pnpm code; do
+  # curl and tar are the only prerequisites; Node.js and pnpm are installed for
+  # this user when missing, and Git and VS Code are optional.
+  for tool in curl tar; do
     if ! command -v "$tool" >/dev/null 2>&1; then
       printf 'kickstart: required command not found: %s\n' "$tool" >&2
       exit 1
@@ -71,6 +73,11 @@ main() {
     printf 'kickstart: run this command from an interactive terminal.\n' >&2
     exit 1
   fi
+
+  # shellcheck source=kickstart/toolchain.sh
+  source "$script_dir/toolchain.sh"
+  printf 'Checking Node.js and pnpm...\n'
+  ensure_toolchain || exit 1
 
   while true; do
     read -r -p 'Project name: ' project_name <&3
@@ -90,6 +97,9 @@ main() {
     esac
     parent_dir=$(node -e 'process.stdout.write(require("node:path").resolve(process.argv[1]))' "$parent_dir")
     project_dir="$parent_dir/$project_name"
+    if kickstart_is_wsl && [[ "$parent_dir" == /mnt/[a-zA-Z]/* ]]; then
+      printf 'Note: %s is on a Windows drive. WSL projects are much faster in the Linux file system, such as ~/projects.\n' "$parent_dir" >&2
+    fi
     if [[ ( -e "$parent_dir" || -L "$parent_dir" ) && ! -d "$parent_dir" ]]; then
       printf 'The parent path is not a directory. Choose another location.\n' >&2
     elif [[ -e "$project_dir" || -L "$project_dir" ]]; then
@@ -135,7 +145,7 @@ main() {
   template_root="$(cd -- "$script_dir/.." && pwd)"
   printf 'Preparing project template and downloading skills...\n'
   mkdir -p -- "$download_dir/template"
-  if [[ -e "$template_root/.git" ]]; then
+  if [[ -e "$template_root/.git" ]] && kickstart_git_usable; then
     git -C "$template_root" archive HEAD
   else
     # The curl entry point provides a public snapshot without Git metadata.
@@ -151,8 +161,11 @@ main() {
     --exclude='*.key' --exclude='*.pem' --exclude='*.p12' \
     --exclude='*.pfx' --exclude='*.crt' \
     -xf - -C "$download_dir/template"
-  git clone --depth 1 --single-branch --branch main \
-    https://github.com/polyapi/poly-skills.git "$download_dir/skills"
+  # The public skills snapshot needs no Git or GitHub authentication.
+  mkdir -- "$download_dir/skills"
+  curl --fail --silent --show-error --location --proto '=https' \
+    'https://codeload.github.com/polyapi/poly-skills/tar.gz/refs/heads/main' |
+    tar -xzf - --strip-components=1 -C "$download_dir/skills"
   [[ -f "$download_dir/template/package.json" ]]
   [[ -f "$download_dir/template/kickstart/kickstart-namespace.cjs" ]]
   for category in general polyapi-common polyapi-typescript; do
@@ -184,7 +197,6 @@ NODE
     umask 077
     printf '%s\n' \
       "POLYAPI_NAMESPACE=$project_namespace" \
-      '# POLYPROD_EXEC_KEY' \
       '' \
       'LOG_LEVEL=debug' \
       'SLACK_CHANNEL_ID=alerts-demos' \
@@ -192,6 +204,11 @@ NODE
       '# Optional Flow CLI settings' \
       'GIT_PROD_BRANCH=main:prod.env' \
       'GIT_PROD_SKIP_BRANCHES=develop:dev.env' \
+      '' \
+      '# Optional: execution API key for the server functions `flow push-dynamic` deploys' \
+      '# (alternative to --execution-api-key; on production-sensitive branches POLYPROD_EXEC_KEY' \
+      '# in prod.env overrides it)' \
+      '# FLOW_EXECUTION_API_KEY=replace-with-your-dev-execution-key' \
       > workflows/dev.env
   )
 
@@ -260,13 +277,34 @@ NODE
   )
   unset api_key
 
-  printf 'Initializing Git and switching to develop...\n'
-  git init -b main
-  git add .
-  git commit -m 'Initial commit'
-  git switch -c develop
+  local finish_git=''
+  if ! kickstart_git_usable; then
+    finish_git="git init -b main && git add . && git commit -m 'Initial commit' && git switch -c develop"
+    printf 'Git was not found, so the project is not a Git repository yet.\n'
+    if [[ "$(uname -s)" == Darwin ]]; then
+      printf 'Install it with `xcode-select --install`, then run this in the project:\n'
+    else
+      printf "Install Git with your system's package manager, then run this in the project:\n"
+    fi
+  elif [[ -z "$(git config --get user.name || true)" || -z "$(git config --get user.email || true)" ]]; then
+    git init -q -b main
+    finish_git="git add . && git commit -m 'Initial commit' && git switch -c develop"
+    printf 'Git has no user.name or user.email yet, so no commit was made.\n'
+    printf 'Set them with `git config --global user.name "Your Name"` and `git config --global user.email you@example.com`, then run this in the project:\n'
+  else
+    printf 'Initializing Git and switching to develop...\n'
+    git init -b main
+    git add .
+    git commit -m 'Initial commit'
+    git switch -c develop
+  fi
+  [[ -z "$finish_git" ]] || printf '  %s\n' "$finish_git"
+
   printf 'Project ready at %s\n' "$project_dir"
-  code .
+  if [[ "$toolchain_installed" == true ]]; then
+    printf 'Node.js and pnpm were installed in %s. Open a new terminal before running pnpm commands.\n' "$PNPM_HOME"
+  fi
+  kickstart_open_editor "$project_dir"
 }
 
 # Parse the complete script before starting, including when piped from curl.

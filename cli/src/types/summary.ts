@@ -33,6 +33,7 @@ export interface SyncSummary {
   webhooks: ArtifactSummary;
   functions: ArtifactSummary;
   aiFunctions: ArtifactSummary;
+  mcpServers: ArtifactSummary;
   triggers: ArtifactSummary;
   subscriptions: ArtifactSummary;
   variables: ArtifactSummary;
@@ -78,6 +79,14 @@ export function createSummary(): SyncSummary {
       planned: 0,
     },
     aiFunctions: {
+      created: 0,
+      updated: 0,
+      deleted: 0,
+      failed: 0,
+      skipped: 0,
+      planned: 0,
+    },
+    mcpServers: {
       created: 0,
       updated: 0,
       deleted: 0,
@@ -146,6 +155,7 @@ export function getTotalStats(summary: SyncSummary): ArtifactSummary {
     'webhooks',
     'functions',
     'aiFunctions',
+    'mcpServers',
     'triggers',
     'subscriptions',
     'variables',

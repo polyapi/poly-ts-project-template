@@ -55,7 +55,20 @@ const ENDPOINT_SCHEMA_TARGETS: Record<string, EndpointSchemaTarget> = {
     method: 'patch',
     optional: true,
   },
+  CreateMCPServerDto: { path: '/mcp-servers', method: 'post', optional: true },
+  UpdateMCPServerDto: {
+    path: '/mcp-servers/{id}',
+    method: 'patch',
+    optional: true,
+  },
 };
+
+// Request schemas that keep only the components they reference.
+const PRUNED_SCHEMA_TARGETS = new Set([
+  'CreateApiFunctionDto',
+  'CreateMCPServerDto',
+  'UpdateMCPServerDto',
+]);
 
 function fetchOpenApiSpec(specUrl: string): Promise<OpenApiDocument> {
   return new Promise((resolve, reject) => {
@@ -254,6 +267,27 @@ function patchKnownSchemaQuirks(
       properties.outputSchema = { type: ['object', 'null'] };
     }
   }
+
+  if (
+    schemaName === 'CreateMCPServerDto' ||
+    schemaName === 'UpdateMCPServerDto'
+  ) {
+    const components = schemaDocument.components as
+      | Record<string, unknown>
+      | undefined;
+    const schemas = components?.schemas as Record<string, unknown> | undefined;
+    const argument = schemas?.MCPToolFunctionArgumentConfigDto as
+      | Record<string, unknown>
+      | undefined;
+    const properties = argument?.properties as
+      | Record<string, unknown>
+      | undefined;
+    if (properties) {
+      // Hardcoded tool values can be strings, numbers, or booleans, as for AI
+      // Function tools; the OpenAPI document describes them as objects.
+      properties.value = true;
+    }
+  }
 }
 
 export async function generateEndpointSchemas(
@@ -284,7 +318,7 @@ export async function generateEndpointSchemas(
       buildSchemaDocument(requestBodySchema, spec)
     ) as Record<string, unknown>;
     patchKnownSchemaQuirks(schemaName, schemaDocument);
-    if (schemaName === 'CreateApiFunctionDto') {
+    if (PRUNED_SCHEMA_TARGETS.has(schemaName)) {
       const schemas = (schemaDocument.components as any).schemas;
       const used: Record<string, unknown> = {};
       const visit = (node: any): void => {

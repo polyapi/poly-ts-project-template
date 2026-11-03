@@ -28,7 +28,7 @@ import {
   validateNamespace,
 } from '../utils/namespace';
 import { filterOrphansByContext } from '../utils/orphans';
-import { canonicalizeComparisonValue } from '../utils/payloadComparison';
+import { buildChangedFieldsPayload } from '../utils/payloadComparison';
 import { validateAiFunctionArtifact } from '../utils/validation';
 import { getReferenceableFunctions } from './references';
 import { getExistingVariables } from './variables';
@@ -285,57 +285,11 @@ export function resolveAiFunctionPayload(
   return payload;
 }
 
-function valuesEqual(left: unknown, right: unknown): boolean {
-  return (
-    JSON.stringify(canonicalizeComparisonValue(left)) ===
-    JSON.stringify(canonicalizeComparisonValue(right))
-  );
-}
-
-function projectRemoteValue(local: unknown, remote: unknown): unknown {
-  if (Array.isArray(local)) {
-    if (!Array.isArray(remote)) {
-      return remote;
-    }
-    return local.map((item, index) => projectRemoteValue(item, remote[index]));
-  }
-
-  if (local && typeof local === 'object') {
-    if (!remote || typeof remote !== 'object' || Array.isArray(remote)) {
-      return remote;
-    }
-    return Object.fromEntries(
-      Object.entries(local as Record<string, unknown>).map(([key, value]) => [
-        key,
-        projectRemoteValue(value, (remote as Record<string, unknown>)[key]),
-      ])
-    );
-  }
-
-  return remote;
-}
-
 export function buildAiFunctionUpdatePayload(
   localPayload: Record<string, unknown>,
   remote: AiFunctionRecord
 ): { payload: Record<string, unknown>; immutableChanges: string[] } {
-  const payload: Record<string, unknown> = {};
-  const immutableChanges: string[] = [];
-
-  for (const [key, localValue] of Object.entries(localPayload)) {
-    if (valuesEqual(localValue, projectRemoteValue(localValue, remote[key]))) {
-      continue;
-    }
-
-    if (CREATE_ONLY_FIELDS.has(key)) {
-      immutableChanges.push(key);
-      continue;
-    }
-
-    payload[key] = localValue;
-  }
-
-  return { payload, immutableChanges };
+  return buildChangedFieldsPayload(localPayload, remote, CREATE_ONLY_FIELDS);
 }
 
 async function deleteAiFunction(
