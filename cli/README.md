@@ -18,7 +18,7 @@ pnpm --filter flow-cli run generate
 flow push
 flow push --dry-run
 flow push --paths exampleWorkflow
-flow push --types canopy,functions,ai-functions,webhooks,triggers,subscriptions
+flow push --types canopy,functions,ai-functions,mcp-servers,webhooks,triggers,subscriptions
 flow push --delete-orphans
 flow push --skip-validation "I know what am doing"
 flow push-dynamic --dry-run
@@ -434,6 +434,7 @@ handling.
 - `src/**/artefacts/tabi/*.json`
 - `src/**/artefacts/jobs/*.json`
 - `src/**/artefacts/ai-functions/*.json`
+- `src/**/artefacts/mcp-servers/*.json`
 - `src/**/artefacts/canopy/*.json`
 
 The legacy `artifacts/` spelling is also supported for the same artefact folders.
@@ -484,6 +485,59 @@ this:
 Use `--types ai-functions` to sync only these artefacts. Flow creates them with
 `POST /functions/ai`, sends changed mutable fields only with `PATCH
 /functions/ai/{id}`, and supports safe orphan reporting/deletion.
+
+## MCP servers
+
+An MCP server exposes selected PolyAPI functions as tools to MCP clients such as
+coding agents and chat assistants. Keep each server in
+`artefacts/mcp-servers/<name>.json`:
+
+```json
+{
+  "name": "example-weather-tools",
+  "description": "Current weather lookup for MCP clients.",
+  "enabled": true,
+  "isPublic": false,
+  "toolFunctions": [
+    {
+      "functionName": "searchLocations",
+      "functionContext": "example.sampleWorkflow",
+      "argumentConfig": [
+        { "key": "name", "source": "ai" },
+        {
+          "key": "hostUrl",
+          "source": "hardcoded",
+          "value": "https://geocoding-api.open-meteo.com"
+        }
+      ]
+    }
+  ]
+}
+```
+
+Tool references use `functionName` and `functionContext` and resolve against
+accessible API, server, and client functions, the same set used for AI Function
+tools. Each `argumentConfig` entry uses the AI Function sources: `ai` (the MCP
+client supplies it), `hardcoded`, `argument`, or a namespace-owned `variable`.
+For OAuth, set `oauthClientId`, `oauthRedirectUris`, and
+`oauthClientSecretVariable` with `variableName` and `variableContext`; use
+`null` to clear the client ID or secret. Never commit remote IDs such as
+`toolFunctionIds`, `oauthClientSecretVariableId`, `environmentId`, or `mcpUrl`.
+
+MCP servers have no namespace context. Flow therefore identifies each one by
+its exact `name` in the environment verified by `TARGET_ENV_ID`: it creates the
+server when that name is absent and PATCHes only changed fields when it exists.
+Choose a name that is unique in the target environment; duplicate local or
+remote names stop the sync instead of updating an arbitrary server. Because Flow
+cannot tell which remote servers belong to this project, it never reports or
+deletes MCP servers as orphans, and `delete-content` does not cover them.
+Remove retired servers deliberately in PolyAPI.
+
+Flow prints each server's MCP URL after it is created, updated, or found
+unchanged. `isPublic: true` produces a warning; confirm that the server should
+be reachable as a public MCP endpoint before deploying it. Use
+`--types mcp-servers` to sync only these artefacts; deploy the tool functions
+first, because unresolved tools stop the server's sync.
 
 All artefact payloads also support `{{ENV_VAR_NAME}}` placeholders. During sync,
 placeholders are substituted from the selected env file values. Missing values are

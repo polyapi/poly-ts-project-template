@@ -12,6 +12,7 @@ import {
   FunctionArtifactSchema,
   GraphQLSubscriptionArtifactSchema,
   JobArtifactSchema,
+  McpServerArtifactSchema,
   SchemaArtifactSchema,
   TableArtifactSchema,
   TriggerArtifactSchema,
@@ -252,6 +253,25 @@ export function validateAiFunctionArtifact(
     data,
     name,
     'AI Function',
+    filePath,
+    skipInvalid
+  );
+}
+
+/**
+ * Validate an MCP server artifact.
+ */
+export function validateMcpServerArtifact(
+  data: unknown,
+  filePath?: string,
+  skipInvalid: boolean = false
+): boolean {
+  const name = (data as any)?.name || 'unknown';
+  return validateAndLog(
+    McpServerArtifactSchema,
+    data,
+    name,
+    'MCP Server',
     filePath,
     skipInvalid
   );

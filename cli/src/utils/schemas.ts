@@ -301,6 +301,32 @@ export const AiFunctionArtifactSchema = Type.Object(
 export type AiFunctionArtifact = Static<typeof AiFunctionArtifactSchema>;
 
 /**
+ * MCP Server Artifact (CreateMCPServerDto with portable tool and OAuth secret
+ * references in place of remote IDs). MCP servers have no context, so Flow
+ * identifies them by exact name within the verified target environment.
+ */
+export const McpServerArtifactSchema = Type.Object(
+  {
+    name: Type.String({ minLength: 1 }),
+    description: Type.Optional(Type.String()),
+    enabled: Type.Optional(Type.Boolean()),
+    isPublic: Type.Optional(Type.Boolean()),
+    toolFunctions: Type.Optional(Type.Array(AiToolFunction)),
+    oauthClientId: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+    oauthClientSecretVariable: Type.Optional(
+      Type.Union([AiVariableReference, Type.Null()])
+    ),
+    oauthRedirectUris: Type.Optional(Type.Array(Type.String())),
+  },
+  {
+    $id: 'McpServerArtifact',
+    additionalProperties: false,
+  }
+);
+
+export type McpServerArtifact = Static<typeof McpServerArtifactSchema>;
+
+/**
  * Trigger Source
  */
 const TriggerSource = Type.Object(

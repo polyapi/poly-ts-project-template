@@ -21,6 +21,7 @@ workflows/src/<workflowName>/
     ai-functions/
     canopy/
     jobs/
+    mcp-servers/
     schemas/
     specs/
     tabi/
@@ -78,7 +79,7 @@ order:
 
 ```text
 variables -> canopy -> schemas -> tables -> functions -> ai-functions
-          -> webhooks -> triggers -> jobs
+          -> mcp-servers -> webhooks -> triggers -> jobs
 ```
 
 - Use generated `schemas.*`, `vari.*`, and `tabi.*` namespaces directly when
@@ -179,6 +180,20 @@ Advanced projects can explicitly configure multiple owned roots with
 - Test deployed AI Function behavior with an opt-in `.integration.test.ts`
   file so normal test runs do not incur model or external API cost.
 
+## MCP Servers
+
+- MCP server JSON artefacts live under `artefacts/mcp-servers/`.
+- Expose only functions that are safe for an external model to call. Prefer
+  read-only or bounded actions; keep authorization, destructive operations, and
+  other consequential policy in deterministic code behind the tool.
+- Reference tools with `functionName` and `functionContext`, and fix provider
+  settings with `hardcoded` bindings or namespace-owned `variable` bindings.
+- Give each server a name that is unique in the target environment. MCP servers
+  have no namespace context, so Flow matches them by name and never deletes them
+  as orphans.
+- Keep `isPublic` false unless a public MCP endpoint is an explicit requirement.
+  Store OAuth client secrets in `SECRET` vari artefacts without committing values.
+
 ## Webhooks And Triggers
 
 - Use one webhook JSON file per public endpoint.
@@ -190,6 +205,7 @@ Advanced projects can explicitly configure multiple owned roots with
 ## Artefacts
 
 - `ai-functions/` contains AI Function contracts and portable tool references.
+- `mcp-servers/` contains MCP server definitions that expose functions as tools.
 - `schemas/` contains JSON Schema contracts.
 - `specs/` contains OpenAPI or PolyAPI model source material.
 - `webhooks/` contains public HTTP boundary definitions.

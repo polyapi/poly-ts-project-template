@@ -21,7 +21,9 @@ type EndpointSchemaName =
   | 'CreateServerCustomFunctionDto'
   | 'CreateClientCustomFunctionDto'
   | 'CreateAiFunctionV2Dto'
-  | 'UpdateAiFunctionV2Dto';
+  | 'UpdateAiFunctionV2Dto'
+  | 'CreateMCPServerDto'
+  | 'UpdateMCPServerDto';
 
 type ValidationContext = {
   artifactType: string;
