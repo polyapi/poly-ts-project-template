@@ -22,8 +22,9 @@ pnpm --version
 ```
 
 Use pnpm for this repository's dependencies. The npm command above installs the
-package manager only. Commands in these guides use Bash syntax; on Windows, use
-Git Bash or WSL. There is no need to change the machine-wide PowerShell execution
+package manager only. Commands in these guides use Bash syntax and also run in
+zsh, the default shell on macOS; on Windows, use Git Bash or WSL. There is no
+need to change the machine-wide PowerShell execution
 policy to follow the Bash instructions.
 
 ## Manual setup
@@ -108,7 +109,8 @@ node kickstart/kickstart-namespace.cjs mycustomer
 
 Replace `mycustomer` with the exact `POLYAPI_NAMESPACE` you put in the selected
 file. Kickstart already performs this step. The helper replaces the starter
-root locally; it does not edit environment settings or rename deployed
+root locally in code, artefacts, documentation, and `workflows/dev.env.example`.
+It does not edit your selected environment file or rename deployed
 resources. Renaming an already customized project requires updating its
 existing root and reviewing the remote resources separately.
 
@@ -124,10 +126,11 @@ Before deployment, align the selected sample's namespace and complete its
 training and configuration prerequisites. Start with the
 [message-of-the-day tutorial](../workflows/src/sampleWorkflow/README.md#1-confirm-setup-and-namespace),
 then [select your Flow file once](#select-a-flow-environment) and preview only
-that sample:
+that sample. The explicit types leave out its optional weather AI Function until
+the weather tools are trained:
 
 ```bash
-pnpm workflows push --dry-run --paths sampleWorkflow
+pnpm workflows push --dry-run --paths sampleWorkflow --types functions,variables,schemas,webhooks,triggers,jobs
 ```
 
 The context root must match `POLYAPI_NAMESPACE`. For example,
@@ -150,7 +153,7 @@ Do not commit real environment files or secrets.
 
 ## Select a Flow environment
 
-Run this once in each Bash terminal session, from the project root:
+Run this once in each Bash or zsh terminal session, from the project root:
 
 ```bash
 export ENVPATH=workflows/dev.env
@@ -207,14 +210,15 @@ To keep the learning samples in your checkout while deploying your own
 integrations, add this setting to the selected Flow file:
 
 ```env
-POLY_DEPLOY_SKIP_PATHS=src/sampleWorkflow,src/sampleAiFx
+POLY_DEPLOY_SKIP_PATHS=src/sampleWorkflow
 ```
 
 This comma-separated list contains paths **relative to `workflows/`**, so use
 `src/sampleWorkflow`, not `workflows/src/sampleWorkflow`. Each folder entry
 also skips its contents; these are paths, not namespaces or wildcard patterns.
 Add the entries to any existing list instead of replacing other exclusions.
-The example skips both sample workflows and leaves shared utilities available.
+The example skips the sample workflow, including its optional weather AI
+lesson, and leaves shared utilities available.
 
 The exclusions apply to deployment previews and pushes, including commands
 with `--paths`. To deploy a tutorial, first remove that sample's entry (or any

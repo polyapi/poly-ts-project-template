@@ -184,7 +184,6 @@ NODE
     umask 077
     printf '%s\n' \
       "POLYAPI_NAMESPACE=$project_namespace" \
-      '# POLYPROD_EXEC_KEY' \
       '' \
       'LOG_LEVEL=debug' \
       'SLACK_CHANNEL_ID=alerts-demos' \
@@ -192,6 +191,11 @@ NODE
       '# Optional Flow CLI settings' \
       'GIT_PROD_BRANCH=main:prod.env' \
       'GIT_PROD_SKIP_BRANCHES=develop:dev.env' \
+      '' \
+      '# Optional: execution API key for the server functions `flow push-dynamic` deploys' \
+      '# (alternative to --execution-api-key; on production-sensitive branches POLYPROD_EXEC_KEY' \
+      '# in prod.env overrides it)' \
+      '# FLOW_EXECUTION_API_KEY=replace-with-your-dev-execution-key' \
       > workflows/dev.env
   )
 

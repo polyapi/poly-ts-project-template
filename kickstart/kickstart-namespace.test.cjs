@@ -11,6 +11,28 @@ const script = path.join(__dirname, 'kickstart-namespace.cjs');
 const tsPath = path.join(templateRoot, 'workflows/node_modules/typescript');
 const ts = require(tsPath);
 
+// Checks that copy the real template need its unpersonalized starter root.
+// A kickstarted project has already replaced it, so they skip there.
+function templateStillUsesStarterRoot() {
+  try {
+    const webhook = path.join(
+      templateRoot,
+      'workflows/src/sampleWorkflow/artefacts/webhooks/motdWebhook.json'
+    );
+    return (
+      JSON.parse(fs.readFileSync(webhook, 'utf8')).context ===
+      'example.sampleWorkflow'
+    );
+  } catch {
+    return false;
+  }
+}
+const templateOnly = {
+  skip: templateStillUsesStarterRoot()
+    ? false
+    : "Template-only check; this project's namespace is already set.",
+};
+
 function fixture(t, copyTemplate = false) {
   const root = fs.mkdtempSync(
     path.join(os.tmpdir(), 'poly-kickstart-namespace-')
@@ -107,7 +129,7 @@ function allFiles(root) {
   });
 }
 
-test('bundled workflows and utilities use the selected root, including security references and error filters', t => {
+test('bundled workflows and utilities use the selected root, including security references and error filters', templateOnly, t => {
   const f = fixture(t, true);
   success(f.run('acme.eu'));
   const webhook = f.json('sampleWorkflow/artefacts/webhooks/motdWebhook.json');
@@ -150,13 +172,17 @@ test('bundled workflows and utilities use the selected root, including security 
     f.read('sampleWorkflow/server/motdServer.ts'),
     /poly\.acme\.eu\.sampleWorkflow\.motdClient/
   );
-  const ai = f.json('sampleAiFx/artefacts/ai-functions/upliftingWeather.json');
-  assert.equal(ai.context, 'acme.eu.sampleAiFx');
-  assert.equal(ai.toolFunctions[0].functionContext, 'accuWeather.locations');
+  const ai = f.json(
+    'sampleWorkflow/artefacts/ai-functions/upliftingWeather.json'
+  );
+  assert.equal(ai.context, 'acme.eu.sampleWorkflow');
+  assert.deepEqual(
+    ai.toolFunctions.map(tool => tool.functionContext),
+    ['acme.eu.sampleWorkflow', 'acme.eu.sampleWorkflow']
+  );
   assert.equal(
-    ai.toolFunctions[0].argumentConfig.find(arg => arg.key === 'apiKey')
-      .variableContext,
-    'acme.eu.sampleAiFx'
+    ai.toolFunctions[0].argumentConfig.find(arg => arg.key === 'hostUrl').value,
+    'https://geocoding-api.open-meteo.com'
   );
   assert.match(
     f.read('utilities/common/client/sendAlert.ts'),
@@ -194,7 +220,7 @@ test('bundled workflows and utilities use the selected root, including security 
   );
 });
 
-test('transformed utility executes against the selected SDK namespace without changing external alert routing', async t => {
+test('transformed utility executes against the selected SDK namespace without changing external alert routing', templateOnly, async t => {
   const f = fixture(t, true);
   success(f.run('acme.eu-west'));
   const logCalls = [];
@@ -236,7 +262,7 @@ test('transformed utility executes against the selected SDK namespace without ch
   assert.equal(alerts[0].slack.type, 'community');
 });
 
-test('transformed message-of-the-day server and client resolve both moods through the selected namespace', async t => {
+test('transformed message-of-the-day server and client resolve both moods through the selected namespace', templateOnly, async t => {
   const f = fixture(t, true);
   success(f.run('acme.eu'));
   const injectedReference = { type: 'PolyVariable', id: 'synthetic-test-id' };
@@ -386,6 +412,34 @@ mockModule('polyapi', {default: {example: {workflow: 1}, OOB: {public: 2}}, vari
   assert.equal(mocks[0][1].vari.acme['eu-west'].config, 3);
 });
 
+test('environment example namespace is personalized; comments and selected env files are not', t => {
+  const f = fixture(t);
+  const example = [
+    'POLYAPI_NAMESPACE=example',
+    '# POLYAPI_NAMESPACES=example,second',
+    'POLYAPI_NAMESPACES=example,second',
+    'SLACK_CHANNEL_ID=example',
+    '',
+  ].join('\n');
+  f.writeProject('workflows/dev.env.example', example);
+  f.writeProject('workflows/dev.env', 'POLYAPI_NAMESPACE=example\n');
+  success(f.run('acme.integrations'));
+  const expected = [
+    'POLYAPI_NAMESPACE=acme.integrations',
+    '# POLYAPI_NAMESPACES=example,second',
+    'POLYAPI_NAMESPACES=acme.integrations,second',
+    'SLACK_CHANNEL_ID=example',
+    '',
+  ].join('\n');
+  assert.equal(f.readProject('workflows/dev.env.example'), expected);
+  assert.equal(
+    f.readProject('workflows/dev.env'),
+    'POLYAPI_NAMESPACE=example\n'
+  );
+  success(f.run('acme.integrations'));
+  assert.equal(f.readProject('workflows/dev.env.example'), expected);
+});
+
 test('invalid namespace fails without modifying source', t => {
   const f = fixture(t);
   const source = 'export const polyConfig = {context: "example.workflow"};';
@@ -396,7 +450,7 @@ test('invalid namespace fails without modifying source', t => {
   }
 });
 
-test('copied tutorial training and SDK examples use the same namespace as the deployed resources', t => {
+test('copied tutorial training and SDK examples use the same namespace as the deployed resources', templateOnly, t => {
   const f = fixture(t, true);
   const guides = [
     'README.md',
@@ -404,7 +458,7 @@ test('copied tutorial training and SDK examples use the same namespace as the de
     'docs/CONVENTIONS.md',
     'cli/README.md',
     'workflows/src/sampleWorkflow/README.md',
-    'workflows/src/sampleAiFx/OVERVIEW.md',
+    'workflows/src/sampleWorkflow/OVERVIEW.md',
     'workflows/src/utilities/common/OVERVIEW.md',
   ];
   for (const file of guides)
@@ -423,15 +477,14 @@ test('copied tutorial training and SDK examples use the same namespace as the de
   assert.ok(tutorial.includes(`poly.${context}.getRandomJoke(hostUrl)`));
   assert.match(tutorial, /POLYAPI_NAMESPACE=acme\.eu/);
   assert.match(tutorial, /https:\/\/official-joke-api\.appspot\.com/);
-  assert.match(tutorial, /\/apis\/sample-workflow-motd\/motd/);
+  const overview = f.read('sampleWorkflow/OVERVIEW.md');
+  assert.match(overview, /\/apis\/sample-workflow-motd\/motd/);
   assert.match(
-    f.read('sampleAiFx/OVERVIEW.md'),
-    /poly\.acme\.eu\.sampleAiFx\.upliftingWeather\(/
+    overview,
+    /poly\.acme\.eu\.sampleWorkflow\.upliftingWeather\(/
   );
-  assert.match(
-    f.read('sampleAiFx/OVERVIEW.md'),
-    /accuWeather\.locations\.search/
-  );
+  assert.ok(overview.includes(`specs/weather --context ${context}`));
+  assert.match(overview, /https:\/\/open-meteo\.com\/en\/pricing/);
   assert.match(
     f.read('utilities/common/OVERVIEW.md'),
     /poly\.acme\.eu\.utilities\.log\(/

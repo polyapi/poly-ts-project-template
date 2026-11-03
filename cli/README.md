@@ -385,7 +385,7 @@ To omit bundled samples from deployment scanning, set this in the selected
 environment file, adding to any existing exclusions:
 
 ```env
-POLY_DEPLOY_SKIP_PATHS=src/sampleWorkflow,src/sampleAiFx
+POLY_DEPLOY_SKIP_PATHS=src/sampleWorkflow
 ```
 
 These comma-separated paths are relative to `workflows/`; folder entries include
@@ -453,95 +453,31 @@ across accessible environment, tenant, and public resources. Their contexts do
 not need to start with `POLYAPI_NAMESPACE`; namespace filtering still applies
 to locally managed artefacts and orphan detection/deletion.
 
+See the [weather AI artefact](../workflows/src/sampleWorkflow/artefacts/ai-functions/upliftingWeather.json)
+for a complete example. Its two Open-Meteo tools are trained from the sample's
+bundled specifications and need no weather account or API key for evaluation.
+Follow [the weather setup](../workflows/src/sampleWorkflow/OVERVIEW.md#weather-ai)
+to train those tools in the project namespace before deploying the AI function.
+The target still needs the selected AI model and provider.
+
+Each tool argument comes from the model (`ai`), a fixed value (`hardcoded`), a
+caller argument (`argument`), or a Vari (`variable`). The sample fixes provider
+hosts and units with `hardcoded` bindings; a Vari-backed credential looks like
+this:
+
 ```json
 {
-  "name": "upliftingWeather",
-  "context": "example.sampleAiFx",
-  "description": "Returns accurate, practical, and encouraging weather guidance tailored to an optional activity.",
-  "visibility": "ENVIRONMENT",
-  "state": "ALPHA",
-  "enabled": true,
-  "type": "TEXT",
-  "provider": "openai",
-  "apiType": "responses",
-  "model": "gpt-5.5",
-  "arguments": [
+  "functionName": "lookup",
+  "functionContext": "example.tools",
+  "argumentConfig": [
+    { "key": "query", "source": "ai" },
     {
-      "key": "location",
-      "type": "string",
-      "required": true,
-      "description": "A village, city, region, country, or other location description."
-    },
-    {
-      "key": "activity",
-      "type": "string",
-      "required": false,
-      "description": "An optional activity for which the weather is relevant."
+      "key": "token",
+      "source": "variable",
+      "variableName": "providerToken",
+      "variableContext": "example.configuration"
     }
-  ],
-  "systemPrompt": "Use the weather tools for all weather facts. Resolve the requested location, retrieve current conditions, and provide concise practical guidance tailored to the activity when supplied. Preserve safety warnings, avoid invented facts, and close with a brief sincere uplifting message.",
-  "inputTemplate": "Provide weather guidance for {{location}} in the context of {{activity}} when supplied.",
-  "clientPromptEnabled": false,
-  "clientPromptRequired": false,
-  "clientPromptArgName": "",
-  "toolFunctions": [
-    {
-      "functionName": "search",
-      "functionContext": "accuWeather.locations",
-      "argumentConfig": [
-        { "key": "locationText", "source": "ai" },
-        {
-          "key": "apiKey",
-          "source": "variable",
-          "variableName": "weatherApiKey",
-          "variableContext": "example.sampleAiFx"
-        }
-      ]
-    },
-    {
-      "functionName": "getByLocationKey",
-      "functionContext": "accuWeather.currentConditions",
-      "argumentConfig": [
-        { "key": "locationId", "source": "ai" },
-        {
-          "key": "apiKey",
-          "source": "variable",
-          "variableName": "weatherApiKey",
-          "variableContext": "example.sampleAiFx"
-        }
-      ]
-    }
-  ],
-  "outputSchema": {
-    "type": "object",
-    "additionalProperties": false,
-    "required": [
-      "location",
-      "currentWeather",
-      "description",
-      "recommendedItems",
-      "upliftingMessage"
-    ],
-    "properties": {
-      "location": { "type": "string" },
-      "currentWeather": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": ["condition", "temperature", "unit"],
-        "properties": {
-          "condition": { "type": "string" },
-          "temperature": { "type": "number" },
-          "unit": { "type": "string", "enum": ["C", "F"] }
-        }
-      },
-      "description": { "type": "string" },
-      "recommendedItems": {
-        "type": "array",
-        "items": { "type": "string" }
-      },
-      "upliftingMessage": { "type": "string" }
-    }
-  }
+  ]
 }
 ```
 

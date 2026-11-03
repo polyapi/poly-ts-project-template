@@ -15,7 +15,8 @@ that is not owned by one workflow lives under `designs/`.
 
 ```text
 workflows/src/<workflowName>/
-  OVERVIEW.md or README.md
+  OVERVIEW.md
+  README.md
   artefacts/
     ai-functions/
     canopy/
@@ -30,6 +31,10 @@ workflows/src/<workflowName>/
   server/
   types/
 ```
+
+Document each workflow in its same-folder `OVERVIEW.md`. A workflow that doubles
+as a tutorial starts its onboarding in a same-folder `README.md`; runtime
+references and optional lessons stay in `OVERVIEW.md`.
 
 Only create folders the workflow needs. Keep one workflow per folder, use
 descriptive camelCase workflow and function names, and keep one primary server
@@ -112,8 +117,8 @@ choosing `mycustomer` makes it `mycustomer.utilities` and its calls use
 For a manual checkout, use the same root in the selected environment file and
 all those source locations. Changing the environment variable alone does not
 rename code or deployed resources. Keep external references such as
-`OOB.polyapi.internal.alerting` and `accuWeather.locations`, provider URLs, and
-HTTP webhook paths intact. Kickstart also personalizes the copied documentation's namespace examples.
+`OOB.polyapi.internal.alerting`, provider URLs, and HTTP webhook paths intact.
+Kickstart also personalizes the copied documentation's namespace examples.
 For a manual checkout, align the documented root with your code and selected
 file before copying training commands or SDK calls.
 
@@ -161,13 +166,16 @@ Advanced projects can explicitly configure multiple owned roots with
 - Keep the prompt directly in `systemPrompt` by default. Use a prompt vari only
   when externally managed prompt content is explicitly required.
 - Reference tools with `functionName` and `functionContext`; reference tool
-  credentials with `variableName` and `variableContext`.
+  credentials with `variableName` and `variableContext`. Fix non-secret tool
+  arguments, such as provider hosts or units, with `hardcoded` bindings.
 - Use API, server, or client functions as tools only when they provide
   authoritative facts or bounded deterministic actions.
 - Define focused arguments and a strict output schema. Keep authorization,
   persistence, destructive actions, and other consequential policy in
   deterministic code.
 - Put credentials in `SECRET` vari artefacts without committing a value.
+- Check tool bindings and the output schema against bundled specifications in
+  an offline `*.test.ts` file.
 - Test deployed AI Function behavior with an opt-in `.integration.test.ts`
   file so normal test runs do not incur model or external API cost.
 
@@ -221,7 +229,8 @@ how to re-enable a tutorial.
   and require no PolyAPI connection.
 
 Current sample limitations and test prerequisites are documented in the
-[message-of-the-day guide](../workflows/src/sampleWorkflow/README.md),
+[message-of-the-day guide](../workflows/src/sampleWorkflow/README.md), its
+[runtime reference](../workflows/src/sampleWorkflow/OVERVIEW.md),
 [utility guide](../workflows/src/utilities/common/OVERVIEW.md), and
 [setup guide](SETUP.md#commands). A passing mock-based test does not establish
 platform behavior or delivery to an external service.

@@ -13,7 +13,9 @@ walks through a working integration and explains the pieces as you use them.
 ## Getting started
 
 Requires curl, tar, Git, a supported Node.js LTS release, pnpm 10.0.0, and the
-VS Code `code` command. GitHub authentication and GitHub CLI (`gh`) are not required.
+VS Code `code` command (on macOS, run **Shell Command: Install 'code' command in
+PATH** from the VS Code command palette). GitHub authentication and GitHub CLI
+(`gh`) are not required.
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/polyapi/poly-ts-project-template/main/kickstart/kickstart.sh | bash
@@ -43,11 +45,12 @@ results, and exercises, with deeper reference material below the walkthrough.
 | Sample | What you will learn |
 | --- | --- |
 | [Message of the day](workflows/src/sampleWorkflow/README.md) | Webhooks, triggers, server/client functions, trained APIs, Vari, secrets, and a scheduled job. |
-| [Weather AI](workflows/src/sampleAiFx/OVERVIEW.md) | AI Functions that call tools and return structured results, with secret-backed credentials. |
+| [Weather AI](workflows/src/sampleWorkflow/OVERVIEW.md#weather-ai) | AI Functions that call trained tools and return structured weather guidance with data attribution. |
 | [Shared utilities](workflows/src/utilities/common/OVERVIEW.md) | Structured logging, sensitive-field filtering, error handling, and Slack alerts. |
 
-The weather sample uses AccuWeather and requires a weather API key. Follow each
-sample's setup instructions before deploying or invoking it.
+The weather sample uses Open-Meteo without a weather API key; AI execution still
+needs a configured provider and can incur usage charges. Follow each sample's
+setup instructions before deploying or invoking it.
 
 To build your own integration, start from the closest sample and follow the
 [workflow layout and naming rules](docs/CONVENTIONS.md#workflow-structure-and-naming).
@@ -61,7 +64,7 @@ session, then use plain commands:
 export ENVPATH=workflows/dev.env
 pnpm check
 pnpm workflows test
-pnpm workflows push --dry-run --paths sampleWorkflow
+pnpm workflows push --dry-run --paths sampleWorkflow --types functions,variables,schemas,webhooks,triggers,jobs
 ```
 
 Keep your owned `POLYAPI_NAMESPACE` and verified `TARGET_ENV_ID` in the selected
