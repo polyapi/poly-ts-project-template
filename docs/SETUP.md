@@ -11,9 +11,11 @@ and this workspace's pinned `pnpm@10.0.0`. Node.js 18 and 20 are end-of-life;
 see the [Node.js release schedule](https://nodejs.org/en/about/previous-releases).
 The Node.js version on your laptop is separate from the hosted PolyAPI runtime.
 
-Install Node.js using the [official download instructions](https://nodejs.org/en/download),
-then follow the [pnpm installation guide](https://pnpm.io/installation), selecting
-version `10.0.0` instead of `latest`. For an npm-based pnpm installation:
+[Kickstart](../README.md#getting-started) installs both for your user account
+when they are missing. For a manual checkout, install Node.js using the
+[official download instructions](https://nodejs.org/en/download), then follow
+the [pnpm installation guide](https://pnpm.io/installation), selecting version
+`10.0.0` instead of `latest`. For an npm-based pnpm installation:
 
 ```bash
 npm install --global pnpm@10.0.0

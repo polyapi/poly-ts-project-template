@@ -12,18 +12,28 @@ walks through a working integration and explains the pieces as you use them.
 
 ## Getting started
 
-Requires curl, tar, Git, a supported Node.js LTS release, pnpm 10.0.0, and the
-VS Code `code` command (on macOS, run **Shell Command: Install 'code' command in
-PATH** from the VS Code command palette). GitHub authentication and GitHub CLI
-(`gh`) are not required.
+Requires only curl on macOS or Linux, which also provide the `tar` command it
+uses. GitHub authentication and GitHub CLI (`gh`) are not required.
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/polyapi/poly-ts-project-template/main/kickstart/kickstart.sh | bash
 ```
 
-Kickstart downloads the public template into a temporary directory and fetches
-skills with a shallow HTTPS Git clone. You do not need to clone the template
-first. From an existing template checkout, `bash kickstart/kickstart.sh` also works.
+Kickstart downloads public snapshots of the template and skills over HTTPS into
+a temporary directory. You do not need to clone the template first. From an
+existing template checkout, `bash kickstart/kickstart.sh` also works.
+
+If pnpm is missing, kickstart installs pnpm 10.0.0 for your user account with
+[pnpm's official installer](https://pnpm.io/installation). If Node.js is
+missing, pnpm installs the current Node.js LTS, or Node.js 24 LTS on a minimal
+Linux system that lacks the `libatomic1` library newer Node.js builds need.
+Both live in pnpm's home directory, need no administrator rights, and are added
+to your shell profile; open a new terminal afterwards. If Node.js older than 22
+is installed, kickstart stops before installing anything so that you can
+upgrade it. Git and VS Code are optional. Without Git, kickstart prints the
+commands that create the repository later. Without VS Code's `code` command (on
+macOS, run **Shell Command: Install 'code' command in PATH** from the VS Code
+command palette), it prints the project path instead of opening it.
 
 The parent directory defaults to your current terminal directory. Your project
 is created inside it using the project name you enter.
@@ -32,7 +42,8 @@ Follow the prompts for your project location, namespace, PolyAPI instance, and
 API key. Kickstart installs the SDK for your selected instance, configures
 PolyAPI, aligns the starter contexts, SDK references,
 and tutorial examples with your namespace, saves the verified `TARGET_ENV_ID`,
-installs skills, builds Flow, and opens your project in VS Code.
+installs skills, builds Flow, creates `main` and `develop` Git branches, and
+opens your project in VS Code.
 It does not deploy resources or train the sample APIs.
 
 Already have a checkout? Follow [manual setup](docs/SETUP.md#manual-setup).

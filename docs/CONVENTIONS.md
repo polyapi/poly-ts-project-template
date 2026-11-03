@@ -240,9 +240,9 @@ how to re-enable a tutorial.
 - The AVA runner does not load Flow's `ENVPATH` or enforce `TARGET_ENV_ID`.
   Direct SDK tests use the generated SDK connection; check that target before
   enabling a live test. `RUN_AI_INTEGRATION=true` opts into the weather AI test.
-- Run kickstart namespace regression tests with
-  `node --test kickstart/kickstart-namespace.test.cjs`; they use temporary copies
-  and require no PolyAPI connection.
+- Run kickstart regression tests with `node --test kickstart/*.test.cjs`; they
+  use temporary copies and stub tools, and require no PolyAPI connection or
+  network access.
 
 Current sample limitations and test prerequisites are documented in the
 [message-of-the-day guide](../workflows/src/sampleWorkflow/README.md), its
