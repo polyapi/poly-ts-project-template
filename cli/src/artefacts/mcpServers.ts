@@ -297,18 +297,46 @@ function toResolvableVariables(items: any[]): ResolvableVariable[] {
   );
 }
 
-function logMcpUrl(record: unknown): void {
-  const url = (record as McpServerRecord | undefined)?.mcpUrl;
-  if (typeof url === 'string' && url) {
-    log.info(chalk.gray(`    MCP URL: ${url}`));
+/**
+ * Return a server's MCP URL. Only `GET /mcp-servers/{id}` includes `mcpUrl`;
+ * list items and create or update responses omit it, so a record without one is
+ * looked up by ID. A failed lookup returns undefined rather than failing sync.
+ */
+export async function fetchMcpUrl(
+  client: PolyApiClient,
+  record: unknown
+): Promise<string | undefined> {
+  const server = record as McpServerRecord | undefined;
+  if (typeof server?.mcpUrl === 'string' && server.mcpUrl) {
+    return server.mcpUrl;
+  }
+  if (typeof server?.id !== 'string' || !server.id) return undefined;
+  try {
+    const { data, error } = await getMcpClient(client).GET(
+      '/mcp-servers/{id}',
+      { params: { path: { id: server.id } } }
+    );
+    const url = error
+      ? undefined
+      : (data as McpServerRecord | undefined)?.mcpUrl;
+    return typeof url === 'string' && url ? url : undefined;
+  } catch (error) {
+    log.debug({ error, id: server.id }, 'Could not fetch the MCP server URL');
+    return undefined;
   }
 }
 
+async function logMcpUrl(client: PolyApiClient, record: unknown) {
+  const url = await fetchMcpUrl(client, record);
+  if (url) log.info(chalk.gray(`    MCP URL: ${url}`));
+}
+
+/** Write one server; resolves to the written record, or null on failure. */
 async function writeMcpServer(
   client: PolyApiClient,
   server: McpServerFile,
   plan: Extract<McpServerPlan, { action: 'create' | 'update' }>
-): Promise<boolean> {
+): Promise<McpServerRecord | null> {
   const isCreate = plan.action === 'create';
   if (
     !validateEndpointPayload(
@@ -321,7 +349,7 @@ async function writeMcpServer(
       }
     )
   ) {
-    return false;
+    return null;
   }
 
   try {
@@ -336,16 +364,19 @@ async function writeMcpServer(
         { name: server.content.name, status: response?.status, error },
         `Failed to ${isCreate ? 'create' : 'update'} MCP server`
       );
-      return false;
+      return null;
     }
-    logMcpUrl(data);
-    return true;
+    // An update targets the planned server, whatever its response holds.
+    return {
+      ...((data ?? {}) as McpServerRecord),
+      ...(isCreate ? {} : { id: plan.id }),
+    };
   } catch (error) {
     log.error(
       { error, name: server.content.name },
       `Error ${isCreate ? 'creating' : 'updating'} MCP server`
     );
-    return false;
+    return null;
   }
 }
 
@@ -440,7 +471,7 @@ export async function syncMcpServers(
     if (file.content.isPublic === true) {
       log.info(
         warningColor(
-          '    [WARN] isPublic is true; confirm this MCP server is meant to be publicly reachable'
+          "    [WARN] isPublic is true: anyone with this server's URL can call its tools without signing in"
         )
       );
     }
@@ -454,7 +485,7 @@ export async function syncMcpServers(
     }
     if (plan.action === 'noop') {
       log.info(chalk.gray('    [SKIP] Unchanged'));
-      logMcpUrl(plan.remote);
+      await logMcpUrl(client, plan.remote);
       summary.skipped++;
       continue;
     }
@@ -464,16 +495,18 @@ export async function syncMcpServers(
           `    [PLAN] ${plan.action === 'create' ? 'Create' : 'Update'}`
         )
       );
-      if (plan.action === 'update') logMcpUrl(plan.remote);
+      if (plan.action === 'update') await logMcpUrl(client, plan.remote);
       summary.planned++;
       continue;
     }
-    if (await writeMcpServer(client, file, plan)) {
+    const written = await writeMcpServer(client, file, plan);
+    if (written) {
       log.info(
         chalk.green(
           `    [OK] ${plan.action === 'create' ? 'Created' : 'Updated'}`
         )
       );
+      await logMcpUrl(client, written);
       if (plan.action === 'create') summary.created++;
       else summary.updated++;
     } else {

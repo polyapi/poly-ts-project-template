@@ -35,6 +35,10 @@ const validatorCache = new Map<EndpointSchemaName, ValidateFunction>();
 const ajv = new Ajv({
   allErrors: true,
   strict: false,
+  // The endpoint schemas use these formats. Declaring them as known but not
+  // checked keeps the previous behaviour (PolyAPI checks formats itself)
+  // without Ajv warning "unknown format ignored" for every schema it compiles.
+  formats: { 'date-time': true, email: true, uri: true },
 });
 
 function getEndpointSchemaPath(schemaName: EndpointSchemaName): string {

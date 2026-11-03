@@ -8,6 +8,7 @@ import type { McpServerFile } from '../types';
 import { createSummary } from '../types/summary';
 import { McpServerArtifactSchema } from '../utils/schemas';
 import {
+  fetchMcpUrl,
   getExistingMcpServers,
   planMcpServer,
   resolveMcpServerPayload,
@@ -262,9 +263,15 @@ test('sync previews without writing, then creates with the resolved payload', as
   });
 
   const writes: { method: string; path: string; body: unknown }[] = [];
+  const urlLookups: unknown[] = [];
+  let listed: unknown[] = [];
   const client = {
-    async GET(requestPath: string) {
-      if (requestPath === '/mcp-servers') return { data: [] };
+    async GET(requestPath: string, options?: any) {
+      if (requestPath === '/mcp-servers') return { data: listed };
+      if (requestPath === '/mcp-servers/{id}') {
+        urlLookups.push(options?.params?.path?.id);
+        return { data: { id: 'new-id', mcpUrl: 'https://example.test/mcp' } };
+      }
       if (requestPath === '/functions/api') {
         return {
           data: functions.map(item => ({
@@ -287,7 +294,8 @@ test('sync previews without writing, then creates with the resolved payload', as
     },
     async POST(requestPath: string, options: { body: unknown }) {
       writes.push({ method: 'POST', path: requestPath, body: options.body });
-      return { data: { id: 'new-id', mcpUrl: 'https://example.test/mcp' } };
+      // Like PolyAPI, the create response has no mcpUrl.
+      return { data: { id: 'new-id', name: server.content.name } };
     },
     async PATCH(requestPath: string, options: { body: unknown }) {
       writes.push({ method: 'PATCH', path: requestPath, body: options.body });
@@ -302,6 +310,7 @@ test('sync previews without writing, then creates with the resolved payload', as
   });
   assert.deepEqual(writes, []);
   assert.equal(preview.planned, 1);
+  assert.deepEqual(urlLookups, []);
 
   const applied = createSummary().mcpServers;
   await syncMcpServers(client, applied, false, { environmentId: 'env-1' });
@@ -310,4 +319,58 @@ test('sync previews without writing, then creates with the resolved payload', as
   assert.deepEqual(writes, [
     { method: 'POST', path: '/mcp-servers', body: resolvedPayload },
   ]);
+  // The URL comes from the single-server endpoint after the create.
+  assert.deepEqual(urlLookups, ['new-id']);
+
+  // An update looks up the matched server, even when the response has no ID.
+  listed = [
+    {
+      ...resolvedPayload,
+      id: 'existing-id',
+      environmentId: 'env-1',
+      description: 'An older description.',
+    },
+  ];
+  const updated = createSummary().mcpServers;
+  await syncMcpServers(client, updated, false, { environmentId: 'env-1' });
+  assert.equal(updated.updated, 1);
+  assert.deepEqual(writes[writes.length - 1], {
+    method: 'PATCH',
+    path: '/mcp-servers/{id}',
+    body: { description: server.content.description },
+  });
+  assert.deepEqual(urlLookups, ['new-id', 'existing-id']);
+});
+
+test('the MCP URL is read from the single-server endpoint when a record lacks it', async () => {
+  const lookups: unknown[] = [];
+  const client = {
+    async GET(requestPath: string, options?: any) {
+      lookups.push([requestPath, options?.params?.path?.id]);
+      return {
+        data: { mcpUrl: 'https://eu1.example.test/mcp-servers/s-1/mcp' },
+      };
+    },
+  } as any;
+
+  assert.equal(
+    await fetchMcpUrl(client, { id: 's-1', mcpUrl: 'https://given.test/mcp' }),
+    'https://given.test/mcp'
+  );
+  assert.deepEqual(lookups, []);
+  assert.equal(
+    await fetchMcpUrl(client, { id: 's-1', name: 'listed' }),
+    'https://eu1.example.test/mcp-servers/s-1/mcp'
+  );
+  assert.deepEqual(lookups, [['/mcp-servers/{id}', 's-1']]);
+  assert.equal(await fetchMcpUrl(client, { name: 'no-id' }), undefined);
+
+  const failing = { GET: async () => ({ error: { message: 'gone' } }) } as any;
+  assert.equal(await fetchMcpUrl(failing, { id: 's-1' }), undefined);
+  const throwing = {
+    GET: async () => {
+      throw new Error('network');
+    },
+  } as any;
+  assert.equal(await fetchMcpUrl(throwing, { id: 's-1' }), undefined);
 });
