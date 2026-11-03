@@ -29,11 +29,11 @@ missing, pnpm installs the current Node.js LTS, or Node.js 24 LTS on a minimal
 Linux system that lacks the `libatomic1` library newer Node.js builds need.
 Both live in pnpm's home directory, need no administrator rights, and are added
 to your shell profile; open a new terminal afterwards. If Node.js older than 22
-is installed, kickstart stops before installing anything so that you can
-upgrade it. Git and VS Code are optional. Without Git, kickstart prints the
-commands that create the repository later. Without VS Code's `code` command (on
-macOS, run **Shell Command: Install 'code' command in PATH** from the VS Code
-command palette), it prints the project path instead of opening it.
+is installed, kickstart asks before installing anything; Enter keeps your
+current setup and stops. Git and VS Code are optional. Without Git, kickstart
+prints the commands that create the repository later. Without VS Code's `code`
+command (on macOS, run **Shell Command: Install 'code' command in PATH** from
+the VS Code command palette), it prints the project path instead of opening it.
 
 The parent directory defaults to your current terminal directory. Your project
 is created inside it using the project name you enter.

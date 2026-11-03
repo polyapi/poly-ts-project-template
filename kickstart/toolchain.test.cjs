@@ -143,15 +143,36 @@ test('missing pnpm and Node.js are installed per user with the pinned pnpm', t =
   assert.doesNotMatch(log, /pnpm setup/);
 });
 
-test('an outdated Node.js stops kickstart before anything is installed', t => {
-  const f = fixture(t, { node: '20', pnpm: false });
-  const result = f.run();
-  assert.notEqual(result.status, 0);
-  assert.match(
-    result.stderr,
-    /Node\.js 20 is older than this template supports\. Install Node\.js 22 or newer/
-  );
-  assert.equal(f.log(), '');
+test('an unsupported Node.js is replaced only after an explicit yes', t => {
+  const declined = fixture(t, { node: '20', pnpm: true });
+  const refused = declined.run('');
+  assert.notEqual(refused.status, 0);
+  assert.match(refused.stderr, /Node\.js 20 is older|Install the current Node\.js LTS now\? \[y\/N\]/);
+  assert.match(refused.stderr, /Node\.js 22 or newer is required/);
+  assert.doesNotMatch(declined.log(), /env use/);
+
+  const accepted = fixture(t, { node: '20', pnpm: true });
+  const result = accepted.run('maybe\ny');
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stderr, /Answer y or n\./);
+  assert.match(result.stdout, /installed=true\nnode=24/);
+  // A pnpm from npm or Homebrew gets a global directory before `pnpm env`.
+  assert.match(accepted.log(), /pnpm setup\npnpm env use --global lts/);
+});
+
+test('declining to replace an old Node.js installs nothing, not even pnpm', t => {
+  const declined = fixture(t, { node: '20', pnpm: false });
+  const refused = declined.run('n');
+  assert.notEqual(refused.status, 0);
+  assert.match(refused.stderr, /Node\.js 22 or newer is required/);
+  assert.equal(declined.log(), '');
+
+  const accepted = fixture(t, { node: '20', pnpm: false });
+  const result = accepted.run('y');
+  assert.equal(result.status, 0, result.stderr);
+  // One question covers both installs.
+  assert.equal(result.stderr.match(/\[y\/N\]/g)?.length, 1);
+  assert.match(accepted.log(), /installer PNPM_VERSION=10\.0\.0[\s\S]*pnpm env use --global lts/);
 });
 
 test('an LTS that needs the missing libatomic falls back to Node.js 24', t => {

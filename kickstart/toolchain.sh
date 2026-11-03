@@ -13,6 +13,22 @@ KICKSTART_NODE_FALLBACK_MAJOR=24
 KICKSTART_PNPM_INSTALLER_URL="${KICKSTART_PNPM_INSTALLER_URL:-https://get.pnpm.io/install.sh}"
 toolchain_installed=false
 
+# Every yes/no prompt in kickstart and Flow uses [y/N]: Enter keeps the default
+# (no), and only an explicit yes proceeds. Answers are read from descriptor 3,
+# the terminal kickstart opened, so piped standard input cannot answer them.
+kickstart_confirm() {
+  local answer
+  while true; do
+    printf '%s [y/N]: ' "$1" >&2
+    IFS= read -r answer <&3 || return 1
+    case "$(printf '%s' "$answer" | tr '[:upper:]' '[:lower:]')" in
+      y | yes) return 0 ;;
+      '' | n | no) return 1 ;;
+      *) printf 'Answer y or n.\n' >&2 ;;
+    esac
+  done
+}
+
 # Print a usable command's path.
 toolchain_command() {
   local resolved
@@ -92,11 +108,20 @@ ensure_pnpm() {
   toolchain_installed=true
 }
 
-# An outdated Node.js is never replaced automatically.
-kickstart_reject_old_node() {
-  printf 'kickstart: Node.js %s is older than this template supports. Install Node.js %s or newer, then run kickstart again.\n' \
-    "$1" "$KICKSTART_MIN_NODE_MAJOR" >&2
-  return 1
+# Ask once before replacing an outdated Node.js; declining changes nothing.
+kickstart_node_replacement_confirmed=false
+kickstart_confirm_node_replacement() {
+  [[ "$kickstart_node_replacement_confirmed" == true ]] && return 0
+  printf 'Node.js %s is older than this template supports (%s or newer).\n' \
+    "$1" "$KICKSTART_MIN_NODE_MAJOR"
+  printf 'pnpm can install the current Node.js LTS for your user; new terminals will then use it instead of Node.js %s.\n' \
+    "$1"
+  if ! kickstart_confirm 'Install the current Node.js LTS now?'; then
+    printf 'kickstart: Node.js %s or newer is required. Install it, then run kickstart again.\n' \
+      "$KICKSTART_MIN_NODE_MAJOR" >&2
+    return 1
+  fi
+  kickstart_node_replacement_confirmed=true
 }
 
 ensure_node() {
@@ -106,7 +131,7 @@ ensure_node() {
     return 0
   fi
   if [[ "$major" =~ ^[0-9]+$ ]]; then
-    kickstart_reject_old_node "$major" || return 1
+    kickstart_confirm_node_replacement "$major" || return 1
   else
     printf 'Node.js was not found. Installing the current Node.js LTS for your user with pnpm...\n'
   fi
@@ -149,10 +174,10 @@ ensure_node() {
 ensure_toolchain() {
   local major
   major="$(kickstart_node_major || true)"
-  # Check for an outdated Node.js before installing pnpm, so that stopping
+  # Ask about an outdated Node.js before installing pnpm, so that declining
   # leaves the machine unchanged.
   if [[ "$major" =~ ^[0-9]+$ ]] && ((major < KICKSTART_MIN_NODE_MAJOR)); then
-    kickstart_reject_old_node "$major" || return 1
+    kickstart_confirm_node_replacement "$major" || return 1
   fi
   ensure_pnpm && ensure_node
 }
