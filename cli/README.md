@@ -320,6 +320,14 @@ pnpm flow train-openapi designs/crm.json --context example.crm --generate-only
 pnpm flow train-model designs/crm.poly.json
 ```
 
+Before saving or training a translated model, Flow restores required header API
+keys omitted by translation, using operation security overrides and one security
+alternative. Existing Authorization prefixes and native authentication are kept;
+missing keys receive separate required string arguments. Ambiguous operation
+mappings or invalid security references stop training. The API-key endpoint
+validator accepts both native `key` and `value` entries, including after schema
+refresh. Already trained functions must be retrained to receive these headers.
+
 Training accepts OpenAPI 3 and Swagger 2 JSON/YAML, a file or recursively searched
 folder, and `{file}` in the target context. Omit source/context to be prompted.
 Repeat `--operation-id ID` to select original specification operation IDs before

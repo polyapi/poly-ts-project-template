@@ -219,10 +219,26 @@ function patchWebhookTemplateBodyRequirement(
   }
 }
 
-function patchKnownSchemaQuirks(
+export function patchKnownSchemaQuirks(
   schemaName: string,
   schemaDocument: Record<string, unknown>
 ): void {
+  const schemas = (
+    schemaDocument.components as
+      | {
+          schemas?: {
+            KeyValueApiKeyEntrySource?: {
+              properties?: { key?: { enum?: string[] } };
+            };
+          };
+        }
+      | undefined
+  )?.schemas;
+  const apiKeyEntry = schemas?.KeyValueApiKeyEntrySource?.properties?.key;
+  if (apiKeyEntry) {
+    // Native API-key auth has separate key and value entries.
+    apiKeyEntry.enum = ['key', 'value'];
+  }
   if (schemaName === 'CreateTableDto' || schemaName === 'UpdateTableDto') {
     patchTableDefaultSchema(schemaDocument);
   }
