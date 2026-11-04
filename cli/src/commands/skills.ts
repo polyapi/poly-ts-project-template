@@ -16,8 +16,10 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createInterface } from 'node:readline/promises';
 import { parseArgs } from 'node:util';
+import { gunzipSync } from 'node:zlib';
 
-export const SKILLS_SOURCE = 'git@github.com:polyapi/poly-skills.git';
+/** poly-skills is public: its archive downloads over HTTPS without Git or SSH. */
+export const SKILLS_SOURCE = 'https://github.com/polyapi/poly-skills';
 export const SKILLS_REF = 'main';
 export const SKILLS_DIRECTORY = '.agents/skills';
 export const SKILLS_LOCK_FILE = '.agents/flow-skills.json';
@@ -83,7 +85,10 @@ export interface SkillsLockEntry {
 export interface SkillsLock {
   version: number;
   setups: string[];
-  /** Recorded for remote sources only; local checkouts are not portable. */
+  /**
+   * Recorded for remote sources other than the default only; local checkouts
+   * and archives are not portable.
+   */
   source?: string;
   ref: string;
   commit: string;
@@ -95,7 +100,11 @@ export interface SkillsRuntime {
   interactive: boolean;
   prompt(message: string): Promise<string>;
   print(message: string): void;
-  fetch(source: string, ref: string, packs: string[]): SkillsSnapshot;
+  fetch(
+    source: string,
+    ref: string,
+    packs: string[]
+  ): SkillsSnapshot | Promise<SkillsSnapshot>;
 }
 
 type PlanKind =
@@ -121,8 +130,16 @@ export interface SkillsPlan {
   retired: [string, SkillsLockEntry][];
 }
 
+const HTTPS_SOURCE =
+  /^https:\/\/github\.com\/([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+?)(?:\.git)?\/?$/;
 const SSH_SOURCE =
   /^git@github\.com:[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+(?:\.git)?$/;
+const ARCHIVE_FILE = /\.(?:tar\.gz|tgz)$/i;
+const COMMIT = /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/;
+/** Far above any skills snapshot; a larger archive is refused, not read. */
+const MAX_ARCHIVE_BYTES = 64 * 1024 * 1024;
+/** Regular file types in a tar archive; links and devices are refused. */
+const TAR_FILE_TYPES = new Set(['0', '7']);
 const REF = /^[A-Za-z0-9][A-Za-z0-9._/-]*$/;
 const SKILL_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 const DIGEST = /^[0-9a-f]{64}$/;
@@ -165,15 +182,29 @@ function normalizeSetups(names: string[]): string[] {
   );
 }
 
+function httpsRepository(source: string): [string, string] | null {
+  const match = HTTPS_SOURCE.exec(source);
+  if (!match || [match[1], match[2]].some(part => /^\.+$/.test(part)))
+    return null;
+  return [match[1], match[2]];
+}
+
+function isRemoteSource(source: string): boolean {
+  return httpsRepository(source) !== null || SSH_SOURCE.test(source);
+}
+
 function resolveSource(value: string | undefined): string {
   if (value === undefined) return SKILLS_SOURCE;
+  const repository = httpsRepository(value);
+  if (repository) return `https://github.com/${repository.join('/')}`;
   if (SSH_SOURCE.test(value)) return value;
   const absolute = path.resolve(value);
-  if (!fs.statSync(absolute, { throwIfNoEntry: false })?.isDirectory())
-    throw new Error(
-      '--source must be a local Git directory or git@github.com:owner/repository.git.'
-    );
-  return fs.realpathSync(absolute);
+  const info = fs.statSync(absolute, { throwIfNoEntry: false });
+  if (info?.isDirectory() || (info?.isFile() && ARCHIVE_FILE.test(absolute)))
+    return fs.realpathSync(absolute);
+  throw new Error(
+    '--source must be https://github.com/owner/repository, git@github.com:owner/repository.git, a local Git repository, or a .tar.gz archive downloaded from GitHub.'
+  );
 }
 
 export function parseSkillsArgs(argv: string[]): SkillsArgs | null {
@@ -245,9 +276,12 @@ Options:
   --dry-run        Show the plan without changing files
   --yes            Without asking, replace folders that have local changes or
                    were not installed by Flow when poly-skills differs
-  --source SOURCE  git@github.com:owner/repository.git or a local Git repository
-                   (committed files only; default: ${SKILLS_SOURCE})
-  --ref REF        Branch, tag, or commit to fetch (default: ${SKILLS_REF})
+  --source SOURCE  https://github.com/owner/repository (public; no Git needed),
+                   git@github.com:owner/repository.git, a local Git repository
+                   (committed files only), or a .tar.gz archive downloaded
+                   from GitHub (default: ${SKILLS_SOURCE})
+  --ref REF        Branch, tag, or commit to fetch (default: ${SKILLS_REF});
+                   for an archive file, the ref it was downloaded from
   -h, --help       Show this help
 
 Local edits are kept until poly-skills changes that skill. Delete a skill
@@ -290,8 +324,71 @@ export function digestFiles(
   return digest.digest('hex');
 }
 
-/** Fetches committed skill folders of the given packs without a checkout. */
-export function fetchSkills(
+/** A file or other entry of a poly-skills snapshot, relative to its root. */
+interface SnapshotEntry {
+  filename: string;
+  /** Only regular files are installed; links and other entries are refused. */
+  regular: boolean;
+  executable: boolean;
+  read(): Buffer;
+}
+
+/** Validates the entries under the packs' `skills/` folders and groups them. */
+function collectSkills(
+  entries: SnapshotEntry[],
+  commit: string,
+  ref: string,
+  packs: string[]
+): SkillsSnapshot {
+  const folders = new Map<string, { name: string; files: SkillFile[] }>();
+  for (const entry of entries) {
+    const { filename } = entry;
+    const [pack, skillsFolder, name, ...rest] = filename.split('/');
+    if (!packs.includes(pack) || skillsFolder !== 'skills')
+      throw new Error(`Unexpected poly-skills path: ${filename}`);
+    // Files directly under <pack>/skills/, such as a README, are not skills.
+    if (!rest.length) continue;
+    if (!SKILL_NAME.test(name))
+      throw new Error(
+        `Refusing a skill folder with an unsupported name: ${pack}/skills/${name}`
+      );
+    if (
+      rest.some(
+        part => !part || part === '.' || part === '..' || protectedName(part)
+      ) ||
+      filename.includes('\\')
+    )
+      throw new Error(`Refusing a protected or unsafe skill path: ${filename}`);
+    if (!entry.regular)
+      throw new Error(
+        `Refusing a link or unsupported entry in poly-skills: ${filename}`
+      );
+    const key = `${pack}/skills/${name}`;
+    const folder = folders.get(key) ?? { name, files: [] };
+    folder.files.push({
+      path: rest.join('/'),
+      content: entry.read(),
+      executable: entry.executable,
+    });
+    folders.set(key, folder);
+  }
+  const skills = [...folders.entries()]
+    .filter(([, folder]) => folder.files.some(file => file.path === 'SKILL.md'))
+    .map(([folderSource, folder]) => ({
+      name: folder.name,
+      source: folderSource,
+      files: folder.files,
+      digest: digestFiles(folder.files),
+    }));
+  for (const pack of packs) {
+    if (!skills.some(skill => skill.source.startsWith(`${pack}/skills/`)))
+      throw new Error(`poly-skills ${ref} has no skills in ${pack}/skills.`);
+  }
+  return { commit, skills };
+}
+
+/** Fetches committed skill folders with Git, without a checkout. */
+function fetchGitSkills(
   source: string,
   ref: string,
   packs: string[]
@@ -338,60 +435,207 @@ export function fetchSkills(
       ],
       'Listing poly-skills'
     ).toString('utf8');
-    const folders = new Map<string, { name: string; files: SkillFile[] }>();
-    for (const entry of listing.split('\0').filter(Boolean)) {
-      const match = /^(\d+) (\w+) ([0-9a-f]+)\t([\s\S]+)$/.exec(entry);
-      if (!match) throw new Error('Unexpected Git tree entry in poly-skills.');
-      const [, mode, type, object, filename] = match;
-      const [pack, skillsFolder, name, ...rest] = filename.split('/');
-      if (!packs.includes(pack) || skillsFolder !== 'skills')
-        throw new Error(`Unexpected poly-skills path: ${filename}`);
-      // Files directly under <pack>/skills/, such as a README, are not skills.
-      if (!rest.length) continue;
-      if (!SKILL_NAME.test(name))
-        throw new Error(
-          `Refusing a skill folder with an unsupported name: ${pack}/skills/${name}`
-        );
-      if (
-        rest.some(
-          part => !part || part === '.' || part === '..' || protectedName(part)
-        ) ||
-        filename.includes('\\')
-      )
-        throw new Error(
-          `Refusing a protected or unsafe skill path: ${filename}`
-        );
-      if (type !== 'blob' || (mode !== '100644' && mode !== '100755'))
-        throw new Error(
-          `Refusing a link or unsupported entry in poly-skills: ${filename}`
-        );
-      const key = `${pack}/skills/${name}`;
-      const folder = folders.get(key) ?? { name, files: [] };
-      folder.files.push({
-        path: rest.join('/'),
-        content: git(['cat-file', 'blob', object], `Reading ${filename}`),
-        executable: mode === '100755',
+    const entries = listing
+      .split('\0')
+      .filter(Boolean)
+      .map((entry): SnapshotEntry => {
+        const match = /^(\d+) (\w+) ([0-9a-f]+)\t([\s\S]+)$/.exec(entry);
+        if (!match)
+          throw new Error('Unexpected Git tree entry in poly-skills.');
+        const [, mode, type, object, filename] = match;
+        return {
+          filename,
+          regular: type === 'blob' && (mode === '100644' || mode === '100755'),
+          executable: mode === '100755',
+          read: () => git(['cat-file', 'blob', object], `Reading ${filename}`),
+        };
       });
-      folders.set(key, folder);
-    }
-    const skills = [...folders.entries()]
-      .filter(([, folder]) =>
-        folder.files.some(file => file.path === 'SKILL.md')
-      )
-      .map(([folderSource, folder]) => ({
-        name: folder.name,
-        source: folderSource,
-        files: folder.files,
-        digest: digestFiles(folder.files),
-      }));
-    for (const pack of packs) {
-      if (!skills.some(skill => skill.source.startsWith(`${pack}/skills/`)))
-        throw new Error(`poly-skills ${ref} has no skills in ${pack}/skills.`);
-    }
-    return { commit, skills };
+    return collectSkills(entries, commit, ref, packs);
   } finally {
     fs.rmSync(repository, { recursive: true, force: true });
   }
+}
+
+function invalidArchive(): Error {
+  return new Error('The skills archive is not a valid .tar.gz file.');
+}
+
+function tarText(block: Buffer, start: number, length: number): string {
+  const field = block.subarray(start, start + length);
+  const end = field.indexOf(0);
+  return field.subarray(0, end === -1 ? field.length : end).toString('utf8');
+}
+
+function tarNumber(block: Buffer, start: number, length: number): number {
+  const text = tarText(block, start, length).trim();
+  if (!/^[0-7]*$/.test(text)) throw invalidArchive();
+  return text ? Number.parseInt(text, 8) : 0;
+}
+
+/** Parses pax records: `<length> <key>=<value>\n`, the length counting all. */
+function paxRecords(body: Buffer): Record<string, string> {
+  const records: Record<string, string> = {};
+  let offset = 0;
+  while (offset < body.length) {
+    const space = body.indexOf(0x20, offset);
+    const length = Number(body.subarray(offset, space).toString('latin1'));
+    if (
+      space === -1 ||
+      !Number.isInteger(length) ||
+      length <= space - offset + 1 ||
+      offset + length > body.length
+    )
+      throw invalidArchive();
+    const record = body
+      .subarray(space + 1, offset + length - 1)
+      .toString('utf8');
+    const equals = record.indexOf('=');
+    if (equals > 0) records[record.slice(0, equals)] = record.slice(equals + 1);
+    offset += length;
+  }
+  return records;
+}
+
+interface TarEntry {
+  name: string;
+  type: string;
+  mode: number;
+  content: Buffer;
+}
+
+/**
+ * Reads a tar stream as `git archive` and GitHub write it: POSIX ustar entries
+ * with pax headers, whose global `comment` record holds the commit ID.
+ */
+function readTar(tar: Buffer): { comment?: string; entries: TarEntry[] } {
+  const entries: TarEntry[] = [];
+  let comment: string | undefined;
+  let pax: Record<string, string> = {};
+  let longName: string | undefined;
+  let offset = 0;
+  while (offset + 512 <= tar.length) {
+    const header = tar.subarray(offset, offset + 512);
+    if (header.every(byte => byte === 0)) break;
+    let checksum = 0;
+    for (let index = 0; index < 512; index += 1)
+      checksum += index >= 148 && index < 156 ? 0x20 : header[index];
+    if (checksum !== tarNumber(header, 148, 8)) throw invalidArchive();
+    const size = tarNumber(header, 124, 12);
+    const start = offset + 512;
+    const content = tar.subarray(start, start + size);
+    if (content.length !== size) throw invalidArchive();
+    offset = start + Math.ceil(size / 512) * 512;
+    const type = header[156] === 0 ? '0' : String.fromCharCode(header[156]);
+    if (type === 'g') {
+      comment = paxRecords(content).comment ?? comment;
+      continue;
+    }
+    if (type === 'x') {
+      pax = paxRecords(content);
+      continue;
+    }
+    if (type === 'L') {
+      longName = tarText(content, 0, content.length);
+      continue;
+    }
+    // Only POSIX ustar headers have a name prefix; GNU headers use it for times.
+    const posix = header.subarray(257, 265).equals(Buffer.from('ustar\x0000'));
+    const prefix = posix ? tarText(header, 345, 155) : '';
+    const shortName = tarText(header, 0, 100);
+    entries.push({
+      name:
+        pax.path ?? longName ?? (prefix ? `${prefix}/${shortName}` : shortName),
+      type,
+      mode: tarNumber(header, 100, 8),
+      content,
+    });
+    pax = {};
+    longName = undefined;
+  }
+  return { comment, entries };
+}
+
+/** Reads the skills of the given packs from a `.tar.gz` archive of poly-skills. */
+export function readSkillsArchive(
+  archive: Buffer,
+  ref: string,
+  packs: string[]
+): SkillsSnapshot {
+  let tar: Buffer;
+  try {
+    tar = gunzipSync(archive, { maxOutputLength: MAX_ARCHIVE_BYTES });
+  } catch {
+    throw invalidArchive();
+  }
+  const { comment, entries } = readTar(tar);
+  if (!comment || !COMMIT.test(comment))
+    throw new Error(
+      'The skills archive does not record its commit. Use an archive downloaded from GitHub.'
+    );
+  const prefixes = packs.map(pack => `${pack}/skills/`);
+  const selected: SnapshotEntry[] = [];
+  for (const entry of entries) {
+    // GitHub archives hold one root folder, such as poly-skills-main/.
+    const filename = entry.name.split('/').slice(1).join('/');
+    if (entry.type === '5' || !prefixes.some(p => filename.startsWith(p)))
+      continue;
+    selected.push({
+      filename,
+      regular: TAR_FILE_TYPES.has(entry.type),
+      executable: (entry.mode & 0o111) !== 0,
+      read: () => entry.content,
+    });
+  }
+  return collectSkills(selected, comment, ref, packs);
+}
+
+/** Downloads a public GitHub repository's archive; no Git or sign-in needed. */
+async function downloadArchive(source: string, ref: string): Promise<Buffer> {
+  const repository = httpsRepository(source);
+  if (!repository) throw new Error(`Unsupported skills source: ${source}`);
+  const archiveRef = ref.split('/').map(encodeURIComponent).join('/');
+  const url = `https://codeload.github.com/${repository.join('/')}/tar.gz/${archiveRef}`;
+  const failed = `Downloading ${ref} from ${source} failed`;
+  let response: Response;
+  try {
+    response = await globalThis.fetch(url, {
+      signal: AbortSignal.timeout(180_000),
+    });
+  } catch (error) {
+    const cause = (error as { cause?: { message?: string } })?.cause?.message;
+    throw new Error(
+      `${failed}: ${error instanceof Error ? error.message : String(error)}${cause ? ` (${cause})` : ''}`
+    );
+  }
+  if (!response.ok)
+    throw new Error(
+      `${failed} (HTTP ${response.status}). Check the repository and --ref; for a private repository, use --source git@github.com:${repository.join('/')}.git.`
+    );
+  const archive = Buffer.from(await response.arrayBuffer());
+  if (archive.length > MAX_ARCHIVE_BYTES)
+    throw new Error(`${failed}: the archive is too large.`);
+  return archive;
+}
+
+/**
+ * Fetches the skill folders of the given packs: from a public GitHub archive
+ * over HTTPS, a downloaded archive file, or with Git from an SSH repository or
+ * local checkout.
+ */
+export async function fetchSkills(
+  source: string,
+  ref: string,
+  packs: string[]
+): Promise<SkillsSnapshot> {
+  if (httpsRepository(source))
+    return readSkillsArchive(await downloadArchive(source, ref), ref, packs);
+  if (
+    !SSH_SOURCE.test(source) &&
+    ARCHIVE_FILE.test(source) &&
+    fs.statSync(source, { throwIfNoEntry: false })?.isFile()
+  )
+    return readSkillsArchive(fs.readFileSync(source), ref, packs);
+  return fetchGitSkills(source, ref, packs);
 }
 
 /** Selects the skills of the setups, rejecting two skills with one name. */
@@ -641,7 +885,9 @@ function buildLock(
   return {
     version: LOCK_VERSION,
     setups,
-    ...(SSH_SOURCE.test(args.source) ? { source: args.source } : {}),
+    ...(args.source !== SKILLS_SOURCE && isRemoteSource(args.source)
+      ? { source: args.source }
+      : {}),
     ref: args.ref,
     commit,
     skills: Object.fromEntries(entries),
@@ -737,7 +983,7 @@ export async function runSkills(
 
   const packs = [...new Set(setups.flatMap(id => setupById(id).packs))];
   runtime.print(`Fetching poly-skills ${args.ref}...`);
-  const snapshot = runtime.fetch(args.source, args.ref, packs);
+  const snapshot = await runtime.fetch(args.source, args.ref, packs);
   const desired = resolveSetupSkills(snapshot, setups);
   const plan = planSkills(runtime.projectRoot, desired, lock);
 

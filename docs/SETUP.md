@@ -352,10 +352,10 @@ pnpm flow skills add
 
 When asked what the skills are needed for, choose **Coding in TypeScript**, or
 run `pnpm flow skills add typescript` directly. Flow installs the `general`,
-`polyapi-common`, and `polyapi-typescript` skill packs from
-[polyapi/poly-skills](https://github.com/polyapi/poly-skills) using your GitHub
-SSH access. Existing folders that match poly-skills are kept; Flow asks before
-replacing any that differ. Commit `.agents/skills/` and
+`polyapi-common`, and `polyapi-typescript` skill packs from the public
+[polyapi/poly-skills](https://github.com/polyapi/poly-skills) archive over
+HTTPS; Git and GitHub sign-in are not needed. Existing folders that match
+poly-skills are kept; Flow asks before replacing any that differ. Commit `.agents/skills/` and
 `.agents/flow-skills.json`.
 
 See [agent skills](../cli/README.md#agent-skills) for local edits, dry runs,

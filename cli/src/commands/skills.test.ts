@@ -91,6 +91,58 @@ function skillsRepository(t: TestContext) {
   return { root, commit, head };
 }
 
+/** The repository as GitHub serves it: a .tar.gz with a root folder. */
+function archiveOf(
+  t: TestContext,
+  repository: string,
+  treeish = 'HEAD'
+): string {
+  const archive = path.join(
+    temporary(t, 'flow-skills-archive-'),
+    'skills.tar.gz'
+  );
+  git(repository, [
+    'archive',
+    '--format=tar.gz',
+    '--prefix=poly-skills-main/',
+    '--output',
+    archive,
+    treeish,
+  ]);
+  return archive;
+}
+
+/** Serves `archive` in place of codeload.github.com, recording the URLs. */
+function serveArchive(t: TestContext, archive: Buffer | null): string[] {
+  const urls: string[] = [];
+  const original = globalThis.fetch;
+  globalThis.fetch = (async (input: string | URL | Request) => {
+    urls.push(String(input));
+    return archive
+      ? new Response(new Uint8Array(archive))
+      : new Response('Not Found', { status: 404 });
+  }) as typeof fetch;
+  t.after(() => {
+    globalThis.fetch = original;
+  });
+  return urls;
+}
+
+/** Compares snapshots by what is installed and recorded. */
+function summary(snapshot: Awaited<ReturnType<typeof fetchSkills>>) {
+  return {
+    commit: snapshot.commit,
+    skills: snapshot.skills.map(skill => ({
+      name: skill.name,
+      source: skill.source,
+      digest: skill.digest,
+      files: skill.files
+        .map(file => `${file.path}${file.executable ? ' (executable)' : ''}`)
+        .sort(),
+    })),
+  };
+}
+
 function project(t: TestContext): string {
   const root = temporary(t, 'flow-skills-project-');
   fs.writeFileSync(
@@ -181,16 +233,43 @@ test('parses skills commands and rejects unsupported input', () => {
     () => parseSkillsArgs(['skills', 'update', '--ref', 'main..other']),
     /Invalid --ref/
   );
-  assert.throws(
-    () =>
-      parseSkillsArgs([
-        'skills',
-        'update',
-        '--source',
-        'https://example.test/skills.git',
-      ]),
-    /--source must be/
+  assert.equal(SKILLS_SOURCE, 'https://github.com/polyapi/poly-skills');
+  assert.equal(
+    parseSkillsArgs([
+      'skills',
+      'update',
+      '--source',
+      'https://github.com/example/poly-skills.git',
+    ])?.source,
+    'https://github.com/example/poly-skills'
   );
+  for (const source of [
+    'https://example.test/skills.git',
+    'https://github.com/../poly-skills',
+    'http://github.com/example/poly-skills',
+  ])
+    assert.throws(
+      () => parseSkillsArgs(['skills', 'update', '--source', source]),
+      /--source must be/,
+      source
+    );
+  const folder = fs.mkdtempSync(path.join(tmpdir(), 'flow-skills-parse-'));
+  try {
+    const archive = path.join(folder, 'skills.tar.gz');
+    const notes = path.join(folder, 'skills.txt');
+    fs.writeFileSync(archive, '');
+    fs.writeFileSync(notes, '');
+    assert.equal(
+      parseSkillsArgs(['skills', 'update', '--source', archive])?.source,
+      fs.realpathSync(archive)
+    );
+    assert.throws(
+      () => parseSkillsArgs(['skills', 'update', '--source', notes]),
+      /--source must be/
+    );
+  } finally {
+    fs.rmSync(folder, { recursive: true, force: true });
+  }
 });
 
 test('add installs the packs of the chosen setup and records them', async t => {
@@ -511,27 +590,155 @@ test('fetch refuses links, protected files and missing packs', async t => {
     path.join(linked.root, 'general/skills/clean-code/linked.md')
   );
   linked.commit({});
-  assert.throws(
+  await assert.rejects(
     () => fetchSkills(linked.root, 'main', ['general']),
     /Refusing a link or unsupported entry in poly-skills: general\/skills\/clean-code\/linked\.md/
   );
 
   const secret = skillsRepository(t);
   secret.commit({ 'general/skills/clean-code/.env': 'TOKEN=placeholder\n' });
-  assert.throws(
+  await assert.rejects(
     () => fetchSkills(secret.root, 'main', ['general']),
     /Refusing a protected or unsafe skill path/
   );
 
   const missing = skillsRepository(t);
   missing.commit({ 'polyapi-python': null });
-  assert.throws(
+  await assert.rejects(
     () => fetchSkills(missing.root, 'main', ['general', 'polyapi-python']),
     /poly-skills main has no skills in polyapi-python\/skills/
   );
-  assert.throws(
+  await assert.rejects(
     () => fetchSkills(missing.root, 'no-such-branch', ['general']),
     /Fetching no-such-branch from .* failed/
+  );
+});
+
+test('a GitHub archive yields the same skills and commit as the Git repository', async t => {
+  const upstream = skillsRepository(t);
+  // Over 100 characters, so the archive stores the path in a pax header.
+  const long = `polyapi-common/skills/polyapi-constructs/references/${'deep/'.repeat(12)}NOTES.md`;
+  const head = upstream.commit({ [long]: '# Notes\n' });
+  const packs = ['general', 'polyapi-common', 'polyapi-typescript'];
+
+  const fromGit = await fetchSkills(upstream.root, 'main', packs);
+  const fromArchive = await fetchSkills(
+    archiveOf(t, upstream.root),
+    'main',
+    packs
+  );
+
+  assert.equal(fromArchive.commit, head);
+  assert.deepEqual(summary(fromArchive), summary(fromGit));
+  assert.ok(
+    summary(fromArchive).skills.some(skill =>
+      skill.files.includes('scripts/check.sh (executable)')
+    )
+  );
+  assert.ok(
+    fromArchive.skills.some(skill =>
+      skill.files.some(file => file.path === long.split('/').slice(3).join('/'))
+    )
+  );
+});
+
+test('add installs from a downloaded archive file, as kickstart does', async t => {
+  const upstream = skillsRepository(t);
+  const root = project(t);
+  const run = runtime(root);
+
+  await runSkills(
+    args(archiveOf(t, upstream.root), ['add', 'typescript']),
+    run.runtime
+  );
+
+  assert.deepEqual(installed(root), [
+    'README.md',
+    'clean-code',
+    'markdownlint-compliance',
+    'polyapi-constructs',
+    'polyapi-sdk',
+  ]);
+  const lock = readSkillsLock(root);
+  assert.equal(lock?.commit, upstream.head);
+  assert.equal(lock?.ref, 'main');
+  assert.equal(lock?.source, undefined, 'archive files are not recorded');
+  assert.match(run.text(), /from poly-skills main \([0-9a-f]{7}\)/);
+});
+
+test('the default source downloads the public archive over HTTPS without Git', async t => {
+  const upstream = skillsRepository(t);
+  const urls = serveArchive(t, fs.readFileSync(archiveOf(t, upstream.root)));
+  const root = project(t);
+  const parsed = parseSkillsArgs(['skills', 'add', 'typescript']);
+  assert.ok(parsed);
+
+  await runSkills(parsed, runtime(root).runtime);
+
+  assert.deepEqual(urls, [
+    'https://codeload.github.com/polyapi/poly-skills/tar.gz/main',
+  ]);
+  const lock = readSkillsLock(root);
+  assert.equal(lock?.commit, upstream.head);
+  assert.equal(lock?.source, undefined, 'the default source is not recorded');
+  assert.ok(installed(root).includes('polyapi-sdk'));
+
+  const other = project(t);
+  const custom = parseSkillsArgs([
+    'skills',
+    'add',
+    'typescript',
+    '--source',
+    'https://github.com/example/skills',
+    '--ref',
+    'release/1.0',
+  ]);
+  assert.ok(custom);
+  await runSkills(custom, runtime(other).runtime);
+  assert.equal(
+    urls[1],
+    'https://codeload.github.com/example/skills/tar.gz/release/1.0'
+  );
+  assert.equal(
+    readSkillsLock(other)?.source,
+    'https://github.com/example/skills'
+  );
+});
+
+test('a missing repository or ref reports the HTTP status and the SSH alternative', async t => {
+  serveArchive(t, null);
+  await assert.rejects(
+    () => fetchSkills('https://github.com/example/skills', 'main', ['general']),
+    /Downloading main from https:\/\/github\.com\/example\/skills failed \(HTTP 404\).*git@github\.com:example\/skills\.git/
+  );
+});
+
+test('archives with links, without a commit, or unreadable are refused', async t => {
+  const linked = skillsRepository(t);
+  fs.symlinkSync(
+    '../../../general/README.md',
+    path.join(linked.root, 'general/skills/clean-code/linked.md')
+  );
+  linked.commit({});
+  await assert.rejects(
+    () => fetchSkills(archiveOf(t, linked.root), 'main', ['general']),
+    /Refusing a link or unsupported entry in poly-skills: general\/skills\/clean-code\/linked\.md/
+  );
+
+  const upstream = skillsRepository(t);
+  await assert.rejects(
+    () =>
+      fetchSkills(archiveOf(t, upstream.root, 'HEAD^{tree}'), 'main', [
+        'general',
+      ]),
+    /does not record its commit/
+  );
+
+  const broken = path.join(temporary(t, 'flow-skills-broken-'), 'skills.tgz');
+  fs.writeFileSync(broken, 'Not Found');
+  await assert.rejects(
+    () => fetchSkills(broken, 'main', ['general']),
+    /not a valid \.tar\.gz file/
   );
 });
 

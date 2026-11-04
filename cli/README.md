@@ -270,10 +270,14 @@ Projects whose skills were copied by an older kickstart or by hand can run
 `pnpm flow skills add typescript`. Folders identical to poly-skills are adopted
 without a prompt; differing folders are marked `!`.
 
-Skills are fetched with your GitHub SSH access from
-`git@github.com:polyapi/poly-skills.git`. `--ref` selects a branch, tag, or
-commit, and `--source` selects another GitHub SSH repository or a local Git
-checkout (committed files only); both apply to that run only. Links, protected
+Skills are downloaded over HTTPS as the public poly-skills archive, so Flow
+needs neither Git nor GitHub sign-in. `--ref` selects a branch, tag, or commit.
+`--source` selects another public GitHub repository
+(`https://github.com/owner/repository`), a private one through Git over SSH
+(`git@github.com:owner/repository.git`), a local Git checkout (committed files
+only), or a `.tar.gz` archive downloaded from GitHub. Kickstart passes the
+archive it has already checked. Both options apply to that run only; the lock
+records a source only when it is another GitHub repository. Links, protected
 files such as `.env` files or keys, and unsupported entries stop the command
 before files change. Skills commands use no environment file, PolyAPI
 connection, or target verification. The template's Biome configuration skips

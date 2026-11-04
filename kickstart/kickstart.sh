@@ -161,11 +161,14 @@ main() {
     --exclude='*.key' --exclude='*.pem' --exclude='*.p12' \
     --exclude='*.pfx' --exclude='*.crt' \
     -xf - -C "$download_dir/template"
-  # The public skills snapshot needs no Git or GitHub authentication.
+  # The public skills snapshot needs no Git or GitHub authentication. Flow
+  # installs from this same archive, which records its poly-skills commit.
   mkdir -- "$download_dir/skills"
   curl --fail --silent --show-error --location --proto '=https' \
-    'https://codeload.github.com/polyapi/poly-skills/tar.gz/refs/heads/main' |
-    tar -xzf - --strip-components=1 -C "$download_dir/skills"
+    --output "$download_dir/skills.tar.gz" \
+    'https://codeload.github.com/polyapi/poly-skills/tar.gz/refs/heads/main'
+  tar -xzf "$download_dir/skills.tar.gz" --strip-components=1 \
+    -C "$download_dir/skills"
   [[ -f "$download_dir/template/package.json" ]]
   [[ -f "$download_dir/template/kickstart/kickstart-namespace.cjs" ]]
   for category in general polyapi-common polyapi-typescript; do
@@ -235,9 +238,9 @@ NODE
   printf 'Building Flow CLI...\n'
   pnpm flow build
   printf 'Installing agent skills...\n'
-  # Install from the checkout fetched above; Flow records the setup and revision
+  # Install from the archive checked above; Flow records the setup and commit
   # in .agents/flow-skills.json so `pnpm flow skills update` can refresh them.
-  node cli/dist/cli.js skills add typescript --source "$download_dir/skills"
+  node cli/dist/cli.js skills add typescript --source "$download_dir/skills.tar.gz"
   [[ -s .agents/skills/api-function-training/SKILL.md ]]
   printf 'Verifying Flow configuration from saved Poly setup...\n'
   (
