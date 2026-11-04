@@ -6,6 +6,7 @@ import test from 'node:test';
 import { TypeCompiler } from '@sinclair/typebox/compiler';
 import type { McpServerFile } from '../types';
 import { createSummary } from '../types/summary';
+import { validateEndpointPayload } from '../utils/apiSchemaValidation';
 import { McpServerArtifactSchema } from '../utils/schemas';
 import {
   fetchMcpUrl,
@@ -174,13 +175,69 @@ test('unresolvable or ambiguous references stop the plan instead of guessing', (
   );
 });
 
+test('syncing the tool list clears legacy toolFunctionIds', () => {
+  const legacy = {
+    ...resolvedPayload,
+    id: 'mcp-id',
+    environmentId: 'env-1',
+    toolFunctionIds: ['old-tool-id'],
+  };
+  assert.deepEqual(planMcpServer(server, [legacy], functions, variables), {
+    action: 'update',
+    id: 'mcp-id',
+    payload: { toolFunctionIds: [] },
+    remote: legacy,
+  });
+
+  // Clearing the tool list removes the current and the legacy tools.
+  const noTools = {
+    ...server,
+    content: { ...server.content, toolFunctions: [] },
+  };
+  const cleared = planMcpServer(noTools, [legacy], functions, variables);
+  assert.deepEqual((cleared as { payload: unknown }).payload, {
+    toolFunctions: [],
+    toolFunctionIds: [],
+  });
+  assert.equal(
+    validateEndpointPayload(
+      'UpdateMCPServerDto',
+      (cleared as { payload: Record<string, unknown> }).payload,
+      { artifactType: 'MCP Server', artifactName: 'example-weather-tools' }
+    ),
+    true
+  );
+
+  // An artefact that does not manage tools leaves them alone.
+  const { toolFunctions: _omitted, ...withoutTools } = server.content;
+  assert.equal(
+    planMcpServer(
+      { ...server, content: withoutTools },
+      [legacy],
+      functions,
+      variables
+    ).action,
+    'noop'
+  );
+  assert.equal(
+    planMcpServer(
+      server,
+      [{ ...legacy, toolFunctionIds: [] }],
+      functions,
+      variables
+    ).action,
+    'noop'
+  );
+});
+
 test('plans create, noop, and changed-field updates by exact name', () => {
   assert.deepEqual(planMcpServer(server, [], functions, variables), {
     action: 'create',
     payload: resolvedPayload,
   });
 
-  // The API adds IDs, timestamps, and derived fields that are not local changes.
+  // The API adds IDs, timestamps, and defaults that are not local changes. A
+  // server created from toolFunctions has no legacy toolFunctionIds.
   const remote = {
     ...resolvedPayload,
     id: 'mcp-id',
@@ -188,7 +245,7 @@ test('plans create, noop, and changed-field updates by exact name', () => {
     updatedAt: '2026-11-01T00:00:00Z',
     environmentId: 'env-1',
     mcpUrl: 'https://na1.polyapi.io/mcp-servers/mcp-id/mcp',
-    toolFunctionIds: ['search-id', 'current-id'],
+    toolFunctionIds: null,
   };
   const unrelated = { ...remote, id: 'other-id', name: 'someone-else' };
   const noop = planMcpServer(server, [unrelated, remote], functions, variables);

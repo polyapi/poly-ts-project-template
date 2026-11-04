@@ -34,7 +34,9 @@ export function areComparisonPayloadsEqual(
  */
 export function projectRemoteValue(local: unknown, remote: unknown): unknown {
   if (Array.isArray(local)) {
-    if (!Array.isArray(remote)) {
+    // Keep length changes visible, as Python Flow does: removing a tool or an
+    // argument binding must cause an update.
+    if (!Array.isArray(remote) || remote.length !== local.length) {
       return remote;
     }
     return local.map((item, index) => projectRemoteValue(item, remote[index]));

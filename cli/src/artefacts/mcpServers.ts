@@ -47,6 +47,7 @@ export type McpServerRecord = Record<string, unknown> & {
   name?: string;
   environmentId?: string;
   mcpUrl?: string;
+  toolFunctionIds?: unknown;
 };
 type ResolvableFunction = AiFunctionReference & { id: string };
 type ResolvableVariable = AiVariableReference & { id: string };
@@ -258,11 +259,20 @@ export function planMcpServer(
   if (typeof remote.id !== 'string' || !remote.id) {
     return { action: 'failed', reason: 'Existing MCP server has no ID' };
   }
-  const update = buildChangedFieldsPayload(payload, remote);
-  if (Object.keys(update.payload).length === 0) {
+  const changes = { ...buildChangedFieldsPayload(payload, remote).payload };
+  // Servers created with the legacy toolFunctionIds field keep those tools
+  // callable alongside toolFunctions, so syncing the tool list clears them.
+  if (
+    'toolFunctions' in payload &&
+    Array.isArray(remote.toolFunctionIds) &&
+    remote.toolFunctionIds.length > 0
+  ) {
+    changes.toolFunctionIds = [];
+  }
+  if (Object.keys(changes).length === 0) {
     return { action: 'noop', remote };
   }
-  return { action: 'update', id: remote.id, payload: update.payload, remote };
+  return { action: 'update', id: remote.id, payload: changes, remote };
 }
 
 function toResolvableFunctions(items: any[]): ResolvableFunction[] {
