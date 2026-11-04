@@ -492,6 +492,9 @@ test('copied tutorial training and SDK examples use the same namespace as the de
   );
   assert.ok(overview.includes(`specs/weather --context ${context}`));
   assert.match(overview, /https:\/\/open-meteo\.com\/en\/pricing/);
+  // MCP servers carry the root in their name; clients see context-based tools.
+  assert.match(overview, /`acme-eu-weather-tools`/);
+  assert.match(overview, /"name":"acme_eu_sampleWorkflow_searchLocations"/);
   assert.match(
     f.read('utilities/common/OVERVIEW.md'),
     /poly\.acme\.eu\.utilities\.log\(/
@@ -500,6 +503,11 @@ test('copied tutorial training and SDK examples use the same namespace as the de
     const updated = f.readProject(file);
     assert.doesNotMatch(updated, /(?:poly|vari|tabi|schemas)\.example\b/, file);
     assert.doesNotMatch(updated, /--context example\./, file);
+    assert.doesNotMatch(
+      updated,
+      /example-weather-tools|example_sampleWorkflow_/,
+      file
+    );
   }
   const before = guides.map(file => f.readProject(file));
   success(f.run('acme.eu'));

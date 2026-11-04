@@ -57,6 +57,8 @@ const replaceRoot = value =>
 // carries the root instead, with dots as hyphens.
 const serverPrefix = namespace.replace(/\./g, '-');
 const renameServer = value => value.replace(/^example(?=-)/, serverPrefix);
+// MCP clients see tool names built from the context, with dots as underscores.
+const toolPrefix = namespace.replace(/\./g, '_');
 
 function propertyParents(node) {
   const keys = [];
@@ -207,6 +209,14 @@ function rewriteDocumentedIdentifiers(code) {
     .replace(
       /(\bPOLYAPI_NAMESPACES?\s*=\s*["']?)example(?=$|[.,\s"'])/g,
       (_match, assignment) => assignment + namespace
+    )
+    .replace(
+      /(^|[^\w./-])example(?=-weather-tools(?![\w-]))/g,
+      (_match, prefix) => prefix + serverPrefix
+    )
+    .replace(
+      /(^|[^\w./-])example(?=_sampleWorkflow_\w)/g,
+      (_match, prefix) => prefix + toolPrefix
     );
 }
 
