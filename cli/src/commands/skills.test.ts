@@ -614,6 +614,32 @@ test('fetch refuses links, protected files and missing packs', async t => {
   );
 });
 
+test('the Git fetch ignores a repository named by the environment', async t => {
+  const upstream = skillsRepository(t);
+  const head = upstream.commit({
+    'general/skills/clean-code/NOTES.md': '# Notes\n',
+  });
+  // A hook or wrapper can export GIT_DIR; the shallow fetch must not land there.
+  process.env.GIT_DIR = path.join(upstream.root, '.git');
+  let snapshot: Awaited<ReturnType<typeof fetchSkills>>;
+  try {
+    snapshot = await fetchSkills(upstream.root, 'main', ['general']);
+  } finally {
+    delete process.env.GIT_DIR;
+  }
+
+  assert.equal(snapshot.commit, head);
+  assert.equal(
+    git(upstream.root, ['rev-parse', '--is-shallow-repository']),
+    'false'
+  );
+  assert.equal(git(upstream.root, ['rev-list', '--count', 'HEAD']), '2');
+  assert.equal(
+    fs.existsSync(path.join(upstream.root, '.git/FETCH_HEAD')),
+    false
+  );
+});
+
 test('a GitHub archive yields the same skills and commit as the Git repository', async t => {
   const upstream = skillsRepository(t);
   // Over 100 characters, so the archive stores the path in a pax header.
