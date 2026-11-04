@@ -1,5 +1,3 @@
-import type { ModelResource, TrainingModel } from './trainingModel';
-
 type ObjectValue = Record<string, unknown>;
 interface Scheme {
   type?: string;
@@ -8,6 +6,17 @@ interface Scheme {
   scheme?: string;
   $ref?: string;
 }
+interface SecurityFunction {
+  arguments?: ObjectValue[];
+  source: {
+    method: string;
+    url: string;
+    auth?: unknown;
+    headers?: Header[];
+    [key: string]: unknown;
+  };
+}
+
 interface Header {
   key?: string;
   name?: string;
@@ -46,7 +55,7 @@ function headerKey(scheme: Scheme): boolean {
   return scheme.type === 'apiKey' && scheme.in === 'header';
 }
 
-function nativeMatches(resource: ModelResource, scheme: Scheme): boolean {
+function nativeMatches(resource: SecurityFunction, scheme: Scheme): boolean {
   const auth = object(resource.source?.auth);
   if (scheme.type === 'apiKey') {
     const entries = Object.fromEntries(
@@ -64,7 +73,7 @@ function nativeMatches(resource: ModelResource, scheme: Scheme): boolean {
   return scheme.type === 'basic' && auth.type === 'basic';
 }
 
-function hasHeader(resource: ModelResource, scheme: Scheme): boolean {
+function hasHeader(resource: SecurityFunction, scheme: Scheme): boolean {
   return (
     nativeMatches(resource, scheme) ||
     ((resource.source.headers ?? []) as Header[]).some(
@@ -89,7 +98,7 @@ function normalizePath(value: string, generated = false): string {
 }
 
 function requirements(
-  resource: ModelResource,
+  resource: SecurityFunction,
   spec: ObjectValue
 ): ObjectValue[] | undefined {
   const source = resource.source;
@@ -182,6 +191,12 @@ function argumentName(header: string): string {
     'var',
     'let',
     'const',
+    'catch',
+    'debugger',
+    'do',
+    'this',
+    'eval',
+    'arguments',
     'enum',
     'export',
     'extends',
@@ -206,7 +221,7 @@ function argumentName(header: string): string {
   return name;
 }
 
-function restoreHeader(resource: ModelResource, scheme: Scheme): void {
+function restoreHeader(resource: SecurityFunction, scheme: Scheme): void {
   if (hasHeader(resource, scheme)) return;
   if (!scheme.name) throw new Error('Header API-key scheme needs a name.');
   resource.arguments ??= [];
@@ -248,10 +263,10 @@ function restoreHeader(resource: ModelResource, scheme: Scheme): void {
 }
 
 /** Restore only header keys from one effective security alternative; retain translated auth. */
-export function reconcileSecurity(
-  model: TrainingModel,
+export function reconcileSecurity<Model>(
+  model: Model,
   spec: ObjectValue
-): TrainingModel {
+): Model {
   const definitions = object(
     object(spec.components).securitySchemes ?? spec.securityDefinitions
   );
@@ -263,7 +278,13 @@ export function reconcileSecurity(
   );
   const result = structuredClone(model);
   if (!Object.values(schemes).some(headerKey)) return result;
-  for (const resource of result.functions) {
+  const resources = object(result).functions ?? [];
+  if (!Array.isArray(resources)) throw new Error('Invalid model functions.');
+  for (const item of resources) {
+    const source = object(object(item).source);
+    if (typeof source.method !== 'string' || typeof source.url !== 'string')
+      throw new Error('Invalid generated function source.');
+    const resource = item as SecurityFunction;
     const security = requirements(resource, spec);
     if (security === undefined) continue;
     const alternatives = security.map((requirement, index) => {

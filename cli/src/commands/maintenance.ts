@@ -860,13 +860,13 @@ export async function trainOpenApi(
       ]);
       if (!fs.existsSync(temporaryModel))
         throw new Error(`Poly did not generate a model for ${plan.file}.`);
+      const securitySpec = readSpec(spec);
+      if (!securitySpec)
+        throw new Error('Invalid converted OpenAPI specification.');
       generatedModels.push({
         file: plan.model,
         model: prepareModel(
-          reconcileSecurity(
-            validateModel(readModel(temporaryModel)),
-            plan.document
-          ),
+          reconcileSecurity(readModel(temporaryModel), securitySpec),
           args.renames
         ),
       });

@@ -11,6 +11,12 @@ function model() {
 for (const [header, argument] of [
   ['class', 'headerClass'],
   ['enum', 'headerEnum'],
+  ['catch', 'headerCatch'],
+  ['debugger', 'headerDebugger'],
+  ['do', 'headerDo'],
+  ['this', 'headerThis'],
+  ['eval', 'headerEval'],
+  ['arguments', 'headerArguments'],
   ['123-key', 'header123Key'],
 ])
   test(`restored argument is a valid identifier for header ${header}`, () => {
