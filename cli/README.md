@@ -517,9 +517,12 @@ coding agents and chat assistants. Keep each server in
 ```
 
 Tool references use `functionName` and `functionContext` and resolve against
-accessible API, server, and client functions, the same set used for AI Function
-tools. Each `argumentConfig` entry uses the AI Function sources: `ai` (the MCP
-client supplies it), `hardcoded`, `argument`, or a namespace-owned `variable`.
+API and server functions in the target environment, the only tools the MCP
+endpoint can call. Client functions run in the caller's process, and functions
+shared from other environments or tenants are out of the endpoint's reach;
+Flow rejects either kind, with the reason, before writing the server. Each
+`argumentConfig` entry uses the AI Function sources: `ai` (the MCP client
+supplies it), `hardcoded`, `argument`, or a namespace-owned `variable`.
 For OAuth, set `oauthClientId`, `oauthRedirectUris`, and
 `oauthClientSecretVariable` with `variableName` and `variableContext`; use
 `null` to clear the client ID or secret. Never commit remote IDs such as

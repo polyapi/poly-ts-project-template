@@ -175,6 +175,48 @@ test('unresolvable or ambiguous references stop the plan instead of guessing', (
   );
 });
 
+const reasonOf = (plan: unknown) => (plan as { reason: string }).reason;
+
+test('tools must be API or server functions in the target environment', () => {
+  const only = (change: Record<string, string>) =>
+    functions.map(item =>
+      item.functionName === 'searchLocations' ? { ...item, ...change } : item
+    );
+
+  const client = planMcpServer(
+    server,
+    [],
+    only({ functionType: 'client' }),
+    variables
+  );
+  assert.equal(client.action, 'failed');
+  assert.match(
+    reasonOf(client),
+    /example\.weather\.searchLocations is a client function, which MCP servers cannot call/
+  );
+  for (const referenceScope of ['tenant', 'public']) {
+    assert.match(
+      reasonOf(planMcpServer(server, [], only({ referenceScope }), variables)),
+      /example\.weather\.searchLocations is shared from another environment or tenant/
+    );
+  }
+
+  // A same-named function in this environment wins over client or shared ones.
+  const mixed = [
+    ...functions.map(item => ({
+      ...item,
+      functionType: 'server' as const,
+      referenceScope: 'environment' as const,
+    })),
+    { ...functions[0], id: 'client-id', functionType: 'client' as const },
+    { ...functions[0], id: 'shared-id', referenceScope: 'public' as const },
+  ];
+  assert.deepEqual(planMcpServer(server, [], mixed, variables), {
+    action: 'create',
+    payload: resolvedPayload,
+  });
+});
+
 test('syncing the tool list clears legacy toolFunctionIds', () => {
   const legacy = {
     ...resolvedPayload,
@@ -430,4 +472,66 @@ test('the MCP URL is read from the single-server endpoint when a record lacks it
     },
   } as any;
   assert.equal(await fetchMcpUrl(throwing, { id: 's-1' }), undefined);
+});
+
+test('a tool outside the API and server functions of this environment stops the sync before writing', async t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'flow-mcp-scope-'));
+  const directory = path.join(root, 'src/weather/artefacts/mcp-servers');
+  fs.mkdirSync(directory, { recursive: true });
+  fs.writeFileSync(
+    path.join(directory, 'weatherTools.json'),
+    JSON.stringify(server.content)
+  );
+  const previousCwd = process.cwd();
+  const previousNamespace = process.env.POLYAPI_NAMESPACE;
+  process.chdir(root);
+  process.env.POLYAPI_NAMESPACE = 'example';
+  t.after(() => {
+    process.chdir(previousCwd);
+    if (previousNamespace === undefined) delete process.env.POLYAPI_NAMESPACE;
+    else process.env.POLYAPI_NAMESPACE = previousNamespace;
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  const record = (item: (typeof functions)[number]) => ({
+    id: item.id,
+    name: item.functionName,
+    context: item.functionContext,
+  });
+  for (const elsewhere of ['/functions/api/tenant', '/functions/client']) {
+    const writes: unknown[] = [];
+    const client = {
+      async GET(requestPath: string) {
+        if (requestPath === '/functions/api') {
+          return { data: [record(functions[1])] };
+        }
+        // searchLocations exists only outside the usable set.
+        if (requestPath === elsewhere) return { data: [record(functions[0])] };
+        if (requestPath === '/variables') {
+          return {
+            data: variables.map(item => ({
+              id: item.id,
+              name: item.variableName,
+              context: item.variableContext,
+            })),
+          };
+        }
+        return { data: [] };
+      },
+      async POST(...call: unknown[]) {
+        writes.push(call);
+        return { data: { id: 'new-id' } };
+      },
+      async PATCH(...call: unknown[]) {
+        writes.push(call);
+        return { data: {} };
+      },
+    } as any;
+
+    const summary = createSummary().mcpServers;
+    await syncMcpServers(client, summary, false, { environmentId: 'env-1' });
+    assert.equal(summary.failed, 1, elsewhere);
+    assert.equal(summary.created, 0, elsewhere);
+    assert.deepEqual(writes, [], elsewhere);
+  }
 });
