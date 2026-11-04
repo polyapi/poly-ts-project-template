@@ -10,6 +10,7 @@ import { validateNamespace } from '../utils/namespace';
 import { getPolyGenerateEnvironment } from '../utils/polyGenerateEnvironment';
 import { cleanDescriptions, selectOperations } from './openApiPreparation';
 import { normalizeOpenApiSchemaNames } from './openApiSchemaNames';
+import { reconcileSecurity } from './openApiSecurity';
 import {
   type ModelResource,
   prepareModel,
@@ -859,9 +860,15 @@ export async function trainOpenApi(
       ]);
       if (!fs.existsSync(temporaryModel))
         throw new Error(`Poly did not generate a model for ${plan.file}.`);
+      const securitySpec = readSpec(spec);
+      if (!securitySpec)
+        throw new Error('Invalid converted OpenAPI specification.');
       generatedModels.push({
         file: plan.model,
-        model: prepareModel(readModel(temporaryModel), args.renames),
+        model: prepareModel(
+          reconcileSecurity(readModel(temporaryModel), securitySpec),
+          args.renames
+        ),
       });
     } finally {
       for (const file of [temporarySpec, convertedSpec, temporaryModel])
