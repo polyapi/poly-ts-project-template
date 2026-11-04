@@ -8,6 +8,29 @@ function model() {
   return validateModel(structuredClone(fixture.model));
 }
 
+for (const promoted of [false, true])
+  test(`restored required arguments precede optional arguments, promoted=${promoted}`, () => {
+    process.env.POLYAPI_NAMESPACE = 'example';
+    delete process.env.POLYAPI_NAMESPACES;
+    const input = model();
+    input.functions[0].arguments.push({
+      name: 'page',
+      type: 'string',
+      required: false,
+    });
+    if (promoted)
+      input.functions[0].arguments.push({
+        name: 'xApiKey',
+        type: 'string',
+        required: false,
+      });
+    const result = reconcileSecurity(input, fixture.spec).functions[0];
+    assert.deepEqual(
+      result.arguments.map((argument: { name: string }) => argument.name),
+      ['apiKey', 'xApiKey', 'page']
+    );
+  });
+
 for (const [header, argument] of [
   ['class', 'headerClass'],
   ['enum', 'headerEnum'],
@@ -17,6 +40,10 @@ for (const [header, argument] of [
   ['this', 'headerThis'],
   ['eval', 'headerEval'],
   ['arguments', 'headerArguments'],
+  ['execute', 'headerExecute'],
+  ['dict', 'headerDict'],
+  ['constructor', 'headerConstructor'],
+  ['prototype', 'headerPrototype'],
   ['123-key', 'header123Key'],
 ])
   test(`restored argument is a valid identifier for header ${header}`, () => {

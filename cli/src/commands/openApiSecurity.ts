@@ -197,6 +197,10 @@ function argumentName(header: string): string {
     'this',
     'eval',
     'arguments',
+    'execute',
+    'dict',
+    'constructor',
+    'prototype',
     'enum',
     'export',
     'extends',
@@ -252,6 +256,10 @@ function restoreHeader(resource: SecurityFunction, scheme: Scheme): void {
       description: `API key for the ${scheme.name} request header.`,
     });
   }
+  // Generated Python/TypeScript signatures require required parameters first.
+  args.sort(
+    (a, b) => Number(Boolean(b.required)) - Number(Boolean(a.required))
+  );
   source.headers = [
     ...((source.headers ?? []) as Header[]).filter(
       header =>
