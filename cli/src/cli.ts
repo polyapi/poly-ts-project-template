@@ -40,6 +40,12 @@ import {
   type PushDynamicPlan,
   planPushDynamic,
 } from './commands/pushDynamic';
+import {
+  createSkillsRuntime,
+  parseSkillsArgs,
+  runSkills,
+  skillsHelp,
+} from './commands/skills';
 import { createSummary, getTotalStats } from './types/summary';
 import { createPolyApiClient, getBaseUrl, loadEnv } from './utils/apiClient';
 import {
@@ -149,6 +155,8 @@ Usage:
   flow push-dynamic [options] [file|directory|context.name ...]
   flow target-env
   flow self-update [--check | --rollback] [--yes]
+  flow skills add [typescript|python ...] [--dry-run] [--yes]
+  flow skills update [--dry-run] [--yes]
   flow train-openapi [spec-file-or-folder] [--context namespace.apis.{file}] [--operation-id ID] [--dry-run]
   flow train-model <model-file> [--dry-run]
   flow delete-content [--types api-functions,schemas] [--context namespace.prefix] [--include-children] [--apply]
@@ -1350,6 +1358,19 @@ async function main(): Promise<void> {
     loadEnv();
     const { environmentId } = await fetchRemoteEnvironment();
     process.stdout.write(`TARGET_ENV_ID=${environmentId}\n`);
+    return;
+  }
+  const skills = parseSkillsArgs(process.argv.slice(2));
+  if (skills) {
+    if (skills.command === 'help') {
+      process.stdout.write(`${skillsHelp()}\n`);
+      return;
+    }
+    // Skills are project files: no environment file or PolyAPI connection.
+    const projectRoot = findWorkspaceRoot(process.cwd());
+    if (!existsSync(path.join(projectRoot, 'pnpm-workspace.yaml')))
+      throw new Error('Run flow skills from inside the project.');
+    await runSkills(skills, createSkillsRuntime(projectRoot));
     return;
   }
   const maintenance = parseMaintenanceArgs(process.argv.slice(2));

@@ -14,7 +14,8 @@
       "**/*.jsx",
       "**/*.json",
       "!cli/src/sdk/schema.d.ts",
-      "!cli/schemas/openapi/**/*.json"
+      "!cli/schemas/openapi/**/*.json",
+      "!.agents/skills"
     ]
   },
   "json": {
