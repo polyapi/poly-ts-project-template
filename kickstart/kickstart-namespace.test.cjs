@@ -184,6 +184,13 @@ test('bundled workflows and utilities use the selected root, including security 
     ai.toolFunctions[0].argumentConfig.find(arg => arg.key === 'hostUrl').value,
     'https://geocoding-api.open-meteo.com'
   );
+  const mcp = f.json('sampleWorkflow/artefacts/mcp-servers/weatherTools.json');
+  assert.equal(mcp.name, 'acme-eu-weather-tools');
+  assert.deepEqual(
+    mcp.toolFunctions.map(tool => tool.functionContext),
+    ['acme.eu.sampleWorkflow', 'acme.eu.sampleWorkflow']
+  );
+  assert.deepEqual(mcp.toolFunctions, ai.toolFunctions);
   assert.match(
     f.read('utilities/common/client/sendAlert.ts'),
     /poly\.OOB\.polyapi\.internal\.alerting/
