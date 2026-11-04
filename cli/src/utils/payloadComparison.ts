@@ -46,10 +46,16 @@ export function projectRemoteValue(local: unknown, remote: unknown): unknown {
     if (!remote || typeof remote !== 'object' || Array.isArray(remote)) {
       return remote;
     }
+    const localRecord = local as Record<string, unknown>;
+    const remoteRecord = remote as Record<string, unknown>;
     return Object.fromEntries(
-      Object.entries(local as Record<string, unknown>).map(([key, value]) => [
+      Object.entries(localRecord).map(([key, value]) => [
         key,
-        projectRemoteValue(value, (remote as Record<string, unknown>)[key]),
+        // A hardcoded binding's value is the user's own data, compared whole:
+        // projecting it would hide properties removed from a JSON value.
+        key === 'value' && localRecord.source === 'hardcoded'
+          ? remoteRecord[key]
+          : projectRemoteValue(value, remoteRecord[key]),
       ])
     );
   }

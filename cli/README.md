@@ -487,6 +487,10 @@ Use `--types ai-functions` to sync only these artefacts. Flow creates them with
 `POST /functions/ai`, sends changed mutable fields only with `PATCH
 /functions/ai/{id}`, and supports safe orphan reporting/deletion.
 
+When comparing AI Function and MCP server tools, Flow ignores fields the
+platform adds, but compares each `hardcoded` value whole: removing a property
+from a JSON value, or an entry from an array, updates the deployed binding.
+
 ## MCP servers
 
 An MCP server exposes selected PolyAPI functions as tools to MCP clients such as

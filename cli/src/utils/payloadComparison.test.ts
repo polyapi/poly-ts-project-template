@@ -26,3 +26,54 @@ test('removing or clearing array entries is a change, as in Python Flow', () => 
   };
   assert.deepEqual(buildChangedFieldsPayload(added, remote).payload, added);
 });
+
+test('a hardcoded JSON value is compared whole, so removed properties update it', () => {
+  const remoteTools = {
+    toolFunctions: [
+      {
+        id: 'search-id',
+        platformAdded: true,
+        argumentConfig: [
+          {
+            key: 'options',
+            source: 'hardcoded',
+            value: { units: 'metric', legacy: { flag: true }, extra: 1 },
+          },
+        ],
+      },
+    ],
+  };
+  const removedTop = {
+    toolFunctions: [
+      {
+        id: 'search-id',
+        argumentConfig: [
+          {
+            key: 'options',
+            source: 'hardcoded',
+            value: { units: 'metric', legacy: { flag: true } },
+          },
+        ],
+      },
+    ],
+  };
+  // The whole changed field is sent, so the deployed value loses the property.
+  assert.deepEqual(
+    buildChangedFieldsPayload(removedTop, remoteTools).payload,
+    removedTop
+  );
+  const removedNested = structuredClone(removedTop);
+  removedNested.toolFunctions[0].argumentConfig[0].value = {
+    units: 'metric',
+    legacy: {},
+    extra: 1,
+  } as never;
+  assert.deepEqual(
+    buildChangedFieldsPayload(removedNested, remoteTools).payload,
+    removedNested
+  );
+  // Equal values, and fields the platform adds outside them, are not changes.
+  const same = structuredClone(remoteTools);
+  delete (same.toolFunctions[0] as { platformAdded?: boolean }).platformAdded;
+  assert.deepEqual(buildChangedFieldsPayload(same, remoteTools).payload, {});
+});
