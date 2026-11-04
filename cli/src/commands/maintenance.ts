@@ -10,6 +10,7 @@ import { validateNamespace } from '../utils/namespace';
 import { getPolyGenerateEnvironment } from '../utils/polyGenerateEnvironment';
 import { cleanDescriptions, selectOperations } from './openApiPreparation';
 import { normalizeOpenApiSchemaNames } from './openApiSchemaNames';
+import { reconcileSecurity } from './openApiSecurity';
 import {
   type ModelResource,
   prepareModel,
@@ -861,7 +862,13 @@ export async function trainOpenApi(
         throw new Error(`Poly did not generate a model for ${plan.file}.`);
       generatedModels.push({
         file: plan.model,
-        model: prepareModel(readModel(temporaryModel), args.renames),
+        model: prepareModel(
+          reconcileSecurity(
+            validateModel(readModel(temporaryModel)),
+            plan.document
+          ),
+          args.renames
+        ),
       });
     } finally {
       for (const file of [temporarySpec, convertedSpec, temporaryModel])

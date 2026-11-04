@@ -3,6 +3,7 @@ import * as fs from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test, { type TestContext } from 'node:test';
+import securityFixture from './fixtures/openapi-security.json';
 import {
   createMaintenanceRuntime,
   deleteContent,
@@ -125,6 +126,96 @@ function args(command: string, ...values: string[]) {
   assert.ok(result);
   return result;
 }
+
+for (const disableAi of [true, false])
+  for (const literal of [true, false])
+    for (const generateOnly of [true, false])
+      test(`training restores required API key before saving/upserting: disableAi=${disableAi}, literal=${literal}, generateOnly=${generateOnly}`, async t => {
+        const f = fixture(t);
+        const model = structuredClone(securityFixture.model);
+        const resource = model.functions[0];
+        resource.context = 'demo.apis';
+        if (literal) {
+          Object.assign(resource.source, {
+            auth: { type: 'noauth' },
+            headers: [{ key: 'Authorization', value: 'JWT {{apiKey}}' }],
+          });
+        }
+        const input = f.spec(
+          'secured.json',
+          JSON.stringify(securityFixture.spec)
+        );
+        const upserts: unknown[] = [];
+        const originalUpsert = f.runtime.upsert;
+        f.runtime.upsert = async (type, item) => {
+          upserts.push(structuredClone(item));
+          await originalUpsert(type, item);
+        };
+        f.runtime.runPoly = values => {
+          assert.deepEqual(values.slice(0, 2), ['model', 'generate']);
+          assert.equal(values.includes('--disable-ai'), disableAi);
+          fs.writeFileSync(values[3], JSON.stringify(model));
+        };
+        await trainOpenApi(
+          args(
+            'train-openapi',
+            input,
+            '--context',
+            'demo.apis',
+            '--skip-generate',
+            ...(disableAi ? ['--disable-ai'] : []),
+            ...(generateOnly ? ['--generate-only'] : [])
+          ),
+          f.runtime
+        );
+        const saved = JSON.parse(
+          fs.readFileSync(input.replace('.json', '.poly.json'), 'utf8')
+        );
+        assert.deepEqual(upserts, generateOnly ? [] : saved.functions);
+        assert.ok(
+          saved.functions[0].source.headers.some(
+            (header: { key: string }) => header.key === 'x-api-key'
+          )
+        );
+        assert.equal(
+          saved.functions[0].arguments.find(
+            (argument: { name: string }) => argument.name === 'xApiKey'
+          ).required,
+          true
+        );
+        assert.deepEqual(saved.functions[0].source.auth, resource.source.auth);
+      });
+
+test('ambiguous security stops before model save and training', async t => {
+  const f = fixture(t);
+  const spec = {
+    ...securityFixture.spec,
+    paths: {
+      ...securityFixture.spec.paths,
+      '/members/{other}/': { get: { security: [] } },
+    },
+  };
+  const input = f.spec('ambiguous.json', JSON.stringify(spec));
+  const model = structuredClone(securityFixture.model);
+  model.functions[0].context = 'demo.apis';
+  let writes = 0;
+  f.runtime.upsert = async () => {
+    writes++;
+  };
+  f.runtime.runPoly = values => {
+    fs.writeFileSync(values[3], JSON.stringify(model));
+  };
+  await assert.rejects(
+    () =>
+      trainOpenApi(
+        args('train-openapi', input, '--context', 'demo.apis', '--disable-ai'),
+        f.runtime
+      ),
+    /Ambiguous/
+  );
+  assert.equal(writes, 0);
+  assert.equal(fs.existsSync(input.replace('.json', '.poly.json')), false);
+});
 
 test('parses utility flags, defaults the log limit to page size, and rejects invalid options', () => {
   assert.equal(args('logs', 'function-id', '--logs-page-size=500').limit, 500);
