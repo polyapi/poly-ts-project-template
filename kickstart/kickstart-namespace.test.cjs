@@ -184,6 +184,13 @@ test('bundled workflows and utilities use the selected root, including security 
     ai.toolFunctions[0].argumentConfig.find(arg => arg.key === 'hostUrl').value,
     'https://geocoding-api.open-meteo.com'
   );
+  const mcp = f.json('sampleWorkflow/artefacts/mcp-servers/weatherTools.json');
+  assert.equal(mcp.name, 'acme-eu-weather-tools');
+  assert.deepEqual(
+    mcp.toolFunctions.map(tool => tool.functionContext),
+    ['acme.eu.sampleWorkflow', 'acme.eu.sampleWorkflow']
+  );
+  assert.deepEqual(mcp.toolFunctions, ai.toolFunctions);
   assert.match(
     f.read('utilities/common/client/sendAlert.ts'),
     /poly\.OOB\.polyapi\.internal\.alerting/
@@ -485,6 +492,9 @@ test('copied tutorial training and SDK examples use the same namespace as the de
   );
   assert.ok(overview.includes(`specs/weather --context ${context}`));
   assert.match(overview, /https:\/\/open-meteo\.com\/en\/pricing/);
+  // MCP servers carry the root in their name; clients see context-based tools.
+  assert.match(overview, /`acme-eu-weather-tools`/);
+  assert.match(overview, /"name":"acme_eu_sampleWorkflow_searchLocations"/);
   assert.match(
     f.read('utilities/common/OVERVIEW.md'),
     /poly\.acme\.eu\.utilities\.log\(/
@@ -493,6 +503,11 @@ test('copied tutorial training and SDK examples use the same namespace as the de
     const updated = f.readProject(file);
     assert.doesNotMatch(updated, /(?:poly|vari|tabi|schemas)\.example\b/, file);
     assert.doesNotMatch(updated, /--context example\./, file);
+    assert.doesNotMatch(
+      updated,
+      /example-weather-tools|example_sampleWorkflow_/,
+      file
+    );
   }
   const before = guides.map(file => f.readProject(file));
   success(f.run('acme.eu'));

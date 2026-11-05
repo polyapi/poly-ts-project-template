@@ -53,6 +53,12 @@ const replaceRoot = value =>
   value === 'example' || value.startsWith('example.')
     ? namespace + value.slice('example'.length)
     : value;
+// MCP servers have no context; a unique name such as example-weather-tools
+// carries the root instead, with dots as hyphens.
+const serverPrefix = namespace.replace(/\./g, '-');
+const renameServer = value => value.replace(/^example(?=-)/, serverPrefix);
+// MCP clients see tool names built from the context, with dots as underscores.
+const toolPrefix = namespace.replace(/\./g, '_');
 
 function propertyParents(node) {
   const keys = [];
@@ -103,6 +109,7 @@ function rewrite(file) {
     if (value !== node.text)
       edit(node.getStart(source) + 1, node.end - 1, value);
   };
+  const isMcpServer = /[\\/]artefacts[\\/]mcp-servers[\\/][^\\/]+\.json$/.test(file);
   function visit(node) {
     if (ts.isPropertyAssignment(node)) {
       const key = node.name.text;
@@ -118,6 +125,9 @@ function rewrite(file) {
           (file.endsWith('.json') || key !== 'context' || isPolyConfig(node))
         )
           editString(value, replaceRoot(value.text));
+
+        if (isMcpServer && key === 'name' && parents.length === 0)
+          editString(value, renameServer(value.text));
 
         // Webhook security functions use a portable {{context.function}} ID.
         if (key === 'id' && parents.includes('securityFunctions')) {
@@ -199,6 +209,14 @@ function rewriteDocumentedIdentifiers(code) {
     .replace(
       /(\bPOLYAPI_NAMESPACES?\s*=\s*["']?)example(?=$|[.,\s"'])/g,
       (_match, assignment) => assignment + namespace
+    )
+    .replace(
+      /(^|[^\w./-])example(?=-weather-tools(?![\w-]))/g,
+      (_match, prefix) => prefix + serverPrefix
+    )
+    .replace(
+      /(^|[^\w./-])example(?=_sampleWorkflow_\w)/g,
+      (_match, prefix) => prefix + toolPrefix
     );
 }
 

@@ -495,6 +495,10 @@ Use `--types ai-functions` to sync only these artefacts. Flow creates them with
 `POST /functions/ai`, sends changed mutable fields only with `PATCH
 /functions/ai/{id}`, and supports safe orphan reporting/deletion.
 
+When comparing AI Function and MCP server tools, Flow ignores fields the
+platform adds, but compares each `hardcoded` value whole: removing a property
+from a JSON value, or an entry from an array, updates the deployed binding.
+
 ## MCP servers
 
 An MCP server exposes selected PolyAPI functions as tools to MCP clients such as
@@ -525,9 +529,12 @@ coding agents and chat assistants. Keep each server in
 ```
 
 Tool references use `functionName` and `functionContext` and resolve against
-accessible API, server, and client functions, the same set used for AI Function
-tools. Each `argumentConfig` entry uses the AI Function sources: `ai` (the MCP
-client supplies it), `hardcoded`, `argument`, or a namespace-owned `variable`.
+API and server functions in the target environment, the only tools the MCP
+endpoint can call. Client functions run in the caller's process, and functions
+shared from other environments or tenants are out of the endpoint's reach;
+Flow rejects either kind, with the reason, before writing the server. Each
+`argumentConfig` entry uses the AI Function sources: `ai` (the MCP client
+supplies it), `hardcoded`, `argument`, or a namespace-owned `variable`.
 For OAuth, set `oauthClientId`, `oauthRedirectUris`, and
 `oauthClientSecretVariable` with `variableName` and `variableContext`; use
 `null` to clear the client ID or secret. Never commit remote IDs such as
@@ -536,6 +543,9 @@ For OAuth, set `oauthClientId`, `oauthRedirectUris`, and
 MCP servers have no namespace context. Flow therefore identifies each one by
 its exact `name` in the environment verified by `TARGET_ENV_ID`: it creates the
 server when that name is absent and PATCHes only changed fields when it exists.
+An artefact's `toolFunctions` list is the server's complete tool list: removing
+an entry removes that tool, and Flow also clears the legacy `toolFunctionIds`
+of servers created with it, which would otherwise stay callable.
 Choose a name that is unique in the target environment; duplicate local or
 remote names stop the sync instead of updating an arbitrary server. Because Flow
 cannot tell which remote servers belong to this project, it never reports or

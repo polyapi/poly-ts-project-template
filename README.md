@@ -7,7 +7,7 @@ sample integrations, shared utilities, agent skills through kickstart, and Flow
 for managing functions and JSON artefacts.
 
 New to PolyAPI? Start with the [message-of-the-day tutorial](workflows/src/sampleWorkflow/README.md),
-then explore the [AI and shared utility samples](#learn-by-example). Each lesson
+then explore the [AI, MCP, and shared utility samples](#learn-by-example). Each lesson
 walks through a working integration and explains the pieces as you use them.
 
 ## Getting started
@@ -58,10 +58,12 @@ results, and exercises, with deeper reference material below the walkthrough.
 | --- | --- |
 | [Message of the day](workflows/src/sampleWorkflow/README.md) | Webhooks, triggers, server/client functions, trained APIs, Vari, secrets, and a scheduled job. |
 | [Weather AI](workflows/src/sampleWorkflow/OVERVIEW.md#weather-ai) | AI Functions that call trained tools and return structured weather guidance with data attribution. |
+| [Weather MCP server](workflows/src/sampleWorkflow/OVERVIEW.md#weather-mcp-server) | Offer the trained weather tools to MCP clients, connect the MCP Inspector, and call a tool. |
 | [Shared utilities](workflows/src/utilities/common/OVERVIEW.md) | Structured logging, sensitive-field filtering, error handling, and Slack alerts. |
 
 The weather sample uses Open-Meteo without a weather API key; AI execution still
-needs a configured provider and can incur usage charges. Follow each sample's
+needs a configured provider and can incur usage charges, while the MCP lesson
+needs no AI provider. Follow each sample's
 setup instructions before deploying or invoking it.
 
 To build your own integration, start from the closest sample and follow the

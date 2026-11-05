@@ -359,8 +359,9 @@ the other behavior when you are ready.
 ## Continue building
 
 Follow the [optional weather AI lesson](OVERVIEW.md#weather-ai) in this same
-workflow to train its public tools and confirm the AI provider. The core
-webhook does not need that setup. The [runtime reference](OVERVIEW.md) covers
+workflow to train its public tools and confirm the AI provider, then offer the
+same tools to MCP clients in the [weather MCP lesson](OVERVIEW.md#weather-mcp-server).
+The core webhook does not need that setup. The [runtime reference](OVERVIEW.md) covers
 errors, scheduled calls, SDK generation, and verification.
 
 Create a sibling workflow for your own integration, keeping its inline metadata,

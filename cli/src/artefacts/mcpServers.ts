@@ -28,7 +28,10 @@ import {
 } from '../utils/namespace';
 import { buildChangedFieldsPayload } from '../utils/payloadComparison';
 import { validateMcpServerArtifact } from '../utils/validation';
-import { getReferenceableFunctions } from './references';
+import {
+  getReferenceableFunctions,
+  type ReferenceableFunction,
+} from './references';
 import { getExistingVariables } from './variables';
 
 type PolyApiClient = ReturnType<typeof createClient<paths>>;
@@ -47,8 +50,13 @@ export type McpServerRecord = Record<string, unknown> & {
   name?: string;
   environmentId?: string;
   mcpUrl?: string;
+  toolFunctionIds?: unknown;
 };
-type ResolvableFunction = AiFunctionReference & { id: string };
+type ResolvableFunction = AiFunctionReference & {
+  id: string;
+  functionType?: ReferenceableFunction['functionType'];
+  referenceScope?: ReferenceableFunction['referenceScope'];
+};
 type ResolvableVariable = AiVariableReference & { id: string };
 export type McpServerPlan =
   | { action: 'create'; payload: Record<string, unknown> }
@@ -138,21 +146,39 @@ export async function getExistingMcpServers(
   }
 }
 
+/**
+ * Resolve a tool reference to an API or server function in the target
+ * environment. The MCP endpoint runs tools there, so it leaves out client
+ * functions, which run in the caller's process, and functions shared from other
+ * environments or tenants. Referencing one fails here, with the reason, rather
+ * than deploying a server whose tool silently disappears.
+ */
 function findFunction(
   reference: AiFunctionReference,
   functions: ResolvableFunction[]
 ): ResolvableFunction | string {
+  const name = `${reference.functionContext}.${reference.functionName}`;
   const matches = functions.filter(
     item =>
       item.functionName === reference.functionName &&
       item.functionContext === reference.functionContext
   );
-  if (matches.length === 1) {
-    return matches[0];
+  const callable = matches.filter(item => item.functionType !== 'client');
+  const usable = callable.filter(
+    item => (item.referenceScope ?? 'environment') === 'environment'
+  );
+  if (usable.length === 1) {
+    return usable[0];
   }
-  return matches.length === 0
-    ? `Tool function ${reference.functionContext}.${reference.functionName} was not found`
-    : `Tool function ${reference.functionContext}.${reference.functionName} is ambiguous across accessible functions`;
+  if (usable.length > 1) {
+    return `Tool function ${name} is ambiguous across API and server functions in this environment`;
+  }
+  if (callable.length > 0) {
+    return `Tool function ${name} is shared from another environment or tenant; MCP servers can only call API or server functions in their own environment`;
+  }
+  return matches.length > 0
+    ? `Tool function ${name} is a client function, which MCP servers cannot call; use an API or server function in this environment`
+    : `Tool function ${name} was not found among API or server functions in this environment`;
 }
 
 function findVariable(
@@ -258,11 +284,20 @@ export function planMcpServer(
   if (typeof remote.id !== 'string' || !remote.id) {
     return { action: 'failed', reason: 'Existing MCP server has no ID' };
   }
-  const update = buildChangedFieldsPayload(payload, remote);
-  if (Object.keys(update.payload).length === 0) {
+  const changes = { ...buildChangedFieldsPayload(payload, remote).payload };
+  // Servers created with the legacy toolFunctionIds field keep those tools
+  // callable alongside toolFunctions, so syncing the tool list clears them.
+  if (
+    'toolFunctions' in payload &&
+    Array.isArray(remote.toolFunctionIds) &&
+    remote.toolFunctionIds.length > 0
+  ) {
+    changes.toolFunctionIds = [];
+  }
+  if (Object.keys(changes).length === 0) {
     return { action: 'noop', remote };
   }
-  return { action: 'update', id: remote.id, payload: update.payload, remote };
+  return { action: 'update', id: remote.id, payload: changes, remote };
 }
 
 function toResolvableFunctions(items: any[]): ResolvableFunction[] {
@@ -275,6 +310,12 @@ function toResolvableFunctions(items: any[]): ResolvableFunction[] {
             id: item.id,
             functionName: item.name,
             functionContext: item.context,
+            ...(typeof item.functionType === 'string'
+              ? { functionType: item.functionType }
+              : {}),
+            ...(typeof item.referenceScope === 'string'
+              ? { referenceScope: item.referenceScope }
+              : {}),
           },
         ]
       : []
