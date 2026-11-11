@@ -8,7 +8,12 @@ import ts from 'typescript';
 import type { paths } from '../sdk/schema';
 import type { FunctionFile } from '../types';
 import type { ArtifactSummary, OrphanedResource } from '../types/summary';
-import { getBaseUrl, getDeleteHeaders, sleep } from '../utils/apiClient';
+import {
+  getBaseUrl,
+  getDeleteHeaders,
+  resolveSelectedEnvPath,
+  sleep,
+} from '../utils/apiClient';
 import { getProductionExecutionApiKeyOverride } from '../utils/deploymentConfig';
 import { substituteEnvTokens } from '../utils/envSubstitution';
 import {
@@ -31,6 +36,13 @@ import {
   validateNamespace,
 } from '../utils/namespace';
 import { filterOrphansByContext } from '../utils/orphans';
+import {
+  getServerFunctionDeployment,
+  getServerFunctionDeploymentPlan,
+  parseDeployedFunctionId,
+  readServerFunctionDeploymentConfig,
+  runServerFunctionPostDeployScript,
+} from '../utils/serverFunctionDeployment';
 import { validateFunctionArtifact } from '../utils/validation';
 
 const log = createLogger('functions');
@@ -103,6 +115,7 @@ type FunctionComparisonPayload = {
   logsEnabled?: boolean;
   generateContexts?: string[];
   cachePolyLibrary?: boolean;
+  image?: string;
 };
 
 type ExistingFunctionRecord = {
@@ -264,6 +277,7 @@ async function buildLocalComparisonPayload(
 
   if (func.type === 'server') {
     payload.externalDependencies = externalDependencies;
+    payload.image = getServerFunctionDeployment(func).image;
   }
 
   if (func.type === 'server') {
@@ -307,6 +321,9 @@ function buildRemoteComparisonPayload(
 
   if (func.type === 'server') {
     payload.externalDependencies = remote?.externalDependencies;
+    if (getServerFunctionDeployment(func).image !== undefined) {
+      payload.image = remote?.image ?? '';
+    }
     if (func.metadata.logsEnabled !== undefined) {
       payload.logsEnabled =
         typeof remote?.logsEnabled === 'boolean'
@@ -354,6 +371,9 @@ function normalizeComparisonPayload(
   }
   if (payload.cachePolyLibrary !== undefined) {
     normalizedPayload.cachePolyLibrary = payload.cachePolyLibrary;
+  }
+  if (payload.image !== undefined) {
+    normalizedPayload.image = payload.image;
   }
 
   return canonicalize(normalizedPayload) as Record<string, unknown>;
@@ -888,6 +908,15 @@ export async function addFunction(
   func: FunctionFile,
   flagExecutionApiKey?: string
 ): Promise<'deployed' | 'failed'> {
+  const deployment = getServerFunctionDeployment(func);
+  const hookEnv = deployment.script
+    ? {
+        ...getPolyCliEnv(),
+        ENVPATH: resolveSelectedEnvPath(
+          process.env.ENVPATH?.trim() || 'workflows/dev.env'
+        ),
+      }
+    : undefined;
   return new Promise((resolve, _reject) => {
     const {
       name,
@@ -928,6 +957,9 @@ export async function addFunction(
     // poly CLI requires either --server or --client flag
     if (isServerFunction) {
       args.push('--server');
+      if (deployment.image) {
+        args.push('--image', deployment.image);
+      }
       if (logsEnabled !== undefined) {
         args.push('--logs', logsEnabled ? 'enabled' : 'disabled');
       }
@@ -965,10 +997,28 @@ export async function addFunction(
       stderr += data.toString();
     });
 
-    child.on('close', code => {
+    child.on('close', async code => {
       const cliFailure = extractCliFailure(`${stdout}\n${stderr}`);
 
       if (code === 0 && !cliFailure) {
+        if (deployment.script && hookEnv) {
+          try {
+            const functionId = parseDeployedFunctionId(stdout);
+            const functionKey = `${context}.${name}`;
+            log.info(`Running post-deploy script for ${functionKey}`);
+            await runServerFunctionPostDeployScript({
+              functionKey,
+              command: deployment.script,
+              functionId,
+              cwd: findWorkspaceRoot(getProjectRoot()),
+              env: hookEnv,
+            });
+          } catch (error) {
+            log.error(getErrorMessage(error));
+            resolve('failed');
+            return;
+          }
+        }
         resolve('deployed');
       } else {
         log.error(
@@ -1032,6 +1082,8 @@ export async function syncFunctions(
     detectOrphans?: boolean;
   } = {}
 ): Promise<void> {
+  // Reject malformed deployment settings before any function writes/deletions.
+  readServerFunctionDeploymentConfig();
   const functionFiles = findFunctionFiles(options.discoveryOptions).filter(
     func => !options.functionTypes || options.functionTypes.includes(func.type)
   );
@@ -1229,6 +1281,12 @@ export async function syncFunctions(
     }
 
     if (options.dryRun) {
+      const deployment = getServerFunctionDeploymentPlan(func);
+      if (deployment.image) log.info(`    [PLAN] Image: ${deployment.image}`);
+      if (deployment.postDeployScript)
+        log.info(
+          '    [PLAN] Run configured post-deploy script after successful deployment'
+        );
       log.info(
         chalk.blue(
           `    [PLAN] ${decision.action === 'create' ? 'Create' : 'Update'}`
