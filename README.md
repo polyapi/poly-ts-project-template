@@ -108,6 +108,7 @@ workflows/src/ workflows, shared utilities, and runtime tests
 | --- | --- |
 | [Setup and development](docs/SETUP.md) | Manual setup, SDK selection, environment pins, namespaces, and the full check/test commands. |
 | [Flow CLI](cli/README.md) | Deployment, OpenAPI training, logs, cleanup, and production safeguards. |
+| [Custom containers](cli/custom-containers.md) | Build and publish a runtime image, configure Flow, and deploy with an optional post-deploy script. |
 | [Upgrading Flow](docs/UPGRADING_FLOW.md) | Upgrade older projects, use Flow's self-updater, and check versions. |
 | [Project conventions](docs/CONVENTIONS.md) | Workflow layout, artefacts, naming, SDK patterns, and tests. |
 | [Agent guidance](AGENTS.md) · [Installing skills](docs/SETUP.md#agent-skills) | Repository rules and skills from [poly-skills](https://github.com/polyapi/poly-skills). |

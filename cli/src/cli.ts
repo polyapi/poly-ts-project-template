@@ -65,6 +65,7 @@ import {
 import { printFlowLogo } from './utils/logo';
 import { printNamespaceBanner } from './utils/namespace';
 import { getPolyGenerateEnvironment } from './utils/polyGenerateEnvironment';
+import { readServerFunctionDeploymentConfig } from './utils/serverFunctionDeployment';
 import {
   enforceTargetEnvironment,
   fetchRemoteEnvironment,
@@ -1053,6 +1054,7 @@ function printConfig(
   projectRoot: string,
   dynamic?: PushDynamicArgs
 ): void {
+  const serverDeployment = readServerFunctionDeploymentConfig();
   logger.info(
     JSON.stringify(
       {
@@ -1074,6 +1076,8 @@ function printConfig(
         },
         envFile,
         preflight,
+        serverFunctionImages: Object.fromEntries(serverDeployment.images),
+        serverFunctionScripts: [...serverDeployment.scripts.keys()],
         ...(dynamic
           ? {
               pushDynamic: {
@@ -1166,7 +1170,7 @@ Notes:
   - Production safeguards (typed "PROD" confirmation, POLYPROD_EXEC_KEY) apply exactly as for push.
   - Leaves flagged MUST are alwaysOn or cachePolyLibrary on the platform: they never recycle their
     pod, so a redeploy is the only way new client-function code reaches them.
-  - Function seeds are detected by code only; an npm-pin or flag-only change is not a seed.
+  - Function seeds compare source and configured server images; force npm-pin or hook-only changes.
 `);
 }
 
@@ -1434,6 +1438,7 @@ async function main(): Promise<void> {
   try {
     const projectRoot = process.cwd();
     let cliArgs = normalizeCliPathFilters(projectRoot, parsedArgs);
+    readServerFunctionDeploymentConfig();
     const preflight = buildDeploymentPreflight(projectRoot, envFile);
 
     warnForMissingDefaultEnvFile(envFile);
@@ -2045,7 +2050,8 @@ async function main(): Promise<void> {
     const shouldRunGenerate =
       !cliArgs.dryRun &&
       !cliArgs.skipGenerate &&
-      (cliArgs.enabledTypes.includes('functions') ||
+      (cliArgs.enabledTypes.includes('variables') ||
+        cliArgs.enabledTypes.includes('functions') ||
         cliArgs.enabledTypes.includes('ai-functions'));
     const postPushGenerateSuccess = shouldRunGenerate
       ? runPolyGenerateAfterPush()

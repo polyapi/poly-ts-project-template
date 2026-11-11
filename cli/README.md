@@ -7,6 +7,10 @@ For the step-by-step upgrade paths, see [Upgrading Flow](../docs/UPGRADING_FLOW.
 Check the installed version with `pnpm flow run version` (or `flow --version`).
 The version comes from `cli/package.json` and is separate from the PolyAPI SDK.
 
+For native libraries and custom runtimes, follow the
+[custom container how-to](custom-containers.md): build and publish an image,
+configure its mapping, then preview and deploy with Flow.
+
 ## Commands
 
 Run commands from the repository root. For dependency setup and the full local
@@ -46,7 +50,7 @@ building the local `poly.*` call graph, seeding it with the functions named
 on the command line (forced: deployed even when unchanged; the run then skips
 the other artefact types unless `--paths`, `--types` or `--seed-from` is given,
 and never touches orphans) or, when none
-are named, with the files whose code differs from the target environment,
+are named, with the files whose code or configured server image differs from the target environment,
 expanding each seed through its client-function callers up to the first
 server function on every path, and deploying the whole tree in dependency
 order. `--dry-run` prints the seeds, the caller tree and the ordered plan
@@ -333,7 +337,7 @@ production confirmation prompts only when its value exactly matches
 execution key,
 schema validation, artefact validation, or unresolved environment-value checks.
 
-After a successful push, Flow regenerates the workflow SDK with
+After a push selecting variables, functions or AI functions, Flow regenerates the workflow SDK with
 `pnpm workflows exec poly generate` unless `--skip-generate` is set. It removes
 the inherited `npm_config_recursive` setting, including case variants, from
 that child process's environment. This prevents npm's unknown-config warning
@@ -344,6 +348,85 @@ If Poly reports a client-version mismatch, follow
 [SDK instance alignment](../docs/SETUP.md#align-the-sdk-with-your-polyapi-instance).
 Use pnpm to update the workflow SDK; decline the SDK's npm-based update prompt.
 Flow's self-updater does not change that dependency.
+
+## Custom server images and post-deploy scripts
+
+Start with the [custom container how-to](custom-containers.md) for the complete
+build, configuration, deployment and verification sequence. This section is
+the configuration reference.
+
+Flow 1.3.0 supports the same per-function image and script settings as Python
+Flow. Build, smoke-test, and publish your compatible PolyAPI runtime image
+before deploying a function that uses it. Flow selects an existing image; it
+does not build or push container images.
+
+Configure exact, case-sensitive `<context>.<name>` identities in the selected
+Flow environment file or shell:
+
+```env
+POLY_DEPLOY_SERVER_FUNCTION_IMAGES=example.database.adapter:polyapi-db2-v1
+POLY_DEPLOY_SERVER_FUNCTION_SCRIPT=example.database.adapter:bash workflows/src/utilities/dbAdapter/deployment/postDeploy.sh
+```
+
+The image value is the platform's slash-free image name, passed to the
+installed workflow SDK's `poly function add --image`. It is distinct from the
+full registry reference used by Docker. Confirm the image name and compatible
+runtime with your PolyAPI instance. No workflow SDK upgrade is performed.
+
+Both settings accept comma-separated mappings and split each mapping on its
+first colon. Colons inside values are preserved. Commands containing commas
+must be moved into a script file. Empty values, malformed identities, duplicate
+identities, and registry URLs used as image names are rejected before sync.
+Mappings affect server functions only and do not add functions to the selected
+scope. With no matching mapping, existing deployment behavior is preserved.
+
+Both `push` and `push-dynamic` use the selected image. Normal push includes it
+in its local/remote comparison; dynamic remote detection also seeds an image
+change when the function source is unchanged. The generated SDK specs cache
+does not establish the deployed image, so `push-dynamic --seed-from specs`
+conservatively redeploys functions with configured images. Use remote detection
+to skip matching images. Removing a mapping stops managing that image field;
+it does not independently reset the deployed image.
+
+After a successful server-function add/update, Flow runs the configured
+command once through Bash with:
+
+- The repository workspace root as its working directory. Script paths in
+  this setting are relative to that root, including `workflows/` when needed.
+- `FUNCTION_ID` from the successful SDK response and
+  `SERVICE_NAME=function-<FUNCTION_ID>`.
+- Every `<id>` in the command replaced by that function ID.
+- The loaded Flow environment and pinned SDK connection, with `ENVPATH`
+  resolved to an absolute path. Scripts can use the inherited settings without
+  loading a different environment file.
+- Inherited terminal input/output, allowing progress output and interactive
+  prompts. Bash must be installed (Git Bash on Windows). Login profiles are
+  not loaded.
+
+For example, shell-style environment overrides and an ID argument are valid:
+
+```env
+POLY_DEPLOY_SERVER_FUNCTION_SCRIPT=example.database.adapter:SCALE_MIN=1 bash scripts/postDeploy.sh <id>
+```
+
+The script must wait for platform/Knative readiness if required: successful
+function submission alone does not prove that the runtime is ready. Keep
+scripts safe to rerun. A failed hook marks the function operation as failed;
+dynamic push stops subsequent functions. The function may already be deployed,
+and Flow does not roll back either the function or script side effects.
+
+Dry runs and JSON plans show the selected image and whether a hook is configured
+but never execute it. Skipped unchanged functions do not run hooks. A hook-only
+change does not itself trigger deployment: use scoped `push --force` or name
+the function as a forced `push-dynamic` seed to rerun it, including after a
+failed hook. Function IDs must be present and unambiguous or the hook fails
+without executing.
+
+`--show-config` lists image mappings and script function identities, omitting
+command bodies. Plans also omit command bodies. Do not embed credentials in
+commands or print credentials from scripts; hook output is streamed to the
+terminal. Existing namespace, environment-pin, production and deployment
+confirmation checks remain in force.
 
 ## Environment
 

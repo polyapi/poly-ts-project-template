@@ -12,7 +12,7 @@ const dist = path.resolve(__dirname, '../dist');
 function runIsolated(args: string[], pin: string | undefined) {
   const root = fs.mkdtempSync(path.join(tmpdir(), 'flow-target-'));
   try {
-    fs.mkdirSync(path.join(root, 'workflows'));
+    fs.mkdirSync(path.join(root, 'workflows/src/demo'), { recursive: true });
     fs.writeFileSync(
       path.join(root, 'pnpm-workspace.yaml'),
       'packages: [workflows]\n'
@@ -47,6 +47,7 @@ function runIsolated(args: string[], pin: string | undefined) {
       })
     );
     const trace = path.join(root, 'requests.jsonl');
+    const generationTrace = path.join(root, 'generation.jsonl');
     const preload = path.join(root, 'preload.cjs');
     fs.writeFileSync(
       preload,
@@ -56,6 +57,20 @@ function runIsolated(args: string[], pin: string | undefined) {
       api.loadEnv = () => ({ displayPath: 'workflows/dev.env', resolvedPath: '/synthetic/dev.env', exists: true, fromEnvPath: true, declaredTargetEnvId: ${JSON.stringify(pin) ?? 'undefined'} });
       const deployment = require(${JSON.stringify(path.join(dist, 'utils/deploymentConfig.js'))});
       deployment.buildDeploymentPreflight = (_, envFile) => ({ envFile, productionBranch: 'main', currentBranch: 'develop', productionSensitive: false });
+      const variables = require(${JSON.stringify(path.join(dist, 'artefacts/variables.js'))});
+      variables.syncVariables = async () => [];
+      require('node:child_process').execFileSync = (command, args, options) => {
+        if (command !== 'pnpm' || args.join(' ') !== 'workflows exec poly generate') {
+          throw new Error('Unexpected subprocess in isolated test');
+        }
+        fs.appendFileSync(${JSON.stringify(generationTrace)}, JSON.stringify({
+          command, args,
+          baseUrl: options.env.POLY_API_BASE_URL,
+          keyMatchesTarget: options.env.POLY_API_KEY === options.env.API_KEY,
+          configPriority: options.env.CONFIG_ENV_PATH_PRIORITY ?? null,
+          recursive: options.env.npm_config_recursive ?? null,
+        }) + '\\n');
+      };
       const maintenance = require(${JSON.stringify(path.join(dist, 'commands/maintenance.js'))});
       const createRuntime = maintenance.createMaintenanceRuntime;
       maintenance.createMaintenanceRuntime = (...args) => ({
@@ -74,7 +89,7 @@ function runIsolated(args: string[], pin: string | undefined) {
       process.execPath,
       ['--require', preload, path.join(dist, 'cli.js'), ...args],
       {
-        cwd: root,
+        cwd: args[0] === 'push' ? path.join(root, 'workflows') : root,
         encoding: 'utf8',
         timeout: 15_000,
         env: {
@@ -88,6 +103,8 @@ function runIsolated(args: string[], pin: string | undefined) {
           POLYAPI_NAMESPACE: 'demo',
           TARGET_ENV_ID: 'shell-target',
           OTP_ENABLED: 'false',
+          CONFIG_ENV_PATH_PRIORITY: 'true',
+          npm_config_recursive: 'true',
         },
       }
     );
@@ -95,6 +112,13 @@ function runIsolated(args: string[], pin: string | undefined) {
     return {
       status: result.status,
       output: result.stdout + result.stderr,
+      generation: fs.existsSync(generationTrace)
+        ? fs
+            .readFileSync(generationTrace, 'utf8')
+            .trim()
+            .split('\n')
+            .map(line => JSON.parse(line))
+        : [],
       requests: fs.existsSync(trace)
         ? fs
             .readFileSync(trace, 'utf8')
@@ -124,6 +148,46 @@ const commands = [
   ['delete-content', '--context', 'demo.api', '--types', 'api', '--apply'],
   ['logs', 'synthetic-function'],
 ];
+
+const variablePush = [
+  'push',
+  '--types',
+  'variables',
+  '--paths',
+  'src/demo',
+  '--skip-validation',
+  'I know what am doing',
+];
+
+test('a variables-only push regenerates the SDK against the verified target', () => {
+  const result = runIsolated(variablePush, 'production-target');
+  assert.equal(result.status, 0, result.output);
+  assert.deepEqual(result.generation, [
+    {
+      command: 'pnpm',
+      args: ['workflows', 'exec', 'poly', 'generate'],
+      baseUrl: 'https://polyapi.test',
+      keyMatchesTarget: true,
+      configPriority: null,
+      recursive: null,
+    },
+  ]);
+});
+
+for (const flag of ['--dry-run', '--skip-generate']) {
+  test(`a variables-only push does not regenerate with ${flag}`, () => {
+    const result = runIsolated([...variablePush, flag], 'production-target');
+    assert.equal(result.status, 0, result.output);
+    assert.deepEqual(result.generation, []);
+  });
+}
+
+test('a target mismatch blocks SDK generation after a variables-only push', () => {
+  const result = runIsolated(variablePush, 'development-target');
+  assert.equal(result.status, 1, result.output);
+  assert.deepEqual(result.generation, []);
+  assert.deepEqual(result.requests, [{ method: 'GET', path: '/whoami' }]);
+});
 
 for (const args of commands) {
   test(`target mismatch blocks ${args.join(' ')} before resource requests`, () => {
