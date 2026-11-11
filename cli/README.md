@@ -337,7 +337,7 @@ production confirmation prompts only when its value exactly matches
 execution key,
 schema validation, artefact validation, or unresolved environment-value checks.
 
-After a successful push, Flow regenerates the workflow SDK with
+After a push selecting variables, functions or AI functions, Flow regenerates the workflow SDK with
 `pnpm workflows exec poly generate` unless `--skip-generate` is set. It removes
 the inherited `npm_config_recursive` setting, including case variants, from
 that child process's environment. This prevents npm's unknown-config warning

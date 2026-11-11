@@ -2050,7 +2050,8 @@ async function main(): Promise<void> {
     const shouldRunGenerate =
       !cliArgs.dryRun &&
       !cliArgs.skipGenerate &&
-      (cliArgs.enabledTypes.includes('functions') ||
+      (cliArgs.enabledTypes.includes('variables') ||
+        cliArgs.enabledTypes.includes('functions') ||
         cliArgs.enabledTypes.includes('ai-functions'));
     const postPushGenerateSuccess = shouldRunGenerate
       ? runPolyGenerateAfterPush()
