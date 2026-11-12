@@ -228,3 +228,10 @@ for (const args of [
     assert.deepEqual(result.requests, []);
   });
 }
+
+test('default push configuration includes GraphQL subscriptions', () => {
+  const result = runIsolated(['push', '--show-config'], undefined);
+  assert.equal(result.status, 0, result.output);
+  assert.match(result.output, /"enabledTypes": \[[\s\S]*"subscriptions"/);
+  assert.deepEqual(result.requests, []);
+});
