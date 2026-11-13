@@ -16,22 +16,23 @@ const ROOT_BOOLEAN_ATTRIBUTES = new Set([
   'waitForResponse',
 ]);
 
-const NESTED_BOOLEAN_ATTRIBUTES: Record<string, ReadonlySet<string>> = {
-  arguments: new Set([
-    'payload',
-    'removeIfNotPresentOnExecute',
-    'required',
-    'secure',
-  ]),
-  columns: new Set(['primary', 'required', 'unique']),
-  xmlParserOptions: new Set([
-    'enabled',
-    'explicitArray',
-    'explicitRoot',
-    'mergeAttrs',
-    'normalizeTags',
-  ]),
-};
+const NESTED_BOOLEAN_ATTRIBUTES = new Map<string, ReadonlySet<string>>([
+  [
+    'arguments',
+    new Set(['payload', 'removeIfNotPresentOnExecute', 'required', 'secure']),
+  ],
+  ['columns', new Set(['primary', 'required', 'unique'])],
+  [
+    'xmlParserOptions',
+    new Set([
+      'enabled',
+      'explicitArray',
+      'explicitRoot',
+      'mergeAttrs',
+      'normalizeTags',
+    ]),
+  ],
+]);
 
 function substituteString(value: string): string {
   return value.replace(ENV_TOKEN_PATTERN, (match, envName: string) => {
@@ -45,13 +46,12 @@ function isBooleanAttribute(path: readonly string[]): boolean {
     return ROOT_BOOLEAN_ATTRIBUTES.has(path[0]);
   }
 
-  const attribute = path[path.length - 1];
-  const container = path[path.length - 2];
-  return Boolean(
-    attribute &&
-      container &&
-      NESTED_BOOLEAN_ATTRIBUTES[container]?.has(attribute)
-  );
+  if (path.length !== 2) {
+    return false;
+  }
+
+  const [container, attribute] = path;
+  return NESTED_BOOLEAN_ATTRIBUTES.get(container)?.has(attribute) ?? false;
 }
 
 function substituteValue(value: string, path: readonly string[]): unknown {
@@ -67,13 +67,13 @@ function substituteValue(value: string, path: readonly string[]): unknown {
   return substituted;
 }
 
-export function substituteEnvTokens<T>(value: T, path: string[] = []): T {
+function substituteEnvTokensAtPath<T>(value: T, path: string[]): T {
   if (typeof value === 'string') {
     return substituteValue(value, path) as T;
   }
 
   if (Array.isArray(value)) {
-    return value.map(item => substituteEnvTokens(item, path)) as T;
+    return value.map(item => substituteEnvTokensAtPath(item, path)) as T;
   }
 
   if (value && typeof value === 'object') {
@@ -83,7 +83,7 @@ export function substituteEnvTokens<T>(value: T, path: string[] = []): T {
       value as Record<string, unknown>
     )) {
       const substitutedKey = substituteString(key);
-      result[substitutedKey] = substituteEnvTokens(nestedValue, [
+      result[substitutedKey] = substituteEnvTokensAtPath(nestedValue, [
         ...path,
         substitutedKey,
       ]);
@@ -93,4 +93,8 @@ export function substituteEnvTokens<T>(value: T, path: string[] = []): T {
   }
 
   return value;
+}
+
+export function substituteEnvTokens<T>(value: T): T {
+  return substituteEnvTokensAtPath(value, []);
 }

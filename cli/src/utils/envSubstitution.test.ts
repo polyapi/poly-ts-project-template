@@ -101,13 +101,25 @@ test('does not coerce literal strings, non-boolean fields, payload data, partial
     assert.deepEqual(
       substituteEnvTokens({
         description: `{{${VARIABLE}}}`,
-        eventPayload: { enabled: `{{${VARIABLE}}}` },
+        eventPayload: {
+          enabled: `{{${VARIABLE}}}`,
+          arguments: [{ required: `{{${VARIABLE}}}` }],
+          columns: [{ primary: `{{${VARIABLE}}}` }],
+          xmlParserOptions: { explicitRoot: `{{${VARIABLE}}}` },
+        },
+        constructor: { required: `{{${VARIABLE}}}` },
         enabled: `prefix-{{${VARIABLE}}}`,
         isPublic: 'false',
       }),
       {
         description: 'false',
-        eventPayload: { enabled: 'false' },
+        eventPayload: {
+          enabled: 'false',
+          arguments: [{ required: 'false' }],
+          columns: [{ primary: 'false' }],
+          xmlParserOptions: { explicitRoot: 'false' },
+        },
+        constructor: { required: 'false' },
         enabled: 'prefix-false',
         isPublic: 'false',
       }
