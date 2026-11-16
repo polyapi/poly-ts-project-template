@@ -99,10 +99,10 @@ type PolyConfigMetadata = {
   context: string;
   description: string;
   visibility?: 'ENVIRONMENT' | 'TENANT' | 'PUBLIC';
-  logsEnabled?: boolean;
+  logsEnabled?: boolean | string;
   generateContexts?: string[];
   executionApiKey?: string;
-  cachePolyLibrary?: boolean;
+  cachePolyLibrary?: boolean | string;
 };
 
 type FunctionComparisonPayload = {
@@ -493,7 +493,9 @@ function getStringLiteralValue(node: ts.Expression): string | undefined {
   return undefined;
 }
 
-function getBooleanLiteralValue(node: ts.Expression): boolean | undefined {
+function getBooleanLiteralValue(
+  node: ts.Expression
+): boolean | string | undefined {
   if (node.kind === ts.SyntaxKind.TrueKeyword) {
     return true;
   }
@@ -501,7 +503,7 @@ function getBooleanLiteralValue(node: ts.Expression): boolean | undefined {
     return false;
   }
 
-  return undefined;
+  return getStringLiteralValue(node);
 }
 
 function getStringArrayLiteralValue(node: ts.Expression): string[] | undefined {
@@ -662,7 +664,7 @@ export function findFunctionFiles(
 
         const extractedMetadata = extractPolyConfigFromTs(source, fullPath);
         const metadata = extractedMetadata
-          ? substituteEnvTokens(extractedMetadata)
+          ? (substituteEnvTokens(extractedMetadata) as FunctionFile['metadata'])
           : null;
         if (!metadata) {
           log.warn(

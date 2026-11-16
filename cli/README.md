@@ -649,8 +649,11 @@ Access depends on `isPublic`:
   connector callbacks.
 
 All artefact payloads also support `{{ENV_VAR_NAME}}` placeholders. During sync,
-placeholders are substituted from the selected env file values. Missing values are
-left unchanged and reported before sync.
+placeholders are substituted from the selected env file values. When an entire
+boolean attribute is a placeholder, case-insensitive `true` and `false`, plus `1`
+and `0`, are converted to booleans before validation and deployment. Lowercase
+`true` and `false` are the preferred standard. Missing values are left unchanged
+and reported before sync. Literal strings in artefacts are not converted.
 
 ## Safe Deletion
 
