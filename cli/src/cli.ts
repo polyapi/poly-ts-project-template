@@ -227,6 +227,8 @@ Notes:
   - Interactive runs without --paths prompt for full-repo sync or a specific scope.
   - Scoped runs skip orphan detection to avoid false orphan reports.
   - MCP servers have no namespace context: they match by exact name and are never orphans.
+  - Existing OBSCURED variables require --force. Replacing protected values also requires
+    POLY_DEPLOY_UPDATE_EXISTING_SECRET_VARIABLES=true (default false).
   - Production safeguards are skipped for --dry-run.
 `);
 }
@@ -1128,6 +1130,8 @@ Shared with push:
                       ai-functions,mcp-servers,webhooks,triggers,jobs (function sub-types
                       select functions)
   --force             Update unchanged artefacts (functions are governed by seeds, not --force)
+                      Required for existing OBSCURED variables; replacing protected values also
+                      requires POLY_DEPLOY_UPDATE_EXISTING_SECRET_VARIABLES=true (default false).
   --delete-orphans, --build-schema, --skip-invalid, --show-config, --skip-generate, --verbose
                       as for push
   --skip-validation   Bypass interactive confirmations only when its value is exactly

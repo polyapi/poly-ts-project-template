@@ -6,6 +6,7 @@ import type { VariableFile } from '../types';
 import type { ArtifactSummary, OrphanedResource } from '../types/summary';
 import { getDeleteHeaders, sleep } from '../utils/apiClient';
 import { validateEndpointPayload } from '../utils/apiSchemaValidation';
+import { parseBooleanEnv } from '../utils/deploymentConfig';
 import {
   getRelativePath,
   getSrcPath,
@@ -33,10 +34,10 @@ import { validateVariableArtifact } from '../utils/validation';
 const log = createLogger('variables');
 type VariableDto = components['schemas']['VariableDto'];
 type FindVariableFileOptions = WalkDirOptions;
+type VariableProtection = { secret?: unknown; secrecy?: unknown };
 
 const MAX_API_ERROR_DEPTH = 4;
 const MAX_API_ERROR_ENTRIES = 25;
-const MAX_API_ERROR_STRING_LENGTH = 2_000;
 const SENSITIVE_LOG_FIELD_PATTERN =
   /authorization|cookie|password|passwd|secret|token|api[-_]?key|credential|value|body|payload|request|headers/i;
 
@@ -46,9 +47,9 @@ function sanitizeApiError(error: unknown, depth: number = 0): unknown {
   }
 
   if (typeof error === 'string') {
-    return error.length > MAX_API_ERROR_STRING_LENGTH
-      ? `${error.slice(0, MAX_API_ERROR_STRING_LENGTH)}...[truncated]`
-      : error;
+    // API and transport errors can echo submitted variable values in free text.
+    // Keep request metadata and status for diagnosis, never the returned text.
+    return '[redacted]';
   }
 
   if (typeof error === 'number' || typeof error === 'boolean') {
@@ -96,7 +97,7 @@ function sanitizeApiError(error: unknown, depth: number = 0): unknown {
     return sanitized;
   }
 
-  return String(error);
+  return '[redacted]';
 }
 
 function logVariableApiRequest(
@@ -315,8 +316,8 @@ function validateVariableValue(
 }
 
 function isSecretVariable(
-  variableContent: VariableFile['content'],
-  existingVariable?: any
+  variableContent: VariableProtection,
+  existingVariable?: VariableProtection
 ): boolean {
   const localIsSecret =
     variableContent.secret === true || variableContent.secrecy === 'SECRET';
@@ -328,13 +329,34 @@ function isSecretVariable(
 }
 
 function isObscuredVariable(
-  variableContent: VariableFile['content'],
-  existingVariable?: any
+  variableContent: VariableProtection,
+  existingVariable?: VariableProtection
 ): boolean {
   const localIsObscured = variableContent.secrecy === 'OBSCURED';
   const existingIsObscured = existingVariable?.secrecy === 'OBSCURED';
 
   return localIsObscured || existingIsObscured;
+}
+
+function isProtectedVariable(
+  variableContent: VariableProtection,
+  existingVariable?: VariableProtection
+): boolean {
+  return (
+    isSecretVariable(variableContent, existingVariable) ||
+    isObscuredVariable(variableContent, existingVariable) ||
+    variableContent.secrecy === 'PARTIAL' ||
+    existingVariable?.secrecy === 'PARTIAL'
+  );
+}
+
+function isEmptyVariableValue(value: unknown): boolean {
+  return (
+    value === undefined ||
+    value === null ||
+    value === '' ||
+    (typeof value === 'object' && Object.keys(value).length === 0)
+  );
 }
 
 /**
@@ -471,18 +493,20 @@ async function buildVariablePayload(
   resolvedIdentity: {
     context: string;
     name: string;
-  },
-  existingVariable?: any
+  }
 ): Promise<{
   payload: Record<string, unknown>;
   isSecret: boolean;
 }> {
   const variableName = resolvedIdentity.name;
   const variableContext = resolvedIdentity.context;
-  const isSecret = isSecretVariable(variable.content, existingVariable);
+  // OBSCURED values can be initialized from environment placeholders, even
+  // when the legacy secret flag is also present. SECRET values stay excluded.
+  const isObscured = isObscuredVariable(variable.content);
+  const isSecret = isSecretVariable(variable.content) && !isObscured;
   const hasValue = variable.content.value !== undefined;
 
-  let processedValue = {};
+  let processedValue: unknown = {};
 
   if (hasValue && isSecret) {
     const fileRef = chalk.cyan(getRelativePath(variable.filePath));
@@ -521,6 +545,10 @@ async function buildVariablePayload(
     processedValue = {};
   }
 
+  if (isObscured && isEmptyVariableValue(processedValue)) {
+    processedValue = undefined;
+  }
+
   return {
     isSecret,
     payload: {
@@ -538,25 +566,19 @@ async function buildVariablePayload(
   };
 }
 
-function buildSecretVariableUpdatePayload(
-  payload: Record<string, unknown>
+function buildVariableUpdatePayload(
+  payload: Record<string, unknown>,
+  existingVariable: VariableProtection,
+  updateSecretValues: boolean
 ): Record<string, unknown> {
-  const {
-    value: _value,
-    secret: _secret,
-    secrecy: _secrecy,
-    ...metadataPayload
-  } = payload;
-
-  return metadataPayload;
-}
-
-function buildObscuredVariableUpdatePayload(
-  payload: Record<string, unknown>
-): Record<string, unknown> {
-  const { value: _value, ...metadataPayload } = payload;
-
-  return metadataPayload;
+  const updatePayload = { ...payload };
+  if (
+    (isProtectedVariable(payload, existingVariable) && !updateSecretValues) ||
+    isEmptyVariableValue(updatePayload.value)
+  ) {
+    delete updatePayload.value;
+  }
+  return updatePayload;
 }
 
 function buildVariableEndpointValidationPayload(
@@ -662,9 +684,16 @@ async function postVariable(
     name: string;
   },
   dryRun: boolean = false,
-  force: boolean = false
+  force: boolean = false,
+  updateSecretValues: boolean = false
 ): Promise<
-  'created' | 'updated' | 'secret-metadata-updated' | 'noop' | 'failed'
+  | 'created'
+  | 'updated'
+  | 'secret-metadata-updated'
+  | 'requires-force'
+  | 'secret-updates-disabled'
+  | 'noop'
+  | 'failed'
 > {
   try {
     const variableName = resolvedIdentity.name;
@@ -674,46 +703,47 @@ async function postVariable(
     );
     const { payload, isSecret } = await buildVariablePayload(
       variable,
-      resolvedIdentity,
-      existingVariable
+      resolvedIdentity
     );
-    const isObscured = isObscuredVariable(variable.content, existingVariable);
 
     if (existingVariable) {
-      const comparisonPayload = isSecret
-        ? buildSecretVariableUpdatePayload(payload)
-        : isObscured
-          ? buildObscuredVariableUpdatePayload(payload)
-          : payload;
       const existingVariableDetails = await getExistingVariableDetails(
         client,
         existingVariable.id
       );
+      // A list response may omit secrecy. Do not write without verified detail.
+      if (!existingVariableDetails) return 'failed';
+
+      if (isObscuredVariable(variable.content) && !force) {
+        return 'requires-force';
+      }
+      if (isSecret && !updateSecretValues) {
+        return 'secret-updates-disabled';
+      }
+
+      const updatePayload = buildVariableUpdatePayload(
+        payload,
+        existingVariableDetails,
+        updateSecretValues
+      );
+      const metadataOnly =
+        isProtectedVariable(payload, existingVariableDetails) &&
+        updatePayload.value === undefined;
 
       if (
         !force &&
-        existingVariableDetails &&
         areComparisonPayloadsEqual(
-          comparisonPayload,
+          updatePayload,
           buildRemoteVariablePayload(
-            comparisonPayload,
+            updatePayload,
             existingVariableDetails,
-            !isSecret && !isObscured
+            updatePayload.value !== undefined
           )
         )
       ) {
         return 'noop';
       }
 
-      if (dryRun) {
-        return isSecret ? 'secret-metadata-updated' : 'updated';
-      }
-
-      const updatePayload = isSecret
-        ? buildSecretVariableUpdatePayload(payload)
-        : isObscured
-          ? buildObscuredVariableUpdatePayload(payload)
-          : payload;
       const updateValidationPayload =
         buildVariableEndpointValidationPayload(updatePayload);
 
@@ -725,6 +755,10 @@ async function postVariable(
         })
       ) {
         return 'failed';
+      }
+
+      if (dryRun) {
+        return metadataOnly ? 'secret-metadata-updated' : 'updated';
       }
 
       const updateMetadata = buildVariableLogMetadata(updatePayload);
@@ -746,7 +780,25 @@ async function postVariable(
 
         // Check if the error is about changing secrecy level
         const errorMessage = (error as any)?.message || '';
-        if (!isSecret && errorMessage.includes('Cannot change secrecy level')) {
+        if (
+          errorMessage.includes('Cannot change secrecy level') &&
+          (!isProtectedVariable(existingVariableDetails) || updateSecretValues)
+        ) {
+          // Reuse the protected update payload; recreation must not restore a
+          // value that was deliberately omitted (including empty values).
+          if (
+            !validateEndpointPayload(
+              'CreateVariableDto',
+              buildVariableEndpointValidationPayload(updatePayload),
+              {
+                artifactType: 'Variable',
+                artifactName: variableName,
+                filePath: variable.filePath,
+              }
+            )
+          ) {
+            return 'failed';
+          }
           log.warn(
             warningColor(
               `WARN: Cannot change secrecy level - deleting and recreating variable ${fileRef}`
@@ -771,7 +823,7 @@ async function postVariable(
           await sleep(500);
 
           // Recreate the variable with the new secrecy level
-          const recreateMetadata = buildVariableLogMetadata(payload);
+          const recreateMetadata = buildVariableLogMetadata(updatePayload);
           logVariableApiRequest(
             'recreate',
             'POST /variables',
@@ -779,7 +831,7 @@ async function postVariable(
           );
           const { error: createError, response: createResponse } =
             await client.POST('/variables', {
-              body: payload as any,
+              body: updatePayload as any,
             });
 
           if (createError) {
@@ -825,7 +877,7 @@ async function postVariable(
           undefined,
           updateMetadata
         );
-        return isSecret ? 'secret-metadata-updated' : 'updated';
+        return metadataOnly ? 'secret-metadata-updated' : 'updated';
       }
     } else {
       if (dryRun) {
@@ -911,6 +963,10 @@ export async function syncVariables(
     detectOrphans?: boolean;
   } = {}
 ): Promise<CreatedVariable[]> {
+  const updateSecretValues = parseBooleanEnv(
+    'POLY_DEPLOY_UPDATE_EXISTING_SECRET_VARIABLES',
+    false
+  );
   const variableFiles = findVariableFiles(options.discoveryOptions);
   const allVariableFiles = findVariableFiles({
     respectSkipPaths: false,
@@ -1063,7 +1119,8 @@ export async function syncVariables(
       existingVariables,
       identity,
       options.dryRun,
-      options.force
+      options.force,
+      updateSecretValues
     );
     if (result === 'created') {
       if (options.dryRun) {
@@ -1072,7 +1129,10 @@ export async function syncVariables(
       } else {
         log.info(chalk.green('    [OK] Created'));
         summary.created++;
-        if (isSecretVariable(variable.content)) {
+        if (
+          isSecretVariable(variable.content) &&
+          !isObscuredVariable(variable.content)
+        ) {
           createdVariables.push({
             name: identity.name,
             context: identity.context,
@@ -1091,15 +1151,23 @@ export async function syncVariables(
     } else if (result === 'secret-metadata-updated') {
       if (options.dryRun) {
         log.info(
-          chalk.blue('    [PLAN] Update metadata (secret value unchanged)')
+          chalk.blue('    [PLAN] Update metadata (protected value unchanged)')
         );
         summary.planned++;
       } else {
         log.info(
-          chalk.green('    [OK] Updated metadata (secret value unchanged)')
+          chalk.green('    [OK] Updated metadata (protected value unchanged)')
         );
         summary.updated++;
       }
+    } else if (result === 'requires-force') {
+      log.info(
+        chalk.gray('    [SKIP] Existing obscured variable requires --force')
+      );
+      summary.skipped++;
+    } else if (result === 'secret-updates-disabled') {
+      log.info(chalk.gray('    [SKIP] Existing secret updates disabled'));
+      summary.skipped++;
     } else if (result === 'noop') {
       log.info(chalk.gray('    [SKIP] Unchanged'));
       summary.skipped++;
