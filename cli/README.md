@@ -514,6 +514,44 @@ handling.
 `build` compiles TypeScript. `generate` and `postinstall` refresh
 `src/sdk/schema.d.ts` from `POLYAPI_OPENAPI_SPEC_URL` (or the default URL above).
 
+## Updating Vari Values
+
+`push` and `push-dynamic` use the same variable-update rules as Python Flow.
+Artefacts declared `OBSCURED` require `--force` to update existing variables,
+including metadata changes. By default, a forced update preserves the value
+and reports a metadata-only update. To also replace a non-empty value,
+explicitly enable this setting in the selected Flow environment file:
+
+```env
+POLY_DEPLOY_UPDATE_EXISTING_SECRET_VARIABLES=true
+```
+
+The setting defaults to `false`. Use `{{UPPERCASE_ENV_NAME}}` placeholders in
+the variable's JSON `value`; keep actual credentials out of source control.
+Scope the operation to the intended workflow and preview it first:
+
+```bash
+pnpm workflows push --paths src/myWorkflow --types variables --force --dry-run
+```
+
+Both local and remote secrecy determine value protection. Existing `SECRET`,
+`OBSCURED`, and `PARTIAL` values are preserved without the opt-in, even with
+`--force`. The opt-in also gates recreation of a protected remote variable
+when the API rejects a secrecy-level change. Flow stops that variable's update
+if it cannot read its remote details.
+
+Artefacts declared `SECRET` are skipped for existing variables unless the
+setting is enabled; even then, their source values remain excluded and only
+metadata is sent. Set `SECRET` values in Canopy. Existing `PARTIAL` variables
+can receive metadata updates without the opt-in, but replacing their value
+requires it.
+
+Missing, null, empty-string, empty-object, and empty-array update values are
+omitted, preserving the current value even with the opt-in. `false` and `0`
+are valid replacement values. New `OBSCURED` variables with a non-empty value
+can be initialized without `--force` or the setting. Dry runs report the action
+without writing values. Target verification and OTP still apply normally.
+
 ## What Flow Scans
 
 - `src/**/server/*.ts`
