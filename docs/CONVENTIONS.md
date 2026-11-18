@@ -79,7 +79,7 @@ order:
 
 ```text
 variables -> canopy -> schemas -> tables -> functions -> ai-functions
-          -> mcp-servers -> webhooks -> triggers -> jobs
+          -> mcp-servers -> webhooks -> triggers -> subscriptions -> jobs
 ```
 
 - Use generated `schemas.*`, `vari.*`, and `tabi.*` namespaces directly when
@@ -214,6 +214,8 @@ Advanced projects can explicitly configure multiple owned roots with
 - `specs/` contains OpenAPI or PolyAPI model source material.
 - `webhooks/` contains public HTTP boundary definitions.
 - `triggers/` connects webhooks, events, or error handlers to functions.
+- `subscriptions/` contains GraphQL subscription definitions and portable
+  destination-function references.
 - `vari/` contains configuration, secret placeholders, retry policy, or token
   cache definitions.
 - `tabi/` contains persisted workflow state or lookup tables.

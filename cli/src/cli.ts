@@ -23,6 +23,10 @@ import {
 import { findJobFiles, syncJobs } from './artefacts/jobs';
 import { findMcpServerFiles, syncMcpServers } from './artefacts/mcpServers';
 import { findSchemaFiles, syncSchemas } from './artefacts/schemas';
+import {
+  findGraphQLSubscriptionFiles,
+  syncGraphQLSubscriptions,
+} from './artefacts/subscriptions';
 import { findTableFiles, syncTables } from './artefacts/tables';
 import { findTriggerFiles, syncTriggers } from './artefacts/triggers';
 import { findVariableFiles, syncVariables } from './artefacts/variables';
@@ -73,6 +77,7 @@ import {
 import {
   validateAiFunctionArtifact,
   validateFunctionArtifact,
+  validateGraphQLSubscriptionArtifact,
   validateJobArtifact,
   validateMcpServerArtifact,
   validateSchemaArtifact,
@@ -92,6 +97,7 @@ type ArtifactType =
   | 'mcp-servers'
   | 'webhooks'
   | 'triggers'
+  | 'subscriptions'
   | 'jobs';
 
 type FunctionTypeSelection = 'client' | 'server';
@@ -124,6 +130,7 @@ const DEFAULT_ENABLED_TYPES: ArtifactType[] = [
   'mcp-servers',
   'webhooks',
   'triggers',
+  'subscriptions',
   'jobs',
 ];
 
@@ -139,6 +146,7 @@ const SUPPORTED_TYPE_SELECTIONS = [
   'mcp-servers',
   'webhooks',
   'triggers',
+  'subscriptions',
   'jobs',
 ] as const;
 
@@ -211,11 +219,11 @@ Usage:
 
   Options:
   --dry-run           Show planned actions without changing anything remotely
-  --force             Update existing remote artifacts even when payload is unchanged
+  --force             Update existing remote artifacts even when payload is unchanged; subscriptions prompt to delete/re-create
   --verbose           Print debug logging while scanning and diffing
   --delete-orphans    Delete remote artefacts that no longer exist locally
   --build-schema      Regenerate OpenAPI SDK/schemas before sync
-  --types             Comma-separated types: canopy,variables,schemas,tables,functions,client-functions,server-functions,ai-functions,mcp-servers,webhooks,triggers,jobs
+  --types             Comma-separated types: canopy,variables,schemas,tables,functions,client-functions,server-functions,ai-functions,mcp-servers,webhooks,triggers,subscriptions,jobs
   --paths             Comma-separated scope filters, e.g. exampleWorkflow or src/utilities
   --show-config       Print resolved CLI config and exit
   --skip-generate     Skip pnpm workflows exec poly generate after sync
@@ -482,6 +490,7 @@ function printSummary(
     { name: 'AI Functions', data: summary.aiFunctions },
     { name: 'MCP Servers', data: summary.mcpServers },
     { name: 'Triggers', data: summary.triggers },
+    { name: 'Subscriptions', data: summary.subscriptions },
     { name: 'Variables', data: summary.variables },
     { name: 'Tables', data: summary.tables },
     { name: 'Jobs', data: summary.jobs },
@@ -568,6 +577,7 @@ function printSummary(
       function: summary.orphans.filter(o => o.type === 'function'),
       'ai-function': summary.orphans.filter(o => o.type === 'ai-function'),
       trigger: summary.orphans.filter(o => o.type === 'trigger'),
+      subscription: summary.orphans.filter(o => o.type === 'subscription'),
       table: summary.orphans.filter(o => o.type === 'table'),
       job: summary.orphans.filter(o => o.type === 'job'),
     };
@@ -1105,7 +1115,7 @@ function printPushDynamicHelp(): void {
 
 Everything else is identical to push: the same discovery, validation, artefact types in the
 same order (variables, canopy, schemas, tables, functions, ai-functions, mcp-servers, webhooks,
-triggers, jobs), scope prompt, production safeguards, summary and post-push \`poly generate\`. Only the
+triggers, subscriptions, jobs), scope prompt, production safeguards, summary and post-push \`poly generate\`. Only the
 functions step differs: a changed client function (CFX) is picked up by a server function (SFX)
 only when that SFX is rebuilt, so changed functions are expanded to their transitive
 client-function callers up to the first server function on every path, the trees are merged,
@@ -1127,7 +1137,7 @@ Shared with push:
                       are compared for changes (the function closure is never scoped). A bare
                       workflow name means src/<workflow>
   --types <csv>       canopy,variables,schemas,tables,functions,client-functions,server-functions,
-                      ai-functions,mcp-servers,webhooks,triggers,jobs (function sub-types
+                      ai-functions,mcp-servers,webhooks,triggers,subscriptions,jobs (function sub-types
                       select functions)
   --force             Update unchanged artefacts (functions are governed by seeds, not --force)
                       Required for existing OBSCURED variables; replacing protected values also
@@ -1519,6 +1529,9 @@ async function main(): Promise<void> {
     const triggerFiles = cliArgs.enabledTypes.includes('triggers')
       ? findTriggerFiles(discoveryOptions)
       : [];
+    const subscriptionFiles = cliArgs.enabledTypes.includes('subscriptions')
+      ? findGraphQLSubscriptionFiles(discoveryOptions)
+      : [];
     const jobFiles = cliArgs.enabledTypes.includes('jobs')
       ? findJobFiles(discoveryOptions)
       : [];
@@ -1529,6 +1542,7 @@ async function main(): Promise<void> {
         ...schemaFiles,
         ...webhookFiles,
         ...triggerFiles,
+        ...subscriptionFiles,
         ...tableFiles,
         ...variableFiles,
         ...jobFiles,
@@ -1611,7 +1625,7 @@ async function main(): Promise<void> {
     if (cliArgs.force) {
       logger.info(
         chalk.gray(
-          'Force: enabled (existing remote artifacts will be updated even if unchanged)'
+          'Force: enabled (existing remote artifacts will be updated even if unchanged; subscriptions require delete/re-create confirmation)'
         )
       );
     }
@@ -1647,6 +1661,7 @@ async function main(): Promise<void> {
     let validAiFunctions = 0;
     let validMcpServers = 0;
     let validTriggers = 0;
+    let validSubscriptions = 0;
     let validTables = 0;
     let validJobs = 0;
     let totalValidated = 0;
@@ -1776,6 +1791,20 @@ async function main(): Promise<void> {
       }
     }
 
+    for (const subscription of subscriptionFiles) {
+      totalArtifacts++;
+      if (
+        validateGraphQLSubscriptionArtifact(
+          subscription.content,
+          subscription.filePath,
+          cliArgs.skipInvalid
+        )
+      ) {
+        validSubscriptions++;
+        totalValidated++;
+      }
+    }
+
     for (const job of jobFiles) {
       totalArtifacts++;
       if (validateJobArtifact(job.content, job.filePath, cliArgs.skipInvalid)) {
@@ -1854,6 +1883,14 @@ async function main(): Promise<void> {
         chalk.green(checkMark) +
           chalk.gray(
             ` Triggers:   ${validTriggers}/${triggerFiles.length} validated`
+          )
+      );
+    }
+    if (subscriptionFiles.length > 0) {
+      logger.info(
+        chalk.green(checkMark) +
+          chalk.gray(
+            ` Subscriptions: ${validSubscriptions}/${subscriptionFiles.length} validated`
           )
       );
     }
@@ -2032,6 +2069,16 @@ async function main(): Promise<void> {
       await syncTriggers(
         client,
         summary.triggers,
+        summary.orphans,
+        cliArgs.deleteOrphans,
+        cliArgs.skipInvalid,
+        syncOptions
+      );
+    }
+    if (cliArgs.enabledTypes.includes('subscriptions')) {
+      await syncGraphQLSubscriptions(
+        client,
+        summary.subscriptions,
         summary.orphans,
         cliArgs.deleteOrphans,
         cliArgs.skipInvalid,
