@@ -10,11 +10,15 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import * as dotenv from 'dotenv';
 import * as OpenAPITS from 'openapi-typescript';
 import { findWorkspaceRoot } from '../utils/fileSystem';
 import { logger } from '../utils/logger';
-import { generateEndpointSchemas } from './openapi-endpoint-schemas';
+import {
+  generateEndpointSchemas,
+  isRemoteSpecLocation,
+} from './openapi-endpoint-schemas';
 import {
   generate as generateTypeBox,
   parseOpenApiSpec,
@@ -155,7 +159,12 @@ async function main() {
       `Step 1/4: Generating TypeScript types from PolyAPI (${specUrl})...`
     );
     const sdkOutputPath = path.join(__dirname, '..', 'sdk', 'schema.d.ts');
-    const output = await openapiTS(specUrl); // v6 returns the .d.ts content as a string
+    // v6 returns the .d.ts content as a string. Local files must be file URLs.
+    const output = await openapiTS(
+      isRemoteSpecLocation(specUrl) || specUrl.startsWith('file:')
+        ? specUrl
+        : pathToFileURL(path.resolve(specUrl))
+    );
     await fs.promises.mkdir(path.dirname(sdkOutputPath), { recursive: true });
     await fs.promises.writeFile(sdkOutputPath, output);
     logger.info('TypeScript types generated\n');

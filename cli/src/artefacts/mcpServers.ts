@@ -223,6 +223,24 @@ export function resolveMcpServerPayload(
         }
         resolvedTool.argumentConfig = resolvedArguments;
       }
+      if (tool.widget !== undefined) {
+        // Widget settings bind a key the tool's widget reads to a Vari.
+        const widget: Record<string, unknown> = {
+          enabled: tool.widget.enabled,
+        };
+        if (tool.widget.settings !== undefined) {
+          const settings: Record<string, unknown>[] = [];
+          for (const setting of tool.widget.settings) {
+            const variable = findVariable(setting.variable, variables);
+            if (typeof variable === 'string') {
+              return `Widget setting ${setting.key}: ${variable}`;
+            }
+            settings.push({ key: setting.key, variableId: variable.id });
+          }
+          widget.settings = settings;
+        }
+        resolvedTool.widget = widget;
+      }
       resolvedTools.push(resolvedTool);
     }
     payload.toolFunctions = resolvedTools;

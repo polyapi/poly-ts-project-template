@@ -374,3 +374,102 @@ test('the MCP URL is read from the single-server endpoint when a record lacks it
   } as any;
   assert.equal(await fetchMcpUrl(throwing, { id: 's-1' }), undefined);
 });
+
+const widgetServer: McpServerFile = {
+  ...server,
+  content: {
+    ...server.content,
+    toolFunctions: [
+      {
+        functionName: 'searchLocations',
+        functionContext: 'example.weather',
+        widget: {
+          enabled: true,
+          settings: [
+            {
+              key: 'mapsKey',
+              variable: {
+                variableName: 'weatherKey',
+                variableContext: 'example.weather',
+              },
+            },
+          ],
+        },
+      },
+      {
+        functionName: 'getCurrentWeather',
+        functionContext: 'example.weather',
+        widget: { enabled: false },
+      },
+    ],
+  },
+};
+
+test('MCP tool widgets accept portable variable references only', () => {
+  const validator = TypeCompiler.Compile(McpServerArtifactSchema);
+  assert.equal(validator.Check(widgetServer.content), true);
+  assert.equal(
+    validator.Check({
+      ...widgetServer.content,
+      toolFunctions: [
+        {
+          functionName: 'searchLocations',
+          functionContext: 'example.weather',
+          widget: {
+            enabled: true,
+            settings: [{ key: 'mapsKey', variableId: 'key-id' }],
+          },
+        },
+      ],
+    }),
+    false
+  );
+});
+
+test('MCP tool widget settings resolve to variable IDs', () => {
+  const payload = resolveMcpServerPayload(widgetServer, functions, variables);
+  assert.notEqual(typeof payload, 'string');
+  assert.deepEqual((payload as Record<string, unknown>).toolFunctions, [
+    {
+      id: 'search-id',
+      widget: {
+        enabled: true,
+        settings: [{ key: 'mapsKey', variableId: 'key-id' }],
+      },
+    },
+    { id: 'current-id', widget: { enabled: false } },
+  ]);
+});
+
+test('unresolved MCP widget variables stop the server sync', () => {
+  const payload = resolveMcpServerPayload(widgetServer, functions, [
+    variables[1],
+  ]);
+  assert.equal(
+    payload,
+    'Widget setting mapsKey: Variable example.weather.weatherKey was not found in the project namespace'
+  );
+});
+
+test('a changed widget is detected against the remote tool configuration', () => {
+  const plan = planMcpServer(
+    widgetServer,
+    [
+      {
+        id: 'server-id',
+        ...(resolveMcpServerPayload(
+          widgetServer,
+          functions,
+          variables
+        ) as Record<string, unknown>),
+        toolFunctions: [
+          { id: 'search-id', widget: { enabled: false, settings: [] } },
+          { id: 'current-id', widget: { enabled: false } },
+        ],
+      },
+    ],
+    functions,
+    variables
+  );
+  assert.equal(plan.action, 'update');
+});

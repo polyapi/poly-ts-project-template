@@ -6,6 +6,7 @@
 
 import type { TSchema } from '@sinclair/typebox';
 import { TypeCompiler } from '@sinclair/typebox/compiler';
+import { describeJobIntervalProblem } from './jobInterval';
 import { chalk, createLogger, warningColor } from './logger';
 import {
   AiFunctionArtifactSchema,
@@ -150,9 +151,15 @@ function validateAndLog<T extends TSchema>(
   artifactName: string,
   artifactType: string,
   filePath?: string,
-  skipInvalid: boolean = false
+  skipInvalid: boolean = false,
+  semanticCheck?: (data: any) => ValidationError[]
 ): boolean {
   const result = validate(schema, data, artifactName, artifactType);
+  // Rules the JSON shape cannot express run once the shape is valid.
+  if (result.valid && semanticCheck) {
+    result.errors = semanticCheck(data);
+    result.valid = result.errors.length === 0;
+  }
 
   if (!result.valid) {
     logValidationErrors(
@@ -239,6 +246,92 @@ export function validateFunctionArtifact(
   );
 }
 
+const NON_OBJECT_ROOT_KEYWORDS = ['anyOf', 'oneOf', 'allOf', 'enum', 'const'];
+
+/**
+ * PolyAPI (R35) rejects AI Function output schemas whose root is not an
+ * object: OpenAI structured output needs an object root. Local `$ref` roots
+ * are left to the API, which inlines them before checking.
+ */
+export function getAiFunctionRuleErrors(data: {
+  outputSchema?: unknown;
+  errorSchema?: unknown;
+  type?: unknown;
+  twilioAuthTokenVariable?: unknown;
+}): ValidationError[] {
+  const errors: ValidationError[] = [];
+  if (
+    data.twilioAuthTokenVariable &&
+    typeof data.type === 'string' &&
+    data.type.toUpperCase() !== 'VOICE'
+  ) {
+    errors.push({
+      path: '/twilioAuthTokenVariable',
+      message: 'twilioAuthTokenVariable applies to VOICE AI Functions only.',
+    });
+  }
+  const checkObjectRoot = (field: 'outputSchema' | 'errorSchema'): void => {
+    const schema = data[field];
+    if (schema === undefined || schema === null) return;
+    const record = schema as Record<string, unknown>;
+    if (typeof record.$ref === 'string') return;
+    if (
+      (record.type !== undefined && record.type !== 'object') ||
+      NON_OBJECT_ROOT_KEYWORDS.some(key => key in record)
+    ) {
+      errors.push({
+        path: `/${field}`,
+        message: `${field} must describe an object at the root (type "object" with properties); root primitives, arrays, unions, enum and const are rejected by PolyAPI. For plain-text output, omit outputSchema.`,
+      });
+    }
+  };
+  checkObjectRoot('outputSchema');
+  checkObjectRoot('errorSchema');
+
+  const errorSchema = data.errorSchema as
+    | Record<string, any>
+    | null
+    | undefined;
+  if (errorSchema) {
+    if (!data.outputSchema) {
+      errors.push({
+        path: '/errorSchema',
+        message: 'errorSchema requires outputSchema to also be set.',
+      });
+    }
+    const properties = (errorSchema.properties ?? {}) as Record<string, any>;
+    const required = Array.isArray(errorSchema.required)
+      ? errorSchema.required
+      : [];
+    const status = properties.status;
+    const fixedFailed =
+      status &&
+      (status.const === 'failed' ||
+        (Array.isArray(status.enum) &&
+          status.enum.length === 1 &&
+          status.enum[0] === 'failed'));
+    if (!fixedFailed || !required.includes('status')) {
+      errors.push({
+        path: '/errorSchema',
+        message:
+          'errorSchema must declare "status" as a required property fixed to "failed" (for example { "status": { "const": "failed" } }).',
+      });
+    }
+    if (
+      properties.message?.type !== 'string' ||
+      !required.includes('message')
+    ) {
+      errors.push({
+        path: '/errorSchema',
+        message:
+          'errorSchema must declare "message" as a required string property.',
+      });
+    }
+  }
+
+  return errors;
+}
+
 /**
  * Validate an AI function artifact.
  */
@@ -254,7 +347,8 @@ export function validateAiFunctionArtifact(
     name,
     'AI Function',
     filePath,
-    skipInvalid
+    skipInvalid,
+    getAiFunctionRuleErrors
   );
 }
 
@@ -355,6 +449,25 @@ export function validateTableArtifact(
 }
 
 /**
+ * Interval schedules must be at least 10 seconds (the API's minimum).
+ */
+export function getJobScheduleErrors(data: {
+  schedule?: { type?: string; value?: unknown };
+}): ValidationError[] {
+  if (data.schedule?.type !== 'interval') return [];
+  const problem = describeJobIntervalProblem(data.schedule.value);
+  return problem
+    ? [
+        {
+          path: '/schedule/value',
+          message: problem,
+          value: data.schedule.value,
+        },
+      ]
+    : [];
+}
+
+/**
  * Validate a job artifact
  */
 export function validateJobArtifact(
@@ -369,7 +482,8 @@ export function validateJobArtifact(
     name,
     'Job',
     filePath,
-    skipInvalid
+    skipInvalid,
+    getJobScheduleErrors
   );
 }
 

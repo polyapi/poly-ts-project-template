@@ -70,7 +70,20 @@ const PRUNED_SCHEMA_TARGETS = new Set([
   'UpdateMCPServerDto',
 ]);
 
+export function isRemoteSpecLocation(specLocation: string): boolean {
+  return /^https?:\/\//i.test(specLocation);
+}
+
 function fetchOpenApiSpec(specUrl: string): Promise<OpenApiDocument> {
+  if (!isRemoteSpecLocation(specUrl)) {
+    // A local OpenAPI document, such as a server checkout's swagger.json.
+    const specPath = specUrl.startsWith('file:')
+      ? new URL(specUrl).pathname
+      : path.resolve(specUrl);
+    return Promise.resolve(
+      JSON.parse(fs.readFileSync(specPath, 'utf8')) as OpenApiDocument
+    );
+  }
   return new Promise((resolve, reject) => {
     https
       .get(specUrl, response => {

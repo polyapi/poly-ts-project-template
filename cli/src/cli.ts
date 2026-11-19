@@ -17,6 +17,7 @@ import { findCanopyFiles, syncCanopy } from './artefacts/canopy';
 import {
   findFunctionFiles,
   getPolyCliEnv,
+  getPolyPackageDir,
   syncFunctions,
   writePolyGenerateProvenance,
 } from './artefacts/functions';
@@ -31,6 +32,12 @@ import { findTableFiles, syncTables } from './artefacts/tables';
 import { findTriggerFiles, syncTriggers } from './artefacts/triggers';
 import { findVariableFiles, syncVariables } from './artefacts/variables';
 import { findWebhookFiles, syncWebhooks } from './artefacts/webhooks';
+import {
+  JOBS_RUN_HELP,
+  type JobsRunClient,
+  parseJobsRunArgs,
+  runJobsRun,
+} from './commands/jobsRun';
 import {
   createMaintenanceRuntime,
   maintenanceHelp,
@@ -69,6 +76,10 @@ import {
 import { printFlowLogo } from './utils/logo';
 import { printNamespaceBanner } from './utils/namespace';
 import { getPolyGenerateEnvironment } from './utils/polyGenerateEnvironment';
+import {
+  getPolyapiVersionWarning,
+  readInstalledPolyapiVersion,
+} from './utils/sdkVersion';
 import { readServerFunctionDeploymentConfig } from './utils/serverFunctionDeployment';
 import {
   enforceTargetEnvironment,
@@ -162,6 +173,7 @@ Usage:
   flow train-model <model-file> [--dry-run]
   flow delete-content [--types api-functions,schemas] [--context namespace.prefix] [--include-children] [--apply]
   flow logs [function-id] [--keyword error] [--raw]
+  flow jobs run <job-name> [--dry-run]
   flow --help
   flow --version
 
@@ -1370,6 +1382,33 @@ async function main(): Promise<void> {
     process.stdout.write(`TARGET_ENV_ID=${environmentId}\n`);
     return;
   }
+  const jobsRun = parseJobsRunArgs(process.argv.slice(2));
+  if (jobsRun) {
+    if (jobsRun.help) {
+      process.stdout.write(`${JOBS_RUN_HELP}\n`);
+      return;
+    }
+    const workspaceRoot = findWorkspaceRoot(process.cwd());
+    process.chdir(path.join(workspaceRoot, 'workflows'));
+    const envFile = loadEnv();
+    // Running a job executes its functions: keep the target pin and the
+    // branch/production safeguards that guard every other remote write.
+    await enforceTargetEnvironment(envFile);
+    const preflight = buildDeploymentPreflight(process.cwd(), envFile);
+    const safetyArgs = {
+      dryRun: jobsRun.dryRun,
+      skipValidationAcknowledged: false,
+    };
+    await maybeConfirmBranchEnvFileMatch(process.cwd(), preflight, safetyArgs);
+    await enforceProductionSafeguards(preflight, safetyArgs);
+    await runJobsRun(
+      jobsRun,
+      createPolyApiClient() as unknown as JobsRunClient,
+      message => process.stdout.write(`${message}\n`)
+    );
+    exitProcess(0);
+    return;
+  }
   const maintenance = parseMaintenanceArgs(process.argv.slice(2));
   if (maintenance) {
     if (maintenance.help) {
@@ -1648,6 +1687,14 @@ async function main(): Promise<void> {
             'Validation: Stop on invalid artifacts (use --skip-invalid to continue)'
           )
     );
+    if (cliArgs.enabledTypes.includes('functions')) {
+      const sdkWarning = getPolyapiVersionWarning(
+        readInstalledPolyapiVersion([getPolyPackageDir(), projectRoot])
+      );
+      if (sdkWarning) {
+        logger.warn(chalk.yellow(`WARN: ${sdkWarning}`));
+      }
+    }
     logger.info('');
 
     logger.info(chalk.cyan.bold(`[VALIDATION PHASE] ${thinRule(40)}`));

@@ -109,6 +109,15 @@ use the pnpm command above. The SDK's npm updater cannot install this project's
 `workspace:*` dependency and fails with `EUNSUPPORTEDPROTOCOL`. Updating Flow
 itself does not update the workflow SDK.
 
+Server functions call other functions through `poly.*`. PolyAPI R35 tracks
+those calls, including dynamic ones, only for functions deployed with
+`polyapi` 0.28.1 or later. When the installed workflow SDK is older, `flow push`
+and `flow push-dynamic` print a warning before validation; align the SDK as
+above and redeploy the affected server functions.
+
+As of PolyAPI R35, the PolyAPI VS Code extension supports pnpm workspaces such
+as this one, so it works with the SDK installed and generated in `workflows/`.
+
 ### Finish project configuration
 
 Create a local environment file from the sample:
