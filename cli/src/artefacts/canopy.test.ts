@@ -5,7 +5,11 @@ import { join } from 'node:path';
 import readline from 'node:readline/promises';
 import test, { type TestContext } from 'node:test';
 import { createSummary } from '../types/summary';
-import { syncCanopy } from './canopy';
+import {
+  enablesCanopyPublicAccess,
+  getCanopyPublicAccessError,
+  syncCanopy,
+} from './canopy';
 
 const config = { name: 'AI agent', subpath: 'ai-agent', collections: [] };
 const description = 'This is the SMS AI agent demo.';
@@ -345,4 +349,157 @@ test('OTP-enabled Canopy dry runs do not prompt without an interactive terminal'
   assert.equal(summary.planned, 2);
   assert.equal(summary.updated, 0);
   assert.equal(summary.failed, 0);
+});
+
+test('publicAccess requires a PUBLIC application', () => {
+  assert.equal(getCanopyPublicAccessError({ publicAccess: false }), null);
+  assert.equal(
+    getCanopyPublicAccessError({ publicAccess: true, visibility: 'PUBLIC' }),
+    null
+  );
+  assert.match(
+    getCanopyPublicAccessError({
+      publicAccess: true,
+      visibility: 'TENANT',
+    }) ?? '',
+    /requires a PUBLIC application, but this application is TENANT/
+  );
+  assert.match(
+    getCanopyPublicAccessError({ publicAccess: true }) ?? '',
+    /no visibility set/
+  );
+  // The deployed visibility wins: Flow sets visibility only on create.
+  assert.match(
+    getCanopyPublicAccessError(
+      { publicAccess: true, visibility: 'PUBLIC' },
+      'ENVIRONMENT'
+    ) ?? '',
+    /ENVIRONMENT in the target environment/
+  );
+});
+
+test('only a push that turns publicAccess on needs confirmation', () => {
+  assert.equal(enablesCanopyPublicAccess({ publicAccess: true }, {}), true);
+  assert.equal(enablesCanopyPublicAccess({ publicAccess: true }, null), true);
+  assert.equal(
+    enablesCanopyPublicAccess({ publicAccess: true }, { publicAccess: true }),
+    false
+  );
+  assert.equal(enablesCanopyPublicAccess({ publicAccess: false }, {}), false);
+});
+
+for (const scenario of [
+  {
+    name: 'skips enabling public access when it is not confirmed',
+    confirmed: false,
+    dryRun: false,
+    remotePublicAccess: false,
+    asked: 1,
+    writes: 0,
+    skipped: 1,
+    planned: 0,
+  },
+  {
+    name: 'enables public access after confirmation',
+    confirmed: true,
+    dryRun: false,
+    remotePublicAccess: false,
+    asked: 1,
+    writes: 1,
+    skipped: 0,
+    planned: 0,
+  },
+  {
+    name: 'plans enabling public access without asking during dry run',
+    confirmed: false,
+    dryRun: true,
+    remotePublicAccess: false,
+    asked: 0,
+    writes: 0,
+    skipped: 0,
+    planned: 1,
+  },
+  {
+    name: 'does not ask again when public access is already on',
+    confirmed: false,
+    dryRun: false,
+    remotePublicAccess: true,
+    asked: 0,
+    writes: 1,
+    skipped: 0,
+    planned: 0,
+  },
+]) {
+  test(scenario.name, async t => {
+    t.mock.property(process, 'env', testEnvironment);
+    const writes: unknown[] = [];
+    const local = {
+      ...config,
+      collections: [{ name: 'guests' }],
+      publicAccess: true,
+    };
+    t.mock.method(
+      globalThis,
+      'fetch',
+      async (url: string, init: RequestInit) => {
+        if (init.method === 'GET' && url.endsWith('/applications')) {
+          return Response.json([
+            { id: 'app-id', ...config, visibility: 'PUBLIC' },
+          ]);
+        }
+        if (init.method === 'GET' && url.endsWith('/config')) {
+          return Response.json({
+            ...config,
+            publicAccess: scenario.remotePublicAccess,
+          });
+        }
+        assert.equal(init.method, 'PUT');
+        writes.push(JSON.parse(String(init.body)));
+        return Response.json({});
+      }
+    );
+    let asked = 0;
+    const summary = createSummary().canopy;
+    await syncCanopy(
+      summary,
+      {
+        dryRun: scenario.dryRun,
+        confirmPublicAccess: async () => {
+          asked += 1;
+          return scenario.confirmed;
+        },
+      },
+      [
+        {
+          filePath: '/unused/aiAgent.json',
+          fileName: 'aiAgent.json',
+          content: { id: 'app-id', ...local },
+        },
+      ]
+    );
+    assert.equal(asked, scenario.asked);
+    assert.equal(writes.length, scenario.writes);
+    assert.equal(summary.skipped, scenario.skipped);
+    assert.equal(summary.planned, scenario.planned);
+    assert.equal(summary.failed, 0);
+  });
+}
+
+test('publicAccess on a non-PUBLIC application fails before any write', async t => {
+  t.mock.property(process, 'env', testEnvironment);
+  t.mock.method(globalThis, 'fetch', async (url: string, init: RequestInit) => {
+    assert.equal(init.method, 'GET');
+    assert.ok(url.endsWith('/applications'));
+    return Response.json([]);
+  });
+  const summary = createSummary().canopy;
+  await syncCanopy(summary, {}, [
+    {
+      filePath: '/unused/aiAgent.json',
+      fileName: 'aiAgent.json',
+      content: { ...config, visibility: 'TENANT', publicAccess: true },
+    },
+  ]);
+  assert.equal(summary.failed, 1);
+  assert.equal(summary.updated, 0);
 });

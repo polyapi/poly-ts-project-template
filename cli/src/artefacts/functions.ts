@@ -8,7 +8,12 @@ import ts from 'typescript';
 import type { paths } from '../sdk/schema';
 import type { FunctionFile } from '../types';
 import type { ArtifactSummary, OrphanedResource } from '../types/summary';
-import { getBaseUrl, getDeleteHeaders, sleep } from '../utils/apiClient';
+import {
+  getBaseUrl,
+  getDeleteHeaders,
+  resolveSelectedEnvPath,
+  sleep,
+} from '../utils/apiClient';
 import { getProductionExecutionApiKeyOverride } from '../utils/deploymentConfig';
 import { substituteEnvTokens } from '../utils/envSubstitution';
 import {
@@ -31,6 +36,13 @@ import {
   validateNamespace,
 } from '../utils/namespace';
 import { filterOrphansByContext } from '../utils/orphans';
+import {
+  getServerFunctionDeployment,
+  getServerFunctionDeploymentPlan,
+  parseDeployedFunctionId,
+  readServerFunctionDeploymentConfig,
+  runServerFunctionPostDeployScript,
+} from '../utils/serverFunctionDeployment';
 import { validateFunctionArtifact } from '../utils/validation';
 
 const log = createLogger('functions');
@@ -87,10 +99,12 @@ type PolyConfigMetadata = {
   context: string;
   description: string;
   visibility?: 'ENVIRONMENT' | 'TENANT' | 'PUBLIC';
-  logsEnabled?: boolean;
+  logsEnabled?: boolean | string;
   generateContexts?: string[];
   executionApiKey?: string;
-  cachePolyLibrary?: boolean;
+  cachePolyLibrary?: boolean | string;
+  serverSideAsync?: boolean | string;
+  containerConcurrency?: number | string | null;
 };
 
 type FunctionComparisonPayload = {
@@ -103,6 +117,7 @@ type FunctionComparisonPayload = {
   logsEnabled?: boolean;
   generateContexts?: string[];
   cachePolyLibrary?: boolean;
+  image?: string;
 };
 
 type ExistingFunctionRecord = {
@@ -113,7 +128,17 @@ type ExistingFunctionRecord = {
 };
 
 type FunctionSyncDecision =
-  | { action: 'create' | 'update' }
+  | {
+      action: 'create' | 'update';
+      settings: ServerFunctionSettings;
+      functionId?: string;
+    }
+  | {
+      // Only settings differ: PATCH them without redeploying the code.
+      action: 'settings';
+      settings: ServerFunctionSettings;
+      functionId: string;
+    }
   | { action: 'skip' };
 
 function getFunctionKey(
@@ -264,6 +289,7 @@ async function buildLocalComparisonPayload(
 
   if (func.type === 'server') {
     payload.externalDependencies = externalDependencies;
+    payload.image = getServerFunctionDeployment(func).image;
   }
 
   if (func.type === 'server') {
@@ -307,6 +333,9 @@ function buildRemoteComparisonPayload(
 
   if (func.type === 'server') {
     payload.externalDependencies = remote?.externalDependencies;
+    if (getServerFunctionDeployment(func).image !== undefined) {
+      payload.image = remote?.image ?? '';
+    }
     if (func.metadata.logsEnabled !== undefined) {
       payload.logsEnabled =
         typeof remote?.logsEnabled === 'boolean'
@@ -354,6 +383,9 @@ function normalizeComparisonPayload(
   }
   if (payload.cachePolyLibrary !== undefined) {
     normalizedPayload.cachePolyLibrary = payload.cachePolyLibrary;
+  }
+  if (payload.image !== undefined) {
+    normalizedPayload.image = payload.image;
   }
 
   return canonicalize(normalizedPayload) as Record<string, unknown>;
@@ -426,6 +458,113 @@ export async function getExistingFunctionDetails(
   }
 }
 
+/**
+ * Server function settings that `poly function add` cannot set and that
+ * PolyAPI applies with `PATCH /functions/server/{id}` without rebuilding the
+ * function: `serverSideAsync` ("Run in Background") and `containerConcurrency`
+ * (requests per replica; null removes the override).
+ */
+export type ServerFunctionSettings = {
+  serverSideAsync?: boolean;
+  containerConcurrency?: number | null;
+};
+
+export function getServerFunctionSettingsPatch(
+  func: FunctionFile,
+  remote: Record<string, unknown> | null | undefined,
+  force: boolean = false
+): ServerFunctionSettings {
+  if (func.type !== 'server') {
+    return {};
+  }
+  const patch: ServerFunctionSettings = {};
+  const { serverSideAsync, containerConcurrency } = func.metadata;
+  if (
+    typeof serverSideAsync === 'boolean' &&
+    (force || !remote || (remote.serverSideAsync === true) !== serverSideAsync)
+  ) {
+    patch.serverSideAsync = serverSideAsync;
+  }
+  if (containerConcurrency !== undefined) {
+    const remoteValue =
+      typeof remote?.containerConcurrency === 'number'
+        ? remote.containerConcurrency
+        : null;
+    if (force || !remote || remoteValue !== containerConcurrency) {
+      patch.containerConcurrency = containerConcurrency;
+    }
+  }
+  return patch;
+}
+
+export function describeServerFunctionSettings(
+  settings: ServerFunctionSettings
+): string {
+  return Object.entries(settings)
+    .map(([key, value]) => `${key}=${value === null ? 'null' : String(value)}`)
+    .join(', ');
+}
+
+/**
+ * Apply settings with a lightweight PATCH (no redeploy). When the function ID
+ * is unknown (just created), it is looked up by name and context first.
+ */
+export async function applyServerFunctionSettings(
+  client: ReturnType<typeof createClient<paths>>,
+  func: FunctionFile,
+  settings: ServerFunctionSettings,
+  functionId?: string
+): Promise<boolean> {
+  if (Object.keys(settings).length === 0) {
+    return true;
+  }
+  let id = functionId;
+  if (!id) {
+    const matches = (await getExistingServerFunctions(client)).filter(
+      remote =>
+        remote.name === func.metadata.name &&
+        remote.context === func.metadata.context
+    );
+    if (matches.length !== 1) {
+      log.error(
+        {
+          name: func.metadata.name,
+          context: func.metadata.context,
+          matches: matches.length,
+        },
+        'Could not find the deployed server function to apply its settings'
+      );
+      return false;
+    }
+    id = matches[0].id as string;
+  }
+  try {
+    const { error, response } = await (client.PATCH as any)(
+      '/functions/server/{id}',
+      { params: { path: { id } }, body: settings }
+    );
+    if (error) {
+      log.error(
+        {
+          name: func.metadata.name,
+          context: func.metadata.context,
+          status: (response as any)?.status,
+          error,
+        },
+        'Failed to update server function settings'
+      );
+      return false;
+    }
+    return true;
+  } catch (error) {
+    log.error(
+      { error, name: func.metadata.name },
+      'Error updating server function settings'
+    );
+    return false;
+  }
+}
+
 async function decideFunctionSyncAction(
   client: ReturnType<typeof createClient<paths>>,
   func: FunctionFile,
@@ -433,11 +572,18 @@ async function decideFunctionSyncAction(
   force: boolean = false
 ): Promise<FunctionSyncDecision> {
   if (!existingFunction) {
-    return { action: 'create' };
+    return {
+      action: 'create',
+      settings: getServerFunctionSettingsPatch(func, null),
+    };
   }
 
   if (force) {
-    return { action: 'update' };
+    return {
+      action: 'update',
+      settings: getServerFunctionSettingsPatch(func, null, true),
+      functionId: existingFunction.id,
+    };
   }
 
   const localPayload = await buildLocalComparisonPayload(func);
@@ -447,14 +593,28 @@ async function decideFunctionSyncAction(
   );
 
   if (!remoteDetails) {
-    return { action: 'update' };
+    return {
+      action: 'update',
+      settings: getServerFunctionSettingsPatch(func, null),
+      functionId: existingFunction.id,
+    };
   }
 
   const remotePayload = buildRemoteComparisonPayload(func, remoteDetails);
+  const settings = getServerFunctionSettingsPatch(func, remoteDetails);
 
-  return areFunctionPayloadsEqual(localPayload, remotePayload)
-    ? { action: 'skip' }
-    : { action: 'update' };
+  if (!areFunctionPayloadsEqual(localPayload, remotePayload)) {
+    // A code deploy drops the Knative containerConcurrency override while the
+    // stored value survives, so re-apply every declared setting afterwards.
+    return {
+      action: 'update',
+      settings: getServerFunctionSettingsPatch(func, remoteDetails, true),
+      functionId: existingFunction.id,
+    };
+  }
+  return Object.keys(settings).length > 0
+    ? { action: 'settings', settings, functionId: existingFunction.id }
+    : { action: 'skip' };
 }
 
 function getPropertyName(propertyName: ts.PropertyName): string | null {
@@ -473,7 +633,9 @@ function getStringLiteralValue(node: ts.Expression): string | undefined {
   return undefined;
 }
 
-function getBooleanLiteralValue(node: ts.Expression): boolean | undefined {
+function getBooleanLiteralValue(
+  node: ts.Expression
+): boolean | string | undefined {
   if (node.kind === ts.SyntaxKind.TrueKeyword) {
     return true;
   }
@@ -481,7 +643,21 @@ function getBooleanLiteralValue(node: ts.Expression): boolean | undefined {
     return false;
   }
 
-  return undefined;
+  return getStringLiteralValue(node);
+}
+
+function getNumberOrNullLiteralValue(
+  node: ts.Expression
+): number | string | null | undefined {
+  if (node.kind === ts.SyntaxKind.NullKeyword) {
+    return null;
+  }
+  if (ts.isNumericLiteral(node)) {
+    return Number(node.text);
+  }
+  // Placeholders such as '{{FUNCTION_CONCURRENCY}}' become numbers after
+  // substitution (see findFunctionFiles).
+  return getStringLiteralValue(node);
 }
 
 function getStringArrayLiteralValue(node: ts.Expression): string[] | undefined {
@@ -596,6 +772,16 @@ function extractPolyConfigFromTs(
         );
         break;
       }
+      case 'serverSideAsync': {
+        metadata.serverSideAsync = getBooleanLiteralValue(property.initializer);
+        break;
+      }
+      case 'containerConcurrency': {
+        metadata.containerConcurrency = getNumberOrNullLiteralValue(
+          property.initializer
+        );
+        break;
+      }
       default:
         break;
     }
@@ -642,8 +828,15 @@ export function findFunctionFiles(
 
         const extractedMetadata = extractPolyConfigFromTs(source, fullPath);
         const metadata = extractedMetadata
-          ? substituteEnvTokens(extractedMetadata)
+          ? (substituteEnvTokens(extractedMetadata) as FunctionFile['metadata'])
           : null;
+        if (
+          metadata &&
+          typeof metadata.containerConcurrency === 'string' &&
+          /^\d+$/.test(metadata.containerConcurrency)
+        ) {
+          metadata.containerConcurrency = Number(metadata.containerConcurrency);
+        }
         if (!metadata) {
           log.warn(
             { tsFile: file },
@@ -888,6 +1081,15 @@ export async function addFunction(
   func: FunctionFile,
   flagExecutionApiKey?: string
 ): Promise<'deployed' | 'failed'> {
+  const deployment = getServerFunctionDeployment(func);
+  const hookEnv = deployment.script
+    ? {
+        ...getPolyCliEnv(),
+        ENVPATH: resolveSelectedEnvPath(
+          process.env.ENVPATH?.trim() || 'workflows/dev.env'
+        ),
+      }
+    : undefined;
   return new Promise((resolve, _reject) => {
     const {
       name,
@@ -928,6 +1130,9 @@ export async function addFunction(
     // poly CLI requires either --server or --client flag
     if (isServerFunction) {
       args.push('--server');
+      if (deployment.image) {
+        args.push('--image', deployment.image);
+      }
       if (logsEnabled !== undefined) {
         args.push('--logs', logsEnabled ? 'enabled' : 'disabled');
       }
@@ -965,10 +1170,28 @@ export async function addFunction(
       stderr += data.toString();
     });
 
-    child.on('close', code => {
+    child.on('close', async code => {
       const cliFailure = extractCliFailure(`${stdout}\n${stderr}`);
 
       if (code === 0 && !cliFailure) {
+        if (deployment.script && hookEnv) {
+          try {
+            const functionId = parseDeployedFunctionId(stdout);
+            const functionKey = `${context}.${name}`;
+            log.info(`Running post-deploy script for ${functionKey}`);
+            await runServerFunctionPostDeployScript({
+              functionKey,
+              command: deployment.script,
+              functionId,
+              cwd: findWorkspaceRoot(getProjectRoot()),
+              env: hookEnv,
+            });
+          } catch (error) {
+            log.error(getErrorMessage(error));
+            resolve('failed');
+            return;
+          }
+        }
         resolve('deployed');
       } else {
         log.error(
@@ -1032,6 +1255,8 @@ export async function syncFunctions(
     detectOrphans?: boolean;
   } = {}
 ): Promise<void> {
+  // Reject malformed deployment settings before any function writes/deletions.
+  readServerFunctionDeploymentConfig();
   const functionFiles = findFunctionFiles(options.discoveryOptions).filter(
     func => !options.functionTypes || options.functionTypes.includes(func.type)
   );
@@ -1219,7 +1444,14 @@ export async function syncFunctions(
         'Failed to compare function payload; falling back to deploy'
       );
       log.info(warningColor('    [WARN] Compare failed, deploying'));
-      decision = { action: 'update' };
+      const existing = existingFunctionsByKey.get(
+        getFunctionKey(func.type, name, context)
+      );
+      decision = {
+        action: existing ? 'update' : 'create',
+        settings: getServerFunctionSettingsPatch(func, null),
+        functionId: existing?.id,
+      };
     }
 
     if (decision.action === 'skip') {
@@ -1228,7 +1460,50 @@ export async function syncFunctions(
       continue;
     }
 
+    if (decision.action === 'settings') {
+      const description = describeServerFunctionSettings(decision.settings);
+      if (options.dryRun) {
+        log.info(
+          chalk.blue(
+            `    [PLAN] Update settings without redeploy (${description})`
+          )
+        );
+        summary.planned++;
+        continue;
+      }
+      if (
+        await applyServerFunctionSettings(
+          client,
+          func,
+          decision.settings,
+          decision.functionId
+        )
+      ) {
+        log.info(
+          chalk.green(
+            `    [OK] Updated settings without redeploy (${description})`
+          )
+        );
+        summary.updated++;
+      } else {
+        log.info(chalk.red('    [FAIL] Failed'));
+        summary.failed++;
+      }
+      await sleep(500);
+      continue;
+    }
+
     if (options.dryRun) {
+      const deployment = getServerFunctionDeploymentPlan(func);
+      if (deployment.image) log.info(`    [PLAN] Image: ${deployment.image}`);
+      if (Object.keys(decision.settings).length > 0)
+        log.info(
+          `    [PLAN] Then set ${describeServerFunctionSettings(decision.settings)}`
+        );
+      if (deployment.postDeployScript)
+        log.info(
+          '    [PLAN] Run configured post-deploy script after successful deployment'
+        );
       log.info(
         chalk.blue(
           `    [PLAN] ${decision.action === 'create' ? 'Create' : 'Update'}`
@@ -1238,7 +1513,18 @@ export async function syncFunctions(
       continue;
     }
 
-    const result = await addFunction(func);
+    let result = await addFunction(func);
+    if (
+      result === 'deployed' &&
+      !(await applyServerFunctionSettings(
+        client,
+        func,
+        decision.settings,
+        decision.functionId
+      ))
+    ) {
+      result = 'failed';
+    }
     if (result === 'deployed') {
       if (decision.action === 'create') {
         log.info(chalk.green('    [OK] Created'));

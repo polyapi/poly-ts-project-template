@@ -70,7 +70,20 @@ const PRUNED_SCHEMA_TARGETS = new Set([
   'UpdateMCPServerDto',
 ]);
 
+export function isRemoteSpecLocation(specLocation: string): boolean {
+  return /^https?:\/\//i.test(specLocation);
+}
+
 function fetchOpenApiSpec(specUrl: string): Promise<OpenApiDocument> {
+  if (!isRemoteSpecLocation(specUrl)) {
+    // A local OpenAPI document, such as a server checkout's swagger.json.
+    const specPath = specUrl.startsWith('file:')
+      ? new URL(specUrl).pathname
+      : path.resolve(specUrl);
+    return Promise.resolve(
+      JSON.parse(fs.readFileSync(specPath, 'utf8')) as OpenApiDocument
+    );
+  }
   return new Promise((resolve, reject) => {
     https
       .get(specUrl, response => {
@@ -219,10 +232,26 @@ function patchWebhookTemplateBodyRequirement(
   }
 }
 
-function patchKnownSchemaQuirks(
+export function patchKnownSchemaQuirks(
   schemaName: string,
   schemaDocument: Record<string, unknown>
 ): void {
+  const schemas = (
+    schemaDocument.components as
+      | {
+          schemas?: {
+            KeyValueApiKeyEntrySource?: {
+              properties?: { key?: { enum?: string[] } };
+            };
+          };
+        }
+      | undefined
+  )?.schemas;
+  const apiKeyEntry = schemas?.KeyValueApiKeyEntrySource?.properties?.key;
+  if (apiKeyEntry) {
+    // Native API-key auth has separate key and value entries.
+    apiKeyEntry.enum = ['key', 'value'];
+  }
   if (schemaName === 'CreateTableDto' || schemaName === 'UpdateTableDto') {
     patchTableDefaultSchema(schemaDocument);
   }

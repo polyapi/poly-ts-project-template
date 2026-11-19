@@ -12,6 +12,7 @@ import {
   type WalkDirOptions,
   walkDir,
 } from '../utils/fileSystem';
+import { parseJobIntervalToSeconds } from '../utils/jobInterval';
 import {
   chalk,
   createHeader,
@@ -174,7 +175,41 @@ function buildJobPayload(
   };
 }
 
-function buildRemoteJobPayload(
+/**
+ * Interval values can be written several ways ("60s", "1m", 1, "1"), and the
+ * API answers with whole minutes as a number or a duration string. Compare
+ * them in seconds so equivalent spellings do not show up as drift.
+ */
+export function normalizeJobComparisonPayload(
+  payload: Record<string, unknown>
+): Record<string, unknown> {
+  const schedule = payload.schedule as Record<string, unknown> | undefined;
+  if (!schedule || schedule.type !== 'interval') {
+    return payload;
+  }
+  const seconds = parseJobIntervalToSeconds(schedule.value);
+  return {
+    ...payload,
+    schedule: {
+      ...schedule,
+      value: seconds === null ? schedule.value : { seconds },
+    },
+  };
+}
+
+export function isJobUnchanged(
+  localPayload: Record<string, unknown>,
+  existingJob: any
+): boolean {
+  return areComparisonPayloadsEqual(
+    normalizeJobComparisonPayload(localPayload),
+    normalizeJobComparisonPayload(
+      buildRemoteJobPayload(localPayload, existingJob)
+    )
+  );
+}
+
+export function buildRemoteJobPayload(
   localPayload: Record<string, unknown>,
   existingJob: any
 ): Record<string, unknown> {
@@ -232,10 +267,7 @@ async function syncJob(
   if (existingJob) {
     if (
       !force &&
-      areComparisonPayloadsEqual(
-        payload,
-        buildRemoteJobPayload(payload, existingJob)
-      )
+      isJobUnchanged(payload as Record<string, unknown>, existingJob)
     ) {
       return 'noop';
     }

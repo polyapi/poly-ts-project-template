@@ -10,7 +10,7 @@
  *  2. determines the seeds — functions named on the command line (forced:
  *     deployed even when unchanged; automatic detection is then off unless
  *     `--seed-from` or `--paths` says otherwise), or, when nothing is named,
- *     every function (under `--paths`, if given) whose code differs from the
+ *     every function (under `--paths`, if given) whose code or configured image differs from the
  *     target environment (`--seed-from remote`; `specs` compares against the
  *     generated SDK cache offline); intermediate CFXs inside the trees that
  *     were not compared yet are compared too and promoted when they differ,
@@ -37,11 +37,13 @@ import path from 'node:path';
 import type createClient from 'openapi-fetch';
 import {
   addFunction,
+  applyServerFunctionSettings,
   deleteClientFunction,
   deleteServerFunction,
   findFunctionFiles,
   fingerprintApiKey,
   getExistingFunctionDetails,
+  getServerFunctionSettingsPatch,
   locatePolyDir,
   normalizeMultilineText,
   readPolyGenerateProvenance,
@@ -70,6 +72,11 @@ import {
   validateNamespace,
 } from '../utils/namespace';
 import { filterOrphansByContext } from '../utils/orphans';
+import {
+  getServerFunctionDeployment,
+  getServerFunctionDeploymentPlan,
+  readServerFunctionDeploymentConfig,
+} from '../utils/serverFunctionDeployment';
 import { validateFunctionArtifact } from '../utils/validation';
 import {
   expandWildcardReferences,
@@ -421,6 +428,15 @@ async function detectRemoteSeeds(
           kind: 'update',
           detail: `code differs (local ${localCode.length} chars, deployed ${deployedCode.length} chars)`,
         });
+      } else {
+        const { image } = getServerFunctionDeployment(file);
+        if (image !== undefined && image !== details.image) {
+          seeds.push({
+            key,
+            kind: 'update',
+            detail: 'configured server image differs from the deployed image',
+          });
+        }
       }
     }
   };
@@ -541,6 +557,14 @@ function detectSpecsSeeds(
         kind: 'update',
         detail: `code differs from the specs cache (local ${localCode.length} chars, cached ${cachedCode.length} chars)`,
       });
+    } else if (getServerFunctionDeployment(file).image !== undefined) {
+      // Generated SDK specs do not establish which runtime image is deployed.
+      seeds.push({
+        key,
+        kind: 'update',
+        detail:
+          'configured server image cannot be verified from the specs cache; redeploying',
+      });
     }
   }
 
@@ -623,6 +647,7 @@ export async function planPushDynamic(
   context: PushDynamicContext,
   options: PlanOptions
 ): Promise<PushDynamicPlanResult> {
+  readServerFunctionDeploymentConfig();
   const files = findFunctionFiles({ respectSkipPaths: false });
   if (files.length === 0) {
     logger.error(
@@ -756,7 +781,7 @@ export async function planPushDynamic(
       chalk.blue(
         `Comparing ${detectionFiles.length} function file(s)${
           scopeLabels.length > 0 ? ` under ${scopeLabels.join(', ')}` : ''
-        } with ${getBaseUrl()} (code only)...`
+        } with ${getBaseUrl()} (code and configured server image)...`
       )
     );
     detected = await detectRemoteSeeds(
@@ -855,7 +880,7 @@ export async function planPushDynamic(
   if (seeds.length > 0) {
     logger.info(
       chalk.gray(
-        '  legend: + create (not deployed) · ~ update (code differs) · ! forced (--seeds)'
+        '  legend: + create (not deployed) · ~ update (code or image differs) · ! forced (--seeds)'
       )
     );
   }
@@ -1054,6 +1079,12 @@ export async function planPushDynamic(
     logger.info(
       `  ${String(index + 1).padStart(3)}  ${typeLabel(node.type)}  ${key}  ${chalk.gray(reason)}  ${chalk.dim(relativeToWorkspace(context.workspaceRoot, file.tsFilePath))}`
     );
+    const deployment = getServerFunctionDeploymentPlan(file);
+    if (deployment.image) logger.info(`        image: ${deployment.image}`);
+    if (deployment.postDeployScript)
+      logger.info(
+        '        post-deploy script: configured (runs after successful deployment)'
+      );
   });
   if (skippedByPath.length > 0) {
     logger.info(
@@ -1140,12 +1171,14 @@ export async function planPushDynamic(
       })),
       nodes: [...closure.nodes.values()].map(node => {
         const info = inventory?.get(remoteKey(node.type, node.key));
+        const file = filesByKey.get(node.key);
         return {
           key: node.key,
           type: node.type,
           reason: node.reason,
           via: node.via,
           deploy: deploySet.has(node.key),
+          deployment: file ? getServerFunctionDeploymentPlan(file) : undefined,
           must: isMust(node.key),
           file: relativeToWorkspace(
             context.workspaceRoot,
@@ -1372,7 +1405,20 @@ export async function executePushDynamicPlan(
         `  → [${index + 1}/${order.length}] ${key} [${typeLabel(node.type)}]`
       )
     );
-    const result = await addFunction(file, plan.flagExecutionApiKey);
+    let result = await addFunction(file, plan.flagExecutionApiKey);
+    // serverSideAsync and containerConcurrency are not `poly function add`
+    // options: apply the declared values with a PATCH after the deploy.
+    if (
+      result === 'deployed' &&
+      !(await applyServerFunctionSettings(
+        context.client,
+        file,
+        getServerFunctionSettingsPatch(file, null),
+        plan.inventory?.get(remoteKey(file.type, key))?.id
+      ))
+    ) {
+      result = 'failed';
+    }
     if (result === 'deployed') {
       if (seedByKey.get(key)?.kind === 'create') {
         summary.created += 1;

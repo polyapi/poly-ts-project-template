@@ -51,7 +51,10 @@ type AiFunctionRecord = Record<string, unknown> & {
   context?: string;
 };
 type ResolvableFunction = AiFunctionReference & { id: string };
-type ResolvableVariable = AiVariableReference & { id: string };
+type ResolvableVariable = AiVariableReference & {
+  id: string;
+  secrecy?: string;
+};
 type SyncResult = 'created' | 'updated' | 'noop' | 'failed';
 
 const log = createLogger('ai-functions');
@@ -224,8 +227,12 @@ export function resolveAiFunctionPayload(
   functions: ResolvableFunction[],
   variables: ResolvableVariable[]
 ): Record<string, unknown> | null {
-  const { systemPromptVariable, toolFunctions, ...content } =
-    aiFunction.content;
+  const {
+    systemPromptVariable,
+    twilioAuthTokenVariable,
+    toolFunctions,
+    ...content
+  } = aiFunction.content;
   const payload: Record<string, unknown> = { ...content };
 
   if (systemPromptVariable) {
@@ -234,6 +241,35 @@ export function resolveAiFunctionPayload(
       return null;
     }
     payload.systemPromptVariableId = variable.id;
+  }
+
+  // Voice functions can verify Twilio webhooks with the project's own auth
+  // token. PolyAPI only accepts SECRET variables; null reverts to the
+  // platform's Twilio credentials.
+  if (twilioAuthTokenVariable === null) {
+    payload.twilioAuthTokenVariableId = null;
+  } else if (twilioAuthTokenVariable) {
+    const variable = findVariable(
+      twilioAuthTokenVariable,
+      variables,
+      aiFunction
+    );
+    if (!variable) {
+      return null;
+    }
+    if (variable.secrecy !== 'SECRET') {
+      log.error(
+        {
+          aiFunction: aiFunction.content.name,
+          variableName: twilioAuthTokenVariable.variableName,
+          variableContext: twilioAuthTokenVariable.variableContext,
+          secrecy: variable.secrecy ?? 'unknown',
+        },
+        'twilioAuthTokenVariable must reference a SECRET variable'
+      );
+      return null;
+    }
+    payload.twilioAuthTokenVariableId = variable.id;
   }
 
   if (toolFunctions !== undefined) {
@@ -474,7 +510,7 @@ function toResolvableFunctions(items: any[]): ResolvableFunction[] {
   );
 }
 
-function toResolvableVariables(items: any[]): ResolvableVariable[] {
+export function toResolvableVariables(items: any[]): ResolvableVariable[] {
   return items.flatMap(item =>
     typeof item.id === 'string' &&
     typeof item.name === 'string' &&
@@ -484,6 +520,11 @@ function toResolvableVariables(items: any[]): ResolvableVariable[] {
             id: item.id,
             variableName: item.name,
             variableContext: item.context,
+            ...(typeof item.secrecy === 'string'
+              ? { secrecy: item.secrecy }
+              : item.secret === true
+                ? { secrecy: 'SECRET' }
+                : {}),
           },
         ]
       : []

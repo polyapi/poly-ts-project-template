@@ -1,0 +1,73 @@
+{
+  "spec": {
+    "openapi": "3.0.3",
+    "components": {
+      "securitySchemes": {
+        "Authorization": {
+          "type": "apiKey",
+          "in": "header",
+          "name": "Authorization"
+        },
+        "ApiKey": {
+          "type": "apiKey",
+          "in": "header",
+          "name": "x-api-key"
+        }
+      }
+    },
+    "security": [
+      {
+        "Authorization": [],
+        "ApiKey": []
+      }
+    ],
+    "paths": {
+      "/members/{id}/": {
+        "get": {}
+      }
+    }
+  },
+  "model": {
+    "functions": [
+      {
+        "name": "getMember",
+        "context": "example.demo",
+        "description": "Get member",
+        "arguments": [
+          {
+            "name": "apiKey",
+            "type": "string",
+            "required": true
+          }
+        ],
+        "source": {
+          "method": "GET",
+          "url": "{{hostUrl}}/v1/members/{{memberId}}/?page={{page}}",
+          "auth": {
+            "type": "apikey",
+            "apikey": [
+              {
+                "key": "in",
+                "value": "header"
+              },
+              {
+                "key": "key",
+                "value": "Authorization"
+              },
+              {
+                "key": "value",
+                "value": "{{apiKey}}"
+              }
+            ]
+          },
+          "body": {
+            "mode": "empty"
+          },
+          "headers": []
+        }
+      }
+    ],
+    "schemas": [],
+    "webhooks": []
+  }
+}
