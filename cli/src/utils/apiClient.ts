@@ -200,7 +200,7 @@ export function loadEnv(): EnvLoadResult {
   };
 }
 
-function resolveSelectedEnvPath(envPathOverride: string): string {
+export function resolveSelectedEnvPath(envPathOverride: string): string {
   if (path.isAbsolute(envPathOverride)) {
     return envPathOverride;
   }

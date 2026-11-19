@@ -25,6 +25,10 @@ import {
   validateNamespace,
 } from '../utils/namespace';
 import { filterOrphansByContext } from '../utils/orphans';
+import {
+  areComparisonPayloadsEqual,
+  projectRemoteValue,
+} from '../utils/payloadComparison';
 import { validateGraphQLSubscriptionArtifact } from '../utils/validation';
 import { getReferenceableServerFunctions } from './references';
 import { getExistingVariables } from './variables';
@@ -58,6 +62,137 @@ const log = createLogger('subscriptions');
 const INVALID_FUNCTION_PARAMS = Symbol('INVALID_FUNCTION_PARAMS');
 const INVALID_PARAMS_OBJECT = Symbol('INVALID_PARAMS_OBJECT');
 const GRAPHQL_SUBSCRIPTION_RECREATE_WAIT_SECONDS = 30;
+
+/**
+ * Changing these replaces the stream itself, so Flow keeps the confirmed
+ * delete-and-recreate path for them (with --force).
+ */
+const STRUCTURAL_SUBSCRIPTION_FIELDS = [
+  'type',
+  'transportProtocol',
+  'websocketUrl',
+  'query',
+  'functionId',
+] as const;
+
+/**
+ * Starting-offset choices apply when a stream is created; PolyAPI does not
+ * return them, so they cannot be compared and are not patched.
+ */
+const CREATE_ONLY_SUBSCRIPTION_FIELDS = new Set([
+  'ohipOffsetSelection',
+  'ohipOffset',
+]);
+
+/**
+ * PolyAPI stores paramsObject encrypted and returns it redacted, so changes
+ * cannot be detected; it is sent only on forced updates.
+ */
+const REDACTED_SUBSCRIPTION_FIELDS = new Set(['paramsObject']);
+
+const SUBSCRIPTION_IDENTITY_FIELDS = new Set(['name', 'context']);
+
+export type GraphQLSubscriptionUpdatePlan = {
+  structuralChanges: string[];
+  patch: Record<string, unknown>;
+};
+
+/**
+ * Split local differences into structural changes (recreate) and fields that
+ * PolyAPI R35 can PATCH in place (description, visibility, enabled,
+ * functionParams, ohipMaintainOffset, eventInactivityThresholdMs, ...).
+ * `force` patches every patchable field, including the redacted paramsObject.
+ */
+export function planGraphQLSubscriptionUpdate(
+  localPayload: Record<string, unknown>,
+  remote: Record<string, unknown>,
+  force: boolean = false
+): GraphQLSubscriptionUpdatePlan {
+  const differs = (key: string): boolean =>
+    !areComparisonPayloadsEqual(
+      localPayload[key],
+      projectRemoteValue(localPayload[key], remote[key] ?? null)
+    );
+
+  const structuralChanges = STRUCTURAL_SUBSCRIPTION_FIELDS.filter(
+    key => localPayload[key] !== undefined && differs(key)
+  );
+
+  const patch: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(localPayload)) {
+    if (
+      value === undefined ||
+      SUBSCRIPTION_IDENTITY_FIELDS.has(key) ||
+      CREATE_ONLY_SUBSCRIPTION_FIELDS.has(key) ||
+      (STRUCTURAL_SUBSCRIPTION_FIELDS as readonly string[]).includes(key)
+    ) {
+      continue;
+    }
+    if (REDACTED_SUBSCRIPTION_FIELDS.has(key)) {
+      if (force) patch[key] = value;
+      continue;
+    }
+    if (force || differs(key)) {
+      patch[key] = value;
+    }
+  }
+
+  return { structuralChanges, patch };
+}
+
+async function getGraphQLSubscriptionDetails(
+  client: ReturnType<typeof createClient<paths>>,
+  id: string
+): Promise<Record<string, unknown> | null> {
+  try {
+    const { data, error, response } = await (client.GET as any)(
+      '/subscriptions/graphql/{id}',
+      { params: { path: { id } } }
+    );
+    if (error || !isRecord(data)) {
+      log.error(
+        { id, status: (response as any)?.status, error },
+        'Failed to fetch GraphQL subscription details'
+      );
+      return null;
+    }
+    return data;
+  } catch (error) {
+    log.error({ error, id }, 'Failed to fetch GraphQL subscription details');
+    return null;
+  }
+}
+
+async function patchGraphQLSubscription(
+  client: ReturnType<typeof createClient<paths>>,
+  id: string,
+  patch: Record<string, unknown>,
+  subscription: GraphQLSubscriptionFile
+): Promise<boolean> {
+  const { name, context } = subscription.content;
+  if (
+    !validateEndpointPayload('GraphQLSubscriptionUpdateDto', patch, {
+      artifactType: 'GraphQL Subscription',
+      artifactName: name,
+      filePath: subscription.filePath,
+    })
+  ) {
+    return false;
+  }
+
+  const { error, response } = await (client.PATCH as any)(
+    '/subscriptions/graphql/{id}',
+    { params: { path: { id } }, body: patch }
+  );
+  if (error) {
+    log.error(
+      { name, context, status: (response as any)?.status, error },
+      'Failed to update GraphQL subscription'
+    );
+    return false;
+  }
+  return true;
+}
 
 export function findGraphQLSubscriptionFiles(
   options: FindGraphQLSubscriptionFileOptions = {}
@@ -412,7 +547,7 @@ async function confirmGraphQLSubscriptionRecreate(
     const answer = (
       await readline.question(
         warningColor(
-          `GraphQL subscriptions cannot be updated right now; they can only be re-created. Type YES to delete and re-create ${context}.${name}, or press Enter to skip: `
+          `Structural GraphQL subscription changes (type, transport, URL, query or destination) need the subscription to be re-created. Type YES to delete and re-create ${context}.${name}, or press Enter to skip: `
         )
       )
     ).trim();
@@ -496,6 +631,8 @@ async function postGraphQLSubscription(
   force: boolean = false
 ): Promise<
   | 'created'
+  | 'updated'
+  | 'unchanged'
   | 'recreated'
   | 'recreate-planned'
   | 'skipped-unsupported'
@@ -534,11 +671,49 @@ async function postGraphQLSubscription(
         return 'failed';
       }
 
+      const remote = await getGraphQLSubscriptionDetails(
+        client,
+        existingSubscription.id
+      );
+      if (!remote) {
+        return 'failed';
+      }
+      const plan = planGraphQLSubscriptionUpdate(
+        payload as Record<string, unknown>,
+        remote,
+        force
+      );
+
+      if (plan.structuralChanges.length === 0) {
+        if (Object.keys(plan.patch).length === 0) {
+          return 'unchanged';
+        }
+        log.info(
+          chalk.gray(
+            `    Fields to update in place: ${Object.keys(plan.patch).join(', ')}`
+          )
+        );
+        if (dryRun) {
+          return 'updated';
+        }
+        const patched = await patchGraphQLSubscription(
+          client,
+          existingSubscription.id,
+          plan.patch,
+          subscription
+        );
+        return patched ? 'updated' : 'failed';
+      }
+
       if (!force) {
         log.warn(
-          { name: subscriptionName, context: subscriptionContext },
+          {
+            name: subscriptionName,
+            context: subscriptionContext,
+            fields: plan.structuralChanges,
+          },
           warningColor(
-            'GraphQL streaming subscription updates are not supported right now; skipping existing subscription. Use --force to delete and re-create it.'
+            `GraphQL subscription ${subscriptionContext}.${subscriptionName} has structural changes (${plan.structuralChanges.join(', ')}) that need it to be deleted and re-created; skipping. Use --force to re-create it.`
           )
         );
         return 'skipped-unsupported';
@@ -815,6 +990,17 @@ export async function syncGraphQLSubscriptions(
         log.info(chalk.green('    [OK] Created'));
         summary.created++;
       }
+    } else if (result === 'updated') {
+      if (options.dryRun) {
+        log.info(chalk.blue('    [PLAN] Update'));
+        summary.planned++;
+      } else {
+        log.info(chalk.green('    [OK] Updated'));
+        summary.updated++;
+      }
+    } else if (result === 'unchanged') {
+      log.info(chalk.gray('    [SKIP] Unchanged'));
+      summary.skipped++;
     } else if (result === 'recreate-planned') {
       log.info(chalk.blue('    [PLAN] Delete and recreate'));
       summary.planned++;
@@ -823,7 +1009,7 @@ export async function syncGraphQLSubscriptions(
       summary.deleted++;
       summary.created++;
     } else if (result === 'skipped-unsupported') {
-      log.info(chalk.gray('    [SKIP] Update unsupported'));
+      log.info(chalk.gray('    [SKIP] Structural change needs --force'));
       summary.skipped++;
     } else if (result === 'noop') {
       log.info(chalk.gray('    [SKIP] Skipped'));

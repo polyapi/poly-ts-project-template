@@ -65,7 +65,7 @@ identity, such as `example.utilities.log`.
 
 `--paths` never forces anything. It means the same as for `flow push`: it
 scopes which artefacts are synced and which function files are compared for
-changes, so only the functions under it whose code differs from the target
+changes, so only the functions under it whose code or configured server image differs from the target
 become seeds. The closure is never scoped, so a changed CFX still pulls in
 every SFX that embeds it, wherever that SFX lives. To deploy a function even
 when it is unchanged, name it as an argument or with `--seeds`.
@@ -108,13 +108,16 @@ Seeds are the functions treated as changed.
   the named trees, the way `flow push --paths <file>` syncs just that file.
   A run that names functions never detects or deletes orphans.
 - `--seed-from remote` (the default when nothing is named): every function file
-  is compared, code only, with what is deployed in the target environment. One
+  is compared by source code and any configured server image with what is
+  deployed in the target environment. One
   `GET` per function; a few hundred requests take 10 to 20 seconds. A function
   missing remotely is a `create` seed.
 - `--seed-from specs`: the same comparison, offline, against the generated SDK's
   `specs.json` (written by `npx poly generate`). Instant, but only as fresh as
   the last generate and specific to the environment it was generated for; the
   plan prints which.
+  Configured server images cannot be verified from this cache, so those
+  functions are conservatively redeployed even when their source matches.
 - `--seed-from none`: only the named functions.
 
 Whatever the source, the intermediate CFXs inside the trees that were not
@@ -231,7 +234,7 @@ function plan, and then:
 
 ```text
 [GRAPH]   N functions (x CFX / y SFX) · E edges · M external poly.* references ignored
-[SEEDS]   + create (not deployed) · ~ update (code differs) · ! forced (--seeds)
+[SEEDS]   + create (not deployed) · ~ update (code or image differs) · ! forced (--seeds)
 [TREE]    callers of each seed (expansion stops at server functions)
 [PLAN]    N deploy(s) in dependency order (seed · leaf · MUST · intermediate skipped · outside the closure)
 ```
@@ -364,8 +367,9 @@ narrowed. Worst case is deploying more than needed, never less.
   and an SFX that returns it, change only the CFX marker and `poly function add`
   the CFX alone, give the SFX an explicit `sleepCycleInterval`, wait past it and
   execute the SFX. A new marker means non-alwaysOn leaves need no redeploy.
-- **Seeds are code-only.** An npm-pin or `polyConfig` flag change without a
-  code change is not a seed; force the function.
+- **Seeds compare source and configured server images.** An npm-pin change
+  outside the source file or a hook-only change is not a seed; force the
+  function. See [custom images and hooks](README.md#custom-server-images-and-post-deploy-scripts).
 - **Deploys are not atomic.** Between the CFX add and the last leaf add the
   catalog holds new CFX code while some bundles are old. Hub changes are large
   (use `--hubs` to see the blast radius) and every SFX redeploy terminates a

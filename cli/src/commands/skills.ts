@@ -198,7 +198,12 @@ function resolveSource(value: string | undefined): string {
   const repository = httpsRepository(value);
   if (repository) return `https://github.com/${repository.join('/')}`;
   if (SSH_SOURCE.test(value)) return value;
-  const absolute = path.resolve(value);
+  // `pnpm flow` runs inside cli/, so resolve relative paths against the
+  // directory the command was run from (pnpm's INIT_CWD), as in a shell.
+  const absolute = path.resolve(
+    process.env.INIT_CWD?.trim() || process.cwd(),
+    value
+  );
   const info = fs.statSync(absolute, { throwIfNoEntry: false });
   if (info?.isDirectory() || (info?.isFile() && ARCHIVE_FILE.test(absolute)))
     return fs.realpathSync(absolute);

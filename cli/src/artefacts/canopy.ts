@@ -1,4 +1,5 @@
 import * as fs from 'node:fs';
+import { createInterface } from 'node:readline/promises';
 import type { CanopyFile } from '../types';
 import type { ArtifactSummary } from '../types/summary';
 import { getBaseUrl, getOtpHeaders } from '../utils/apiClient';
@@ -24,11 +25,17 @@ type ApplicationRecord = {
   name?: string;
   subpath?: string;
   description?: string;
+  visibility?: string;
 };
 
 type CanopySyncOptions = {
   dryRun?: boolean;
   force?: boolean;
+  /**
+   * Asks before a push turns on anonymous access. Defaults to a terminal
+   * prompt; without a terminal the application is skipped.
+   */
+  confirmPublicAccess?: (appName: string) => Promise<boolean>;
 };
 
 const log = createLogger('canopy');
@@ -94,6 +101,75 @@ function projectRemoteToLocalShape(
   }
 
   return remoteValue;
+}
+
+/**
+ * `publicAccess` (PolyAPI R35) lets anyone open a Canopy application without
+ * signing in. PolyAPI honours it only for PUBLIC applications, so a local
+ * `publicAccess: true` on any other visibility is a mistake worth stopping.
+ * `remoteVisibility` is the existing application's visibility: Flow sets
+ * visibility only when creating an application.
+ */
+export function getCanopyPublicAccessError(
+  content: Record<string, unknown>,
+  remoteVisibility?: string
+): string | null {
+  if (content.publicAccess !== true) {
+    return null;
+  }
+  const visibility =
+    remoteVisibility ??
+    (typeof content.visibility === 'string' ? content.visibility : undefined);
+  if (visibility === 'PUBLIC') {
+    return null;
+  }
+  return `publicAccess: true requires a PUBLIC application, but this application is ${visibility ?? 'not PUBLIC (no visibility set)'}${
+    remoteVisibility
+      ? ' in the target environment (Flow sets visibility only on create)'
+      : ''
+  }.`;
+}
+
+/** True when this push would turn anonymous access on. */
+export function enablesCanopyPublicAccess(
+  localConfig: Record<string, unknown>,
+  remoteConfig: unknown
+): boolean {
+  if (localConfig.publicAccess !== true) {
+    return false;
+  }
+  return !(
+    remoteConfig &&
+    typeof remoteConfig === 'object' &&
+    (remoteConfig as Record<string, unknown>).publicAccess === true
+  );
+}
+
+async function promptForPublicAccess(appName: string): Promise<boolean> {
+  if (!process.stdin.isTTY || !process.stdout.isTTY) {
+    log.warn(
+      warningColor(
+        `    [WARN] ${appName} would become publicly accessible without sign-in; this needs confirmation in an interactive terminal. Skipping it.`
+      )
+    );
+    return false;
+  }
+  const readline = createInterface({
+    input: process.stdin,
+    output: process.stdout,
+  });
+  try {
+    const answer = (
+      await readline.question(
+        warningColor(
+          `${appName} will be open to anyone with its URL, without sign-in (publicAccess: true). Type YES to continue, or press Enter to skip: `
+        )
+      )
+    ).trim();
+    return answer === 'YES';
+  } finally {
+    readline.close();
+  }
 }
 
 function buildAuthHeaders(): Record<string, string> {
@@ -345,6 +421,8 @@ export async function syncCanopy(
     const name = canopy.content.name || canopy.fileName;
     const subpath = canopy.content.subpath || '(no subpath)';
     const { id: _id, description, visibility, ...config } = canopy.content;
+    const confirmPublicAccess =
+      options.confirmPublicAccess ?? promptForPublicAccess;
 
     try {
       const resolvedId = selectApplicationId(
@@ -354,12 +432,44 @@ export async function syncCanopy(
       );
       let appId: string;
 
+      const remoteVisibility = resolvedId
+        ? applications.find(app => app.id === resolvedId)?.visibility
+        : undefined;
+      const publicAccessError = getCanopyPublicAccessError(
+        canopy.content,
+        typeof remoteVisibility === 'string' ? remoteVisibility : undefined
+      );
+      if (publicAccessError) {
+        summary.failed++;
+        log.error({ filePath: canopy.filePath }, publicAccessError);
+        log.info(
+          chalk.red(`  → ${name} (${subpath}) [FAIL] ${publicAccessError}`)
+        );
+        continue;
+      }
+
       if (!resolvedId) {
         log.info(`  → ${name} (${subpath}) — not found remotely`);
 
         if (options.dryRun) {
           summary.planned++;
           log.info(chalk.blue('    [PLAN] Would create'));
+          if (config.publicAccess === true) {
+            log.info(
+              warningColor(
+                '    [PLAN] Public access without sign-in (confirmation required)'
+              )
+            );
+          }
+          continue;
+        }
+
+        if (
+          config.publicAccess === true &&
+          !(await confirmPublicAccess(name))
+        ) {
+          summary.skipped++;
+          log.info(chalk.gray('    [SKIP] Public access not confirmed'));
           continue;
         }
 
@@ -435,9 +545,27 @@ export async function syncCanopy(
         }
       }
 
+      const enablesPublicAccess = enablesCanopyPublicAccess(
+        config,
+        remoteConfigMissing ? null : remoteConfigResponse.data
+      );
+
       if (options.dryRun) {
         summary.planned++;
         log.info(chalk.blue('    [PLAN] Would update'));
+        if (enablesPublicAccess) {
+          log.info(
+            warningColor(
+              '    [PLAN] Turns on public access without sign-in (confirmation required)'
+            )
+          );
+        }
+        continue;
+      }
+
+      if (enablesPublicAccess && !(await confirmPublicAccess(name))) {
+        summary.skipped++;
+        log.info(chalk.gray('    [SKIP] Public access not confirmed'));
         continue;
       }
 

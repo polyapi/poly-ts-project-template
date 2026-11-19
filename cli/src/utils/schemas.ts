@@ -119,6 +119,20 @@ export const WebhookArtifactSchema = Type.Object(
     securityFunctions: Type.Optional(Type.Array(WebhookSecurityFunction)),
     xmlParserOptions: Type.Optional(WebhookHandleXmlParserOptions),
     ownerUserId: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+    // Routes events straight to a server function without a trigger. Resolved
+    // to serverFunctionId at sync time; null disconnects the function.
+    serverFunction: Type.Optional(
+      Type.Union([
+        Type.Object(
+          {
+            functionName: Type.String({ minLength: 1 }),
+            functionContext: Type.String({ minLength: 1 }),
+          },
+          { additionalProperties: false }
+        ),
+        Type.Null(),
+      ])
+    ),
   },
   {
     $id: 'WebhookArtifact',
@@ -156,6 +170,9 @@ export const FunctionArtifactSchema = Type.Object(
     state: Type.Optional(State),
     logsEnabled: Type.Optional(Type.Boolean()),
     serverSideAsync: Type.Optional(Type.Boolean()),
+    containerConcurrency: Type.Optional(
+      Type.Union([Type.Integer({ minimum: 0 }), Type.Null()])
+    ),
     generateContexts: Type.Optional(Type.Array(Type.String())),
     executionApiKey: Type.Optional(Type.String()),
     cachePolyLibrary: Type.Optional(Type.Boolean()),
@@ -246,6 +263,37 @@ const AiToolFunction = Type.Object(
   { additionalProperties: false }
 );
 
+const McpToolWidgetSetting = Type.Object(
+  {
+    key: Type.String({ minLength: 1 }),
+    variable: AiVariableReference,
+  },
+  { additionalProperties: false }
+);
+
+const McpToolWidget = Type.Object(
+  {
+    enabled: Type.Boolean(),
+    settings: Type.Optional(Type.Array(McpToolWidgetSetting)),
+  },
+  { additionalProperties: false }
+);
+
+const McpToolFunction = Type.Object(
+  {
+    functionName: Type.String(),
+    functionContext: Type.String(),
+    argumentConfig: Type.Optional(Type.Array(AiFunctionArgumentConfig)),
+    widget: Type.Optional(McpToolWidget),
+  },
+  { additionalProperties: false }
+);
+
+const JsonSchemaObject = Type.Union([
+  Type.Record(Type.String(), Type.Any()),
+  Type.Null(),
+]);
+
 /**
  * AI Function Artifact (CreateAiFunctionV2Dto with portable name/context
  * references in place of remote IDs)
@@ -266,9 +314,8 @@ export const AiFunctionArtifactSchema = Type.Object(
     returnTypeSchema: Type.Optional(
       Type.Union([Type.Record(Type.String(), Type.Any()), Type.Null()])
     ),
-    outputSchema: Type.Optional(
-      Type.Union([Type.Record(Type.String(), Type.Any()), Type.Null()])
-    ),
+    outputSchema: Type.Optional(JsonSchemaObject),
+    errorSchema: Type.Optional(JsonSchemaObject),
     toolFunctions: Type.Optional(Type.Array(AiToolFunction)),
     clientPromptEnabled: Type.Optional(Type.Boolean()),
     clientPromptRequired: Type.Optional(Type.Boolean()),
@@ -290,7 +337,15 @@ export const AiFunctionArtifactSchema = Type.Object(
         Type.Literal('VERSE'),
       ])
     ),
-    voiceInitialMessage: Type.Optional(Type.String({ maxLength: 500 })),
+    // null skips the voice greeting ("please wait") entirely.
+    voiceInitialMessage: Type.Optional(
+      Type.Union([Type.String({ maxLength: 500 }), Type.Null()])
+    ),
+    // A SECRET variable with your own Twilio auth token; null reverts to the
+    // platform's Twilio credentials.
+    twilioAuthTokenVariable: Type.Optional(
+      Type.Union([AiVariableReference, Type.Null()])
+    ),
   },
   {
     $id: 'AiFunctionArtifact',
@@ -311,7 +366,7 @@ export const McpServerArtifactSchema = Type.Object(
     description: Type.Optional(Type.String()),
     enabled: Type.Optional(Type.Boolean()),
     isPublic: Type.Optional(Type.Boolean()),
-    toolFunctions: Type.Optional(Type.Array(AiToolFunction)),
+    toolFunctions: Type.Optional(Type.Array(McpToolFunction)),
     oauthClientId: Type.Optional(Type.Union([Type.String(), Type.Null()])),
     oauthClientSecretVariable: Type.Optional(
       Type.Union([AiVariableReference, Type.Null()])
@@ -555,10 +610,20 @@ const JobSchedulePeriodical = Type.Object(
   { additionalProperties: false }
 );
 
+/**
+ * A whole number (or numeric string) of minutes, or a `<int><s|m|h>` duration
+ * such as "30s", "5m" or "2h". The API's minimum is 10 seconds, which
+ * validateJobArtifact checks after the shape is valid.
+ */
+export const JOB_INTERVAL_STRING_PATTERN = '^(\\d+|\\d+\\s*[smhSMH])$';
+
 const JobScheduleInterval = Type.Object(
   {
     type: Type.Literal('interval'),
-    value: Type.Number(),
+    value: Type.Union([
+      Type.Integer({ minimum: 1 }),
+      Type.String({ pattern: JOB_INTERVAL_STRING_PATTERN }),
+    ]),
     acceptableDelayTime: Type.Optional(
       Type.Union([Type.Number(), Type.Null()])
     ),

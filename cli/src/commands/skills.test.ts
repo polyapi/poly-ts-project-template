@@ -272,6 +272,23 @@ test('parses skills commands and rejects unsupported input', () => {
   }
 });
 
+test('a relative --source resolves from the directory pnpm was run in', t => {
+  const folder = fs.mkdtempSync(path.join(tmpdir(), 'flow-skills-cwd-'));
+  const previous = process.env.INIT_CWD;
+  t.after(() => {
+    if (previous === undefined) delete process.env.INIT_CWD;
+    else process.env.INIT_CWD = previous;
+    fs.rmSync(folder, { recursive: true, force: true });
+  });
+  fs.writeFileSync(path.join(folder, 'skills.tar.gz'), '');
+  process.env.INIT_CWD = folder;
+  assert.equal(
+    parseSkillsArgs(['skills', 'update', '--source', './skills.tar.gz'])
+      ?.source,
+    fs.realpathSync(path.join(folder, 'skills.tar.gz'))
+  );
+});
+
 test('add installs the packs of the chosen setup and records them', async t => {
   const upstream = skillsRepository(t);
   const root = project(t);

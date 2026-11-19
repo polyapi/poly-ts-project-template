@@ -79,7 +79,7 @@ order:
 
 ```text
 variables -> canopy -> schemas -> tables -> functions -> ai-functions
-          -> mcp-servers -> webhooks -> triggers -> jobs
+          -> mcp-servers -> webhooks -> triggers -> subscriptions -> jobs
 ```
 
 - Use generated `schemas.*`, `vari.*`, and `tabi.*` namespaces directly when
@@ -186,8 +186,10 @@ Advanced projects can explicitly configure multiple owned roots with
 - Expose only functions that are safe for an external model to call. Prefer
   read-only or bounded actions; keep authorization, destructive operations, and
   other consequential policy in deterministic code behind the tool.
-- Reference tools with `functionName` and `functionContext`, and fix provider
-  settings with `hardcoded` bindings or namespace-owned `variable` bindings.
+- Reference API or server functions in the target environment as tools, with
+  `functionName` and `functionContext`; client functions and functions shared
+  from other environments cannot be MCP tools. Fix provider settings with
+  `hardcoded` bindings or namespace-owned `variable` bindings.
 - Give each server a name that is unique in the target environment. MCP servers
   have no namespace context, so Flow matches them by name and never deletes them
   as orphans.
@@ -203,6 +205,9 @@ Advanced projects can explicitly configure multiple owned roots with
 - Use one webhook JSON file per public endpoint.
 - Use one trigger JSON file to route a webhook or error handler to a server
   function.
+- A webhook can instead name its server function in `serverFunction`. Use
+  either that field or a webhook trigger for a given function, never both:
+  both routes run, so the function would execute twice per event.
 - Keep webhook, trigger, function name, and function context aligned.
 - Scoped syncs skip orphan detection to avoid false deletion reports.
 
@@ -214,6 +219,8 @@ Advanced projects can explicitly configure multiple owned roots with
 - `specs/` contains OpenAPI or PolyAPI model source material.
 - `webhooks/` contains public HTTP boundary definitions.
 - `triggers/` connects webhooks, events, or error handlers to functions.
+- `subscriptions/` contains GraphQL subscription definitions and portable
+  destination-function references.
 - `vari/` contains configuration, secret placeholders, retry policy, or token
   cache definitions.
 - `tabi/` contains persisted workflow state or lookup tables.

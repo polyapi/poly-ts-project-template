@@ -3,9 +3,11 @@ import test from 'node:test';
 import { TypeCompiler } from '@sinclair/typebox/compiler';
 import type { AiFunctionFile } from '../types';
 import { AiFunctionArtifactSchema } from '../utils/schemas';
+import { getAiFunctionRuleErrors } from '../utils/validation';
 import {
   buildAiFunctionUpdatePayload,
   resolveAiFunctionPayload,
+  toResolvableVariables,
 } from './aiFunctions';
 
 const aiFunction: AiFunctionFile = {
@@ -274,4 +276,170 @@ test('ignores API-only metadata while comparing nested tool configuration', () =
   );
 
   assert.deepEqual(update, { payload: {}, immutableChanges: [] });
+});
+
+test('removing a property from a hardcoded tool value updates the AI Function', () => {
+  const tool = (value: Record<string, unknown>) => ({
+    toolFunctions: [
+      {
+        id: 'function-id',
+        argumentConfig: [{ key: 'options', source: 'hardcoded', value }],
+      },
+    ],
+  });
+  const local = tool({ units: 'metric' });
+  const update = buildAiFunctionUpdatePayload(local, {
+    ...tool({ units: 'metric', legacy: true }),
+    id: 'ai-function-id',
+  });
+  assert.deepEqual(update, { payload: local, immutableChanges: [] });
+});
+
+const voiceFunction: AiFunctionFile = {
+  filePath: '/workspace/src/voice/artefacts/ai-functions/frontDesk.json',
+  fileName: 'frontDesk.json',
+  content: {
+    name: 'frontDesk',
+    context: 'example.voice',
+    type: 'VOICE',
+    voiceInitialMessage: null,
+    twilioAuthTokenVariable: {
+      variableName: 'twilioAuthToken',
+      variableContext: 'example.voice',
+    },
+  },
+};
+
+test('voiceInitialMessage accepts null and twilioAuthTokenVariable a reference or null', () => {
+  assert.equal(artifactValidator.Check(voiceFunction.content), true);
+  assert.equal(
+    artifactValidator.Check({
+      ...voiceFunction.content,
+      twilioAuthTokenVariable: null,
+    }),
+    true
+  );
+  assert.equal(
+    artifactValidator.Check({
+      ...voiceFunction.content,
+      twilioAuthTokenVariableId: 'remote-id',
+    }),
+    false
+  );
+});
+
+test('twilioAuthTokenVariable resolves to the ID of a SECRET variable', () => {
+  const variables = toResolvableVariables([
+    {
+      id: 'twilio-variable-id',
+      name: 'twilioAuthToken',
+      context: 'example.voice',
+      secrecy: 'SECRET',
+    },
+  ]);
+  const payload = resolveAiFunctionPayload(voiceFunction, [], variables);
+  assert.equal(payload?.twilioAuthTokenVariableId, 'twilio-variable-id');
+  assert.equal(payload?.voiceInitialMessage, null);
+  assert.equal(payload && 'twilioAuthTokenVariable' in payload, false);
+});
+
+test('twilioAuthTokenVariable rejects variables that are not SECRET', () => {
+  for (const item of [
+    { secrecy: 'OBSCURED' },
+    { secrecy: 'NONE' },
+    { secret: false },
+    {},
+  ]) {
+    const variables = toResolvableVariables([
+      {
+        id: 'twilio-variable-id',
+        name: 'twilioAuthToken',
+        context: 'example.voice',
+        ...item,
+      },
+    ]);
+    assert.equal(resolveAiFunctionPayload(voiceFunction, [], variables), null);
+  }
+});
+
+test('twilioAuthTokenVariable null reverts to platform credentials', () => {
+  const payload = resolveAiFunctionPayload(
+    {
+      ...voiceFunction,
+      content: { ...voiceFunction.content, twilioAuthTokenVariable: null },
+    },
+    [],
+    []
+  );
+  assert.equal(payload?.twilioAuthTokenVariableId, null);
+});
+
+test('output and error schemas must have object roots', () => {
+  assert.deepEqual(
+    getAiFunctionRuleErrors({ outputSchema: aiFunction.content.outputSchema }),
+    []
+  );
+  assert.deepEqual(getAiFunctionRuleErrors({ outputSchema: null }), []);
+  for (const outputSchema of [
+    { type: 'string' },
+    { type: 'array', items: { type: 'string' } },
+    { anyOf: [{ type: 'object' }, { type: 'string' }] },
+    { enum: ['a', 'b'] },
+  ]) {
+    const errors = getAiFunctionRuleErrors({ outputSchema });
+    assert.equal(errors.length, 1);
+    assert.equal(errors[0].path, '/outputSchema');
+  }
+  // Object type inferred from properties, and local $ref roots, are allowed.
+  assert.deepEqual(
+    getAiFunctionRuleErrors({
+      outputSchema: { properties: { a: { type: 'string' } } },
+    }),
+    []
+  );
+  assert.deepEqual(
+    getAiFunctionRuleErrors({ outputSchema: { $ref: '#/definitions/Out' } }),
+    []
+  );
+});
+
+test('errorSchema follows the PolyAPI failure contract', () => {
+  const outputSchema = { type: 'object', properties: {} };
+  const errorSchema = {
+    type: 'object',
+    properties: {
+      status: { const: 'failed' },
+      message: { type: 'string' },
+    },
+    required: ['status', 'message'],
+  };
+  assert.deepEqual(getAiFunctionRuleErrors({ outputSchema, errorSchema }), []);
+  assert.match(
+    getAiFunctionRuleErrors({ errorSchema })[0].message,
+    /requires outputSchema/
+  );
+  assert.equal(
+    getAiFunctionRuleErrors({
+      outputSchema,
+      errorSchema: { type: 'array' },
+    }).length,
+    3
+  );
+});
+
+test('twilioAuthTokenVariable is limited to VOICE functions', () => {
+  assert.equal(
+    getAiFunctionRuleErrors({
+      type: 'TEXT',
+      twilioAuthTokenVariable: voiceFunction.content.twilioAuthTokenVariable,
+    }).length,
+    1
+  );
+  assert.deepEqual(
+    getAiFunctionRuleErrors({
+      type: 'VOICE',
+      twilioAuthTokenVariable: voiceFunction.content.twilioAuthTokenVariable,
+    }),
+    []
+  );
 });
