@@ -874,8 +874,20 @@ A webhook can run a server function directly, without a trigger artefact:
 Flow resolves `serverFunction` to the server function's `serverFunctionId`
 (deploy the function first) and includes it in the change comparison. Set it to
 `null` to disconnect the function; omit it to leave the connection unmanaged.
-If a trigger artefact also routes the same webhook to the same function, Flow
-warns: both routes would run, executing the function twice per event.
+When the binding is set, PolyAPI runs the bound function for calls in the
+webhook's own environment and skips that webhook's triggers; listeners are still
+notified. The function receives the same `(eventPayload, headers, params)`
+arguments as a trigger-invoked function, and its result is the webhook's
+response. A trigger that uses a bound webhook as its source would therefore
+never run, so Flow fails validation, before any remote write, when any local
+trigger artefact names a bound webhook in `source`, whatever its destination.
+The error names the webhook and the trigger files: remove the trigger, or
+remove the binding to keep routing through triggers. The check covers every
+webhook and trigger in the project whenever `webhooks` or `triggers` is
+selected, including scoped pushes and `--skip-invalid`.
+
+Keep a trigger instead of a binding when the call must be fire-and-forget
+(`waitForResponse: false`) or one event must reach several functions.
 
 ## Jobs
 

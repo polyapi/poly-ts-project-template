@@ -139,6 +139,11 @@ test('bundled workflows and utilities use the selected root, including security 
     '{{acme.eu.sampleWorkflow.validateMotdPayload}}'
   );
   assert.equal(webhook.slug, 'sample-workflow-motd');
+  // The direct binding replaces the old webhook trigger's destination.
+  assert.deepEqual(webhook.serverFunction, {
+    functionName: 'motdServer',
+    functionContext: 'acme.eu.sampleWorkflow',
+  });
   const trigger = f.json(
     'utilities/common/artefacts/triggers/errorEventTrigger.json'
   );
@@ -417,6 +422,64 @@ mockModule('polyapi', {default: {example: {workflow: 1}, OOB: {public: 2}}, vari
   assert.equal(mocks[0][1].default.acme['eu-west'].workflow, 1);
   assert.equal(mocks[0][1].default.OOB.public, 2);
   assert.equal(mocks[0][1].vari.acme['eu-west'].config, 3);
+});
+
+test('webhook serverFunction bindings are renamed like trigger destinations', t => {
+  const f = fixture(t);
+  const binding = {
+    functionName: 'handleOrder',
+    functionContext: 'example.orders',
+  };
+  f.write(
+    'orders/artefacts/webhooks/orderCreated.json',
+    JSON.stringify({
+      name: 'orderCreated',
+      context: 'example.orders',
+      serverFunction: binding,
+      eventPayloadTypeSchema: {
+        properties: { functionContext: { example: 'example.orders' } },
+      },
+    })
+  );
+  f.write(
+    'orders/artefacts/webhooks/external.json',
+    JSON.stringify({
+      name: 'external',
+      context: 'example.orders',
+      serverFunction: { ...binding, functionContext: 'OOB.shared' },
+    })
+  );
+  f.write(
+    'orders/artefacts/webhooks/unbound.json',
+    JSON.stringify({ name: 'unbound', context: 'example.orders', serverFunction: null })
+  );
+  f.write(
+    'orders/artefacts/triggers/route.json',
+    JSON.stringify({
+      source: { webhookName: 'orderPaid', webhookContext: 'example.orders' },
+      destination: binding,
+    })
+  );
+  success(f.run('acme.eu'));
+  const bound = f.json('orders/artefacts/webhooks/orderCreated.json');
+  const trigger = f.json('orders/artefacts/triggers/route.json');
+  assert.deepEqual(bound.serverFunction, {
+    functionName: 'handleOrder',
+    functionContext: 'acme.eu.orders',
+  });
+  assert.deepEqual(bound.serverFunction, trigger.destination);
+  assert.deepEqual(bound.eventPayloadTypeSchema, {
+    properties: { functionContext: { example: 'example.orders' } },
+  });
+  assert.equal(
+    f.json('orders/artefacts/webhooks/external.json').serverFunction
+      .functionContext,
+    'OOB.shared'
+  );
+  assert.equal(
+    f.json('orders/artefacts/webhooks/unbound.json').serverFunction,
+    null
+  );
 });
 
 test('environment example namespace is personalized; comments and selected env files are not', t => {

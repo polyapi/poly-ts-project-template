@@ -27,7 +27,9 @@ checked-in implementation and call out the drift clearly.
 
 ## Runtime Model
 
-- PolyAPI runtime flow is: schemas -> webhooks -> triggers -> functions.
+- PolyAPI runtime flow is: schemas -> webhooks -> functions, with a webhook
+  bound to its server function through `serverFunction` or routed by triggers
+  (never both for the same webhook).
 - Keep TypeScript, JSON artefacts, and tests aligned in the same change.
 - `workflows/src/` holds workflows and shared utilities.
 - `cli/` holds Flow CLI validation, generation, and sync tooling.

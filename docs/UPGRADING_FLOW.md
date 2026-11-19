@@ -4,6 +4,7 @@ Run these commands from your existing project's root folder.
 
 - [Upgrading from an older version](#upgrading-from-an-older-version)
 - [Upgrading with Flow itself](#upgrading-with-flow-itself)
+- [Release notes requiring action](#release-notes-requiring-action)
 
 **1.1.0 is the first explicitly tracked Flow release.** Older copies used
 `1.0.0` as a placeholder. Flow's version is separate from the PolyAPI SDK:
@@ -116,3 +117,40 @@ pnpm flow run self-update --rollback
 Each upgrade also prints a standalone recovery command for use if Flow cannot
 start. Backups live under `.flow/updates/`. Review and commit the changes
 yourself; upgrading does not commit, push, or deploy anything.
+
+## Release notes requiring action
+
+### Webhook triggers replaced by direct bindings
+
+Flow 1.4.3 turns a former warning into a validation error. When a webhook
+artefact sets `serverFunction`, PolyAPI runs that function and skips the
+webhook's triggers, so a local trigger that uses the webhook as its `source`
+would never run. Flow now stops before any remote write and names the webhook
+and trigger files. Remove the trigger artefact, or remove the webhook's
+`serverFunction` binding to keep routing through triggers. Keep a trigger only
+for fire-and-forget calls (`waitForResponse: false`) or fan-out to several
+functions, and then leave the webhook unbound.
+
+The message-of-the-day sample now binds `motdWebhook` to `motdServer` and no
+longer ships `motdTrigger.json`. Updating Flow does not change your workflow
+code, so an existing copy of the sample keeps working unchanged. If you adopt
+the binding in a project that already deployed the old sample, the remote
+`motdTrigger` remains after you delete its local file. PolyAPI skips it once
+the binding exists, so it is harmless, but it is clutter.
+
+Flow treats a namespace-owned remote trigger with no local artefact as an
+orphan, but only in an unscoped push that selects triggers: `--paths` runs,
+including the tutorial's sample push, skip orphan detection. Default pushes
+only report orphans; `--delete-orphans` deletes them. To remove the old trigger
+once, preview first and check that the plan deletes only `motdTrigger`:
+
+```bash
+ENVPATH=workflows/dev.env pnpm workflows push --types triggers --delete-orphans --dry-run
+ENVPATH=workflows/dev.env pnpm workflows push --types triggers --delete-orphans
+```
+
+Alternatively, delete `motdTrigger` in Canopy. Avoid
+`delete-content --types triggers --context example.sampleWorkflow` for this:
+it selects every trigger whose function is in that context, including the
+sample's error-handler trigger.
+

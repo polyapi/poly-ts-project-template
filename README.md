@@ -56,7 +56,7 @@ results, and exercises, with deeper reference material below the walkthrough.
 
 | Sample | What you will learn |
 | --- | --- |
-| [Message of the day](workflows/src/sampleWorkflow/README.md) | Webhooks, triggers, server/client functions, trained APIs, Vari, secrets, and a scheduled job. |
+| [Message of the day](workflows/src/sampleWorkflow/README.md) | Webhooks bound to server functions, server/client functions, an error trigger, trained APIs, Vari, secrets, and a scheduled job. |
 | [Weather AI](workflows/src/sampleWorkflow/OVERVIEW.md#weather-ai) | AI Functions that call trained tools and return structured weather guidance with data attribution. |
 | [Weather MCP server](workflows/src/sampleWorkflow/OVERVIEW.md#weather-mcp-server) | Offer the trained weather tools to MCP clients, connect the MCP Inspector, and call a tool. |
 | [Shared utilities](workflows/src/utilities/common/OVERVIEW.md) | Structured logging, sensitive-field filtering, error handling, and Slack alerts. |
