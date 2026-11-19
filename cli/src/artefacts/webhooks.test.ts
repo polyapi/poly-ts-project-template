@@ -2,8 +2,10 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { validateWebhookArtifact } from '../utils/validation';
 import {
+  assertNoWebhookBindingConflicts,
   buildRemoteWebhookPayload,
-  findDoubleExecutionTriggers,
+  findWebhookBindingConflicts,
+  formatWebhookBindingConflicts,
   resolveWebhookServerFunction,
 } from './webhooks';
 
@@ -126,34 +128,23 @@ test('serverFunctionId is part of the change comparison', () => {
   );
 });
 
-test('a trigger routing the webhook to the same function is reported', () => {
+const sourcedTrigger = (
+  filePath: string,
+  functionName: string,
+  webhookName = 'orderCreated'
+) => ({
+  filePath,
+  content: {
+    source: { webhookName, webhookContext: 'example.orders' },
+    destination: { functionName, functionContext: 'example.orders' },
+  },
+});
+
+test('every trigger sourced from a bound webhook conflicts, whatever its destination', () => {
   const triggers = [
-    {
-      filePath: 'triggers/sameFunction.json',
-      content: {
-        source: {
-          webhookName: 'orderCreated',
-          webhookContext: 'example.orders',
-        },
-        destination: {
-          functionName: 'handleOrder',
-          functionContext: 'example.orders',
-        },
-      },
-    },
-    {
-      filePath: 'triggers/otherFunction.json',
-      content: {
-        source: {
-          webhookName: 'orderCreated',
-          webhookContext: 'example.orders',
-        },
-        destination: {
-          functionName: 'other',
-          functionContext: 'example.orders',
-        },
-      },
-    },
+    sourcedTrigger('triggers/sameFunction.json', 'handleOrder'),
+    sourcedTrigger('triggers/otherFunction.json', 'other'),
+    sourcedTrigger('triggers/otherWebhook.json', 'handleOrder', 'orderPaid'),
     {
       filePath: 'triggers/errorHandler.json',
       content: {
@@ -165,11 +156,90 @@ test('a trigger routing the webhook to the same function is reported', () => {
       },
     },
   ];
-  assert.deepEqual(findDoubleExecutionTriggers(webhook, triggers), [
-    'triggers/sameFunction.json',
-  ]);
   assert.deepEqual(
-    findDoubleExecutionTriggers({ ...webhook, serverFunction: null }, triggers),
+    findWebhookBindingConflicts(
+      [{ filePath: 'webhooks/orderCreated.json', content: webhook }],
+      triggers
+    ),
+    [
+      {
+        webhook: 'example.orders.orderCreated',
+        webhookFile: 'webhooks/orderCreated.json',
+        serverFunction: 'example.orders.handleOrder',
+        triggerFiles: [
+          'triggers/otherFunction.json',
+          'triggers/sameFunction.json',
+        ],
+      },
+    ]
+  );
+});
+
+test('webhooks without a binding keep their triggers', () => {
+  const triggers = [
+    sourcedTrigger('triggers/sameFunction.json', 'handleOrder'),
+  ];
+  const { serverFunction: _serverFunction, ...unmanaged } = webhook;
+  assert.deepEqual(
+    findWebhookBindingConflicts(
+      [
+        { filePath: 'a.json', content: { ...webhook, serverFunction: null } },
+        { filePath: 'b.json', content: unmanaged },
+      ],
+      triggers
+    ),
     []
   );
+});
+
+test('the conflict error names the webhook and trigger files and both fixes', () => {
+  const message = formatWebhookBindingConflicts(
+    [
+      {
+        webhook: 'example.orders.orderCreated',
+        webhookFile: '/project/workflows/src/orders/artefacts/webhooks/a.json',
+        serverFunction: 'example.orders.handleOrder',
+        triggerFiles: [
+          '/project/workflows/src/orders/artefacts/triggers/t1.json',
+          '/project/workflows/src/orders/artefacts/triggers/t2.json',
+        ],
+      },
+    ],
+    '/project'
+  );
+  assert.match(message, /Webhook example\.orders\.orderCreated/);
+  assert.match(
+    message,
+    /\(workflows\/src\/orders\/artefacts\/webhooks\/a\.json\)/
+  );
+  assert.match(
+    message,
+    /workflows\/src\/orders\/artefacts\/triggers\/t1\.json, workflows\/src\/orders\/artefacts\/triggers\/t2\.json/
+  );
+  assert.match(message, /binding replaces the webhook's triggers/);
+  assert.match(
+    message,
+    /remove the trigger file\(s\) or remove the webhook's serverFunction binding/
+  );
+});
+
+test('the conflict check fails a push of only webhooks or only triggers', () => {
+  let loads = 0;
+  const load = () => {
+    loads++;
+    return {
+      webhooks: [{ filePath: 'webhooks/orderCreated.json', content: webhook }],
+      triggers: [sourcedTrigger('triggers/route.json', 'other')],
+    };
+  };
+  for (const types of [['webhooks'], ['triggers'], ['functions', 'webhooks']]) {
+    assert.throws(
+      () => assertNoWebhookBindingConflicts(types, '/project', load),
+      /triggers\/route\.json.*Either remove the trigger file\(s\)/
+    );
+  }
+  assert.doesNotThrow(() =>
+    assertNoWebhookBindingConflicts(['functions', 'jobs'], '/project', load)
+  );
+  assert.equal(loads, 3);
 });

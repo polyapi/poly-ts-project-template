@@ -1,3 +1,4 @@
+import path from 'node:path';
 import type createClient from 'openapi-fetch';
 import type { components, paths } from '../sdk/schema';
 import type { WebhookFile } from '../types';
@@ -218,31 +219,99 @@ export function resolveWebhookServerFunction(
   return true;
 }
 
+export type WebhookBindingConflict = {
+  webhook: string;
+  webhookFile: string;
+  serverFunction: string;
+  triggerFiles: string[];
+};
+
 /**
- * Local webhook triggers that send this webhook to the same server function it
- * is connected to directly. Both routes run, so each event executes twice.
+ * Webhooks bound to a server function (`serverFunction`) that local trigger
+ * artefacts also use as their source. PolyAPI runs the bound function and
+ * skips the webhook's triggers, so those triggers would never fire.
+ * Every trigger sourced from the webhook conflicts, whatever its destination.
  */
-export function findDoubleExecutionTriggers(
-  webhook: {
-    name?: string;
-    context?: string;
-    serverFunction?: ServerFunctionReference | null;
-  },
+export function findWebhookBindingConflicts(
+  webhooks: Array<{ filePath: string; content: any }>,
   triggers: Array<{ filePath: string; content: any }>
-): string[] {
-  const target = webhook.serverFunction;
-  if (!target) {
-    return [];
+): WebhookBindingConflict[] {
+  const conflicts: WebhookBindingConflict[] = [];
+  for (const webhook of webhooks) {
+    const target = webhook.content?.serverFunction as
+      | ServerFunctionReference
+      | null
+      | undefined;
+    if (!target || typeof target !== 'object') {
+      continue;
+    }
+    const triggerFiles = triggers
+      .filter(
+        trigger =>
+          trigger.content?.source?.webhookName === webhook.content.name &&
+          trigger.content?.source?.webhookContext === webhook.content.context
+      )
+      .map(trigger => trigger.filePath)
+      .sort();
+    if (triggerFiles.length > 0) {
+      conflicts.push({
+        webhook: `${webhook.content.context}.${webhook.content.name}`,
+        webhookFile: webhook.filePath,
+        serverFunction: `${target.functionContext}.${target.functionName}`,
+        triggerFiles,
+      });
+    }
   }
-  return triggers
-    .filter(
-      trigger =>
-        trigger.content?.source?.webhookName === webhook.name &&
-        trigger.content?.source?.webhookContext === webhook.context &&
-        trigger.content?.destination?.functionName === target.functionName &&
-        trigger.content?.destination?.functionContext === target.functionContext
+  return conflicts;
+}
+
+/**
+ * Explain each binding conflict: what is wrong, why, and the two ways to fix it.
+ */
+export function formatWebhookBindingConflicts(
+  conflicts: WebhookBindingConflict[],
+  projectRoot: string = process.cwd()
+): string {
+  const display = (file: string) =>
+    path.isAbsolute(file) ? path.relative(projectRoot, file) : file;
+  return conflicts
+    .map(
+      conflict =>
+        `Webhook ${conflict.webhook} (${display(conflict.webhookFile)}) is bound to server function ${conflict.serverFunction} through serverFunction, but trigger file(s) ${conflict.triggerFiles.map(display).join(', ')} use this webhook as their source. The binding replaces the webhook's triggers: PolyAPI runs the bound function and skips those triggers. Either remove the trigger file(s) or remove the webhook's serverFunction binding.`
     )
-    .map(trigger => trigger.filePath);
+    .join('\n');
+}
+
+type ArtefactFile = { filePath: string; content: any };
+
+/**
+ * Fail before any remote write when a bound webhook still has local triggers.
+ * Runs when either webhooks or triggers are selected and always reads every
+ * webhook and trigger in the project, so a push of only one type, a scoped
+ * push, or skip paths cannot hide the conflict.
+ */
+export function assertNoWebhookBindingConflicts(
+  enabledTypes: readonly string[],
+  projectRoot: string = process.cwd(),
+  loadArtefacts: () => {
+    webhooks: ArtefactFile[];
+    triggers: ArtefactFile[];
+  } = () => ({
+    webhooks: findWebhookFiles({ respectSkipPaths: false }),
+    triggers: findTriggerFiles({ respectSkipPaths: false }),
+  })
+): void {
+  if (
+    !enabledTypes.includes('webhooks') &&
+    !enabledTypes.includes('triggers')
+  ) {
+    return;
+  }
+  const { webhooks, triggers } = loadArtefacts();
+  const conflicts = findWebhookBindingConflicts(webhooks, triggers);
+  if (conflicts.length > 0) {
+    throw new Error(formatWebhookBindingConflicts(conflicts, projectRoot));
+  }
 }
 
 async function buildWebhookPayload(
@@ -656,14 +725,6 @@ export async function syncWebhooks(
     }
   }
 
-  // Triggers anywhere in the project can route these webhooks, so check them
-  // all, not just the selected scope.
-  const localTriggers = webhookFiles.some(
-    webhook => webhook.content?.serverFunction
-  )
-    ? findTriggerFiles({ respectSkipPaths: false })
-    : [];
-
   // Step 3: Create or update local webhooks
   log.info(chalk.blue('Comparing local webhook payloads with API...'));
   for (const webhook of webhookFiles) {
@@ -691,17 +752,6 @@ export async function syncWebhooks(
       log.info(chalk.red('    [FAIL] Failed (namespace)'));
       summary.failed++;
       continue;
-    }
-
-    for (const triggerPath of findDoubleExecutionTriggers(
-      webhook.content,
-      localTriggers
-    )) {
-      log.warn(
-        warningColor(
-          `    [WARN] ${webhookName} is connected directly to ${webhook.content.serverFunction.functionContext}.${webhook.content.serverFunction.functionName}, and trigger ${triggerPath} routes it to the same function: every event will run the function twice. Remove the trigger or the serverFunction field.`
-        )
-      );
     }
 
     const result = await postWebhook(

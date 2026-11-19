@@ -71,7 +71,7 @@ pnpm workflows push --dry-run
 The common request runtime is:
 
 ```text
-schemas -> webhooks -> triggers -> functions
+schemas -> webhooks -> functions (bound with serverFunction, or via triggers)
 ```
 
 Flow currently synchronizes selected artefact types in this dependency-aware
@@ -203,11 +203,15 @@ Advanced projects can explicitly configure multiple owned roots with
 ## Webhooks And Triggers
 
 - Use one webhook JSON file per public endpoint.
-- Use one trigger JSON file to route a webhook or error handler to a server
-  function.
-- A webhook can instead name its server function in `serverFunction`. Use
-  either that field or a webhook trigger for a given function, never both:
-  both routes run, so the function would execute twice per event.
+- Prefer binding a webhook directly to its server function with
+  `serverFunction` when one function handles the request and returns the
+  response. The bound function receives `(eventPayload, headers, params)`.
+- Use a trigger JSON file to route an error handler to a server function, or a
+  webhook that needs fire-and-forget (`waitForResponse: false`) or fan-out to
+  several functions.
+- Never combine the two: a bound webhook skips its triggers, so Flow fails
+  validation when any trigger uses a bound webhook as its source. Remove the
+  trigger or remove the binding.
 - Keep webhook, trigger, function name, and function context aligned.
 - Scoped syncs skip orphan detection to avoid false deletion reports.
 
@@ -364,7 +368,8 @@ does not affect deployable artefacts.
 - Are locally owned contexts under `POLYAPI_NAMESPACE`?
 - Do portable references use exact names and contexts without remote IDs?
 - Are TypeScript, artefacts, and tests aligned?
-- Does every webhook have an intentional trigger?
+- Does every webhook have an intentional `serverFunction` binding or trigger,
+  never both?
 - Are secrets represented only as placeholders?
 - Did destructive scripts require explicit confirmation?
 - Did docs avoid project-specific assumptions?

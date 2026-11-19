@@ -1,6 +1,6 @@
 {
   "name": "flow-cli",
-  "version": "1.4.2",
+  "version": "1.4.3",
   "private": true,
   "description": "Flow CLI for syncing local PolyAPI TypeScript artefacts",
   "main": "dist/cli.js",

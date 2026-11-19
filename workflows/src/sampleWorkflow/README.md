@@ -1,9 +1,9 @@
 # Message of the day: your first PolyAPI workflow
 
 Build a protected endpoint that greets someone with advice or a joke. This lesson
-introduces webhooks, triggers, server and client functions, trained API Functions,
-and Vari. After your first request works, explore validation, errors, and the
-optional scheduled job.
+introduces webhooks bound to server functions, server and client functions,
+trained API Functions, Vari, and an error-handler trigger. After your first
+request works, explore validation, errors, and the optional scheduled job.
 
 New to the template? Complete [Getting started](../../../README.md#getting-started)
 first. Open a Bash or zsh terminal in your **project root**: the folder containing
@@ -35,7 +35,7 @@ workflows/src/sampleWorkflow/
     specs/weather/          Geocoding and weather API descriptions
     vari/                   Configuration declarations, not real secrets
     webhooks/               Endpoint, inline payload schema, and security
-    triggers/               Event-to-function connections
+    triggers/               Error-event-to-handler connection
     jobs/                   Disabled scheduled invocation
     ai-functions/           Optional weather AI definition
 ```
@@ -53,7 +53,7 @@ Your first request follows the advice path:
 flowchart TD
     R[Send a name and wise mood] --> V{Webhook security accepts request}
     V -->|no| X[Reject before workflow runs]
-    V -->|yes| T[Trigger calls server and waits]
+    V -->|yes| T[Webhook runs its bound server]
     T --> S[Server coordinates and client selects advice]
     S --> A[Trained API gets advice from provider]
     A --> G[Server adds the name and returns the greeting]
@@ -80,8 +80,7 @@ is separate from the [Weather AI lesson](OVERVIEW.md#weather-ai).
 
 | Building block | Why it exists in this sample | Read the implementation |
 | --- | --- | --- |
-| Webhook and security function | Accept authenticated HTTP requests and reject invalid input | [Webhook](artefacts/webhooks/motdWebhook.json), [validator](server/validateMotdPayload.ts) |
-| Trigger | Route the webhook to a function and wait for its result | [Webhook trigger](artefacts/triggers/motdTrigger.json) |
+| Webhook and security function | Accept authenticated HTTP requests, reject invalid input, and run the bound server function (`serverFunction`) | [Webhook](artefacts/webhooks/motdWebhook.json), [validator](server/validateMotdPayload.ts) |
 | [Server function](https://docs.polyapi.io/functions/server_functions.html) | Coordinate the request and choose the response | [motdServer](server/motdServer.ts) |
 | [Client function](https://docs.polyapi.io/generated_sdks/client_functions.html) | Select an API by mood and check its result | [motdClient](client/motdClient.ts) |
 | API Functions | Make the outbound joke/advice HTTP calls through PolyAPI | [Joke spec](artefacts/specs/motd/jokeApi.yaml), [advice spec](artefacts/specs/motd/adviceApi.yaml) |
@@ -233,8 +232,8 @@ pnpm workflows push --dry-run --paths sampleWorkflow --types functions,variables
 ```
 
 **Check the preview:** confirm the intended environment and namespace. The plan
-should include the sample's two variables, four functions, webhook, two
-triggers, and disabled job, with no AI Function. The job should stay disabled
+should include the sample's two variables, four functions, webhook, error
+trigger, and disabled job, with no AI Function. The job should stay disabled
 while you learn the request flow.
 
 **In your terminal**, deploy the workflow once the plan is correct:
@@ -293,7 +292,7 @@ Expect a body with this shape; the advice text varies:
 
 **Checkpoint:** the message starts with `Hi Ada!` and includes advice. Provider
 text changes between calls. You have exercised webhook → security function →
-trigger → server → client → trained API Function. Find `motdServer` in Canopy to
+bound server → client → trained API Function. Find `motdServer` in Canopy to
 inspect its logs; `motdClient` runs inside that server function and has no
 separate log stream. The advice configuration ships with its public host URL,
 so this path needs no extra provider account or secret.

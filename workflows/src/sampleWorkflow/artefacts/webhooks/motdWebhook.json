@@ -1,12 +1,16 @@
 {
   "name": "motdWebhook",
   "context": "example.sampleWorkflow",
-  "description": "Receives a name and mood and triggers the motdServer server function.",
+  "description": "Receives a name and mood and runs the bound motdServer server function, returning its response.",
   "visibility": "ENVIRONMENT",
   "method": "POST",
   "subpath": "motd",
   "slug": "sample-workflow-motd",
   "requirePolyApiKey": true,
+  "serverFunction": {
+    "functionName": "motdServer",
+    "functionContext": "example.sampleWorkflow"
+  },
   "eventPayloadTypeSchema": {
     "type": "object",
     "properties": {

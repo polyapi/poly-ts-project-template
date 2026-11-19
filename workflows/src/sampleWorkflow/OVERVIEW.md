@@ -14,8 +14,8 @@ the working sample; they are not extra steps needed for your first request.
 flowchart TD
     W[Authenticated webhook] --> V[Security validation]
     V -->|invalid| R[Platform rejection]
-    V -->|valid| T[Synchronous trigger]
-    T --> S[Server coordinates request]
+    V -->|valid| B[Webhook runs bound server]
+    B --> S[Server coordinates request]
     J[Disabled scheduled job] --> S
     D[Direct SDK call] --> S
     S --> C[Client selects mood]
@@ -37,14 +37,23 @@ The [webhook](artefacts/webhooks/motdWebhook.json) hosts
 `POST /apis/sample-workflow-motd/motd`, requires a PolyAPI key, and declares the
 payload schema. Its [security function](server/validateMotdPayload.ts) returns
 `false` when the name is missing or blank, or the mood is not `funny` or `wise`.
-PolyAPI constructs the rejection response before the trigger fires.
+PolyAPI constructs the rejection response before the server function runs.
 
-The [trigger](artefacts/triggers/motdTrigger.json) uses `waitForResponse: true`
-to return the server's result to the caller. The
-[server](server/motdServer.ts) accepts one `eventPayload` argument and calls
+The webhook's `serverFunction` field binds it directly to `motdServer`, with no
+trigger artefact. PolyAPI runs the bound function synchronously and returns its
+result as the webhook's response. A bound function receives the same
+`(eventPayload, headers, params)` arguments as a trigger-invoked function; the
+[server](server/motdServer.ts) uses only `eventPayload` and calls
 [motdClient](client/motdClient.ts) through the generated SDK. A client function
 runs in its caller's process; here its logs belong to `motdServer`, with no
 separate hosted client execution or log stream.
+
+Use a webhook trigger instead of a binding only when the caller must not wait
+(`waitForResponse: false`) or one event must reach several functions. A bound
+webhook skips its triggers, so Flow rejects any trigger that uses it as its
+source. Earlier template versions routed this webhook through `motdTrigger`;
+see [upgrading Flow](../../../docs/UPGRADING_FLOW.md#webhook-triggers-replaced-by-direct-bindings)
+to remove that trigger from an existing deployment.
 
 The installed SDK returns API HTTP/transport failures as results with `status`
 and `data`. The client checks for a 2xx status and the expected content:
@@ -110,14 +119,14 @@ that webhook security rejects it before the main server runs. Inspect the HTTP
 status as well as the response body, and find `motdServer` in Canopy to view its
 logs. The separate error handler has its own logs.
 
-Local checks for the shared utilities and this sample's weather AI contracts
-run with:
+Local checks for the shared utilities, this sample's webhook binding, and its
+weather AI contracts run with:
 
 ```bash
 pnpm workflows test
 ```
 
-The utility tests use mocked SDK calls, and the weather checks read the
+The utility tests use mocked SDK calls; the binding and weather checks read the
 checked-in artefact and specifications. They do not exercise this deployed
 webhook or prove live secret resolution. The direct HTTP requests
 above use the URL and key you provide, without Flow's `TARGET_ENV_ID` check.

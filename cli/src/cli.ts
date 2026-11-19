@@ -31,7 +31,11 @@ import {
 import { findTableFiles, syncTables } from './artefacts/tables';
 import { findTriggerFiles, syncTriggers } from './artefacts/triggers';
 import { findVariableFiles, syncVariables } from './artefacts/variables';
-import { findWebhookFiles, syncWebhooks } from './artefacts/webhooks';
+import {
+  assertNoWebhookBindingConflicts,
+  findWebhookFiles,
+  syncWebhooks,
+} from './artefacts/webhooks';
 import {
   JOBS_RUN_HELP,
   type JobsRunClient,
@@ -1858,6 +1862,10 @@ async function main(): Promise<void> {
         totalValidated++;
       }
     }
+
+    // A webhook bound to a server function skips its triggers; a local
+    // trigger sourced from it is a configuration error, not a warning.
+    assertNoWebhookBindingConflicts(cliArgs.enabledTypes, projectRoot);
 
     for (const subscription of subscriptionFiles) {
       totalArtifacts++;
