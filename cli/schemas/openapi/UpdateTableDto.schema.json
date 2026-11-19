@@ -11,6 +11,107 @@
       }
     },
     "schemas": {
+      "TierDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "selectableAtSignup": {
+            "type": "boolean"
+          },
+          "maxFunctions": {
+            "type": "number",
+            "nullable": true
+          },
+          "chatQuestionsPerDay": {
+            "type": "number",
+            "nullable": true
+          },
+          "functionCallsPerDay": {
+            "type": "number",
+            "nullable": true
+          },
+          "variableCallsPerDay": {
+            "type": "number",
+            "nullable": true
+          },
+          "apiFunctionCallsPerMinute": {
+            "type": "number",
+            "nullable": true
+          },
+          "serverFunctionCallsPerMinute": {
+            "type": "number",
+            "nullable": true
+          },
+          "serverFunctionLimitCpu": {
+            "type": "number",
+            "nullable": true
+          },
+          "serverFunctionLimitMemory": {
+            "type": "number",
+            "nullable": true
+          },
+          "serverFunctionLimitTime": {
+            "type": "number",
+            "nullable": true
+          },
+          "annualPrice": {
+            "type": "string",
+            "nullable": true
+          },
+          "maxDeveloperSeats": {
+            "type": "number",
+            "nullable": true
+          },
+          "includedAnnualInvocations": {
+            "type": "number"
+          },
+          "pricePerAdditionalInvocation": {
+            "type": "string",
+            "nullable": true
+          },
+          "pricePerAlwaysOnFunction": {
+            "type": "string",
+            "nullable": true
+          },
+          "maxAlwaysOnFunctions": {
+            "type": "number",
+            "nullable": true
+          },
+          "emailAndCommunitySupport": {
+            "type": "boolean"
+          },
+          "phoneAndLiveSupport": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "selectableAtSignup",
+          "maxFunctions",
+          "chatQuestionsPerDay",
+          "functionCallsPerDay",
+          "variableCallsPerDay",
+          "apiFunctionCallsPerMinute",
+          "serverFunctionCallsPerMinute",
+          "serverFunctionLimitCpu",
+          "serverFunctionLimitMemory",
+          "serverFunctionLimitTime",
+          "annualPrice",
+          "maxDeveloperSeats",
+          "includedAnnualInvocations",
+          "pricePerAdditionalInvocation",
+          "pricePerAlwaysOnFunction",
+          "maxAlwaysOnFunctions",
+          "emailAndCommunitySupport",
+          "phoneAndLiveSupport"
+        ]
+      },
       "TenantIdentityProvider": {
         "type": "object",
         "properties": {
@@ -58,6 +159,15 @@
           "tierId": {
             "type": "string",
             "nullable": true
+          },
+          "tier": {
+            "nullable": true,
+            "description": "Assigned tier details, or null when the tenant has no tier.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/TierDto"
+              }
+            ]
           },
           "publicNamespace": {
             "type": "string",
@@ -145,6 +255,15 @@
           "tierId": {
             "type": "string",
             "nullable": true
+          },
+          "tier": {
+            "nullable": true,
+            "description": "Assigned tier details, or null when the tenant has no tier.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/TierDto"
+              }
+            ]
           },
           "publicNamespace": {
             "type": "string",
@@ -654,6 +773,14 @@
             "type": "boolean",
             "description": "Manage API Functions permission"
           },
+          "manageMcpServers": {
+            "type": "boolean",
+            "description": "Manage MCP Servers permission"
+          },
+          "manageAiFunctions": {
+            "type": "boolean",
+            "description": "Manage AI Functions permission"
+          },
           "manageWebhooks": {
             "type": "boolean",
             "description": "Manage Webhooks permission"
@@ -713,6 +840,26 @@
           "queryTables": {
             "type": "boolean",
             "description": "Query Tables permission"
+          },
+          "manageQueues": {
+            "type": "boolean",
+            "description": "Manage Queues permission"
+          },
+          "queryQueues": {
+            "type": "boolean",
+            "description": "Query Queues permission"
+          },
+          "useQueues": {
+            "type": "boolean",
+            "description": "Publish to Queues permission"
+          },
+          "manageLocks": {
+            "type": "boolean",
+            "description": "Manage Locks permission"
+          },
+          "useLocks": {
+            "type": "boolean",
+            "description": "Use Locks permission"
           }
         }
       },
@@ -763,6 +910,7 @@
           "applicationId",
           "permissions",
           "expiresAt",
+          "claims",
           "createdAt"
         ]
       },
@@ -798,6 +946,9 @@
           },
           "permissions": {
             "$ref": "#/components/schemas/Permissions"
+          },
+          "claims": {
+            "type": "object"
           }
         }
       },
@@ -942,6 +1093,52 @@
           "key"
         ]
       },
+      "CreateSessionDto": {
+        "type": "object",
+        "properties": {
+          "apiKey": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "apiKey"
+        ]
+      },
+      "SessionDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "apiKeyId": {
+            "type": "string"
+          },
+          "apiKeyName": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "lastSeenAt": {
+            "type": "string"
+          },
+          "idleExpiresAt": {
+            "type": "string"
+          },
+          "expiresAt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "apiKeyId",
+          "apiKeyName",
+          "createdAt",
+          "lastSeenAt",
+          "idleExpiresAt",
+          "expiresAt"
+        ]
+      },
       "UnlockRequestDto": {
         "type": "object",
         "properties": {
@@ -952,9 +1149,6 @@
             "type": "string"
           },
           "canopyApiKey": {
-            "type": "string"
-          },
-          "swaggerStatsPassword": {
             "type": "string"
           },
           "apiKeyHashPepper": {
@@ -980,9 +1174,6 @@
           "canopyApiKey": {
             "type": "string"
           },
-          "swaggerStatsPassword": {
-            "type": "string"
-          },
           "apiKeyHashPepper": {
             "type": "string"
           },
@@ -999,7 +1190,6 @@
           "userTenantId",
           "userSuperAdminApiKey",
           "canopyApiKey",
-          "swaggerStatsPassword",
           "apiKeyHashPepper",
           "usersDataEncryptHashPepper",
           "vaultEncryptHashPepper"
@@ -1035,6 +1225,9 @@
       "FunctionType": {
         "type": "object",
         "properties": {
+          "arguments": {
+            "$ref": "#/components/schemas/Arguments"
+          },
           "id": {
             "type": "string"
           },
@@ -1062,9 +1255,6 @@
               "PATCH",
               "DELETE"
             ]
-          },
-          "arguments": {
-            "$ref": "#/components/schemas/Arguments"
           }
         },
         "required": [
@@ -1441,6 +1631,9 @@
           },
           "signUp": {
             "$ref": "#/components/schemas/SignUpConfig"
+          },
+          "publicAccess": {
+            "type": "boolean"
           }
         },
         "required": [
@@ -1457,6 +1650,13 @@
           "name": {
             "type": "string"
           },
+          "version": {
+            "type": "number"
+          },
+          "subdomain": {
+            "type": "string",
+            "nullable": true
+          },
           "subpath": {
             "type": "string"
           },
@@ -1477,6 +1677,9 @@
           "ownerUserId": {
             "type": "string",
             "nullable": true
+          },
+          "publicAccess": {
+            "type": "boolean"
           },
           "createdAt": {
             "type": "string"
@@ -1493,10 +1696,13 @@
         "required": [
           "id",
           "name",
+          "version",
+          "subdomain",
           "subpath",
           "description",
           "environmentId",
           "visibility",
+          "publicAccess",
           "createdAt",
           "config"
         ]
@@ -1509,6 +1715,13 @@
           },
           "name": {
             "type": "string"
+          },
+          "version": {
+            "type": "number"
+          },
+          "subdomain": {
+            "type": "string",
+            "nullable": true
           },
           "subpath": {
             "type": "string"
@@ -1530,6 +1743,9 @@
           "ownerUserId": {
             "type": "string",
             "nullable": true
+          },
+          "publicAccess": {
+            "type": "boolean"
           },
           "createdAt": {
             "type": "string"
@@ -1552,10 +1768,13 @@
         "required": [
           "id",
           "name",
+          "version",
+          "subdomain",
           "subpath",
           "description",
           "environmentId",
           "visibility",
+          "publicAccess",
           "createdAt",
           "config",
           "tenant",
@@ -1591,6 +1810,15 @@
           "name": {
             "type": "string"
           },
+          "version": {
+            "type": "number"
+          },
+          "subdomain": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 32,
+            "pattern": "APPLICATION_SUBDOMAIN_PATTERN"
+          },
           "description": {
             "type": "string"
           },
@@ -1613,11 +1841,34 @@
           "name"
         ]
       },
+      "FunctionExecutionType": {
+        "type": "object",
+        "properties": {
+          "configSignature": {
+            "type": "string"
+          },
+          "arguments": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "configSignature"
+        ]
+      },
       "UpdateApplicationDto": {
         "type": "object",
         "properties": {
           "name": {
             "type": "string"
+          },
+          "version": {
+            "type": "number"
+          },
+          "subdomain": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 32,
+            "pattern": "APPLICATION_SUBDOMAIN_PATTERN"
           },
           "description": {
             "type": "string"
@@ -1664,13 +1915,17 @@
           },
           "tenantId": {
             "type": "string"
+          },
+          "publicAccess": {
+            "type": "boolean"
           }
         },
         "required": [
           "id",
           "name",
           "description",
-          "subpath"
+          "subpath",
+          "publicAccess"
         ]
       },
       "ActivityListDto": {
@@ -1790,17 +2045,6 @@
           "environmentId"
         ]
       },
-      "VerifyTokenDto": {
-        "type": "object",
-        "properties": {
-          "token": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "token"
-        ]
-      },
       "WhoAmIDto": {
         "type": "object",
         "properties": {
@@ -1854,6 +2098,9 @@
           },
           "permissions": {
             "$ref": "#/components/schemas/Permissions"
+          },
+          "claims": {
+            "type": "object"
           }
         },
         "required": [
@@ -1872,7 +2119,8 @@
           "applicationId",
           "applicationName",
           "role",
-          "permissions"
+          "permissions",
+          "claims"
         ]
       },
       "EmptyWhoAmIDto": {
@@ -1886,6 +2134,17 @@
         },
         "required": [
           "userId"
+        ]
+      },
+      "VerifyTokenDto": {
+        "type": "object",
+        "properties": {
+          "token": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "token"
         ]
       },
       "PermissionPolicyDto": {
@@ -2162,6 +2421,226 @@
             }
           }
         }
+      },
+      "CreateTierDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "maxFunctions": {
+            "type": "number",
+            "nullable": true
+          },
+          "chatQuestionsPerDay": {
+            "type": "number",
+            "nullable": true
+          },
+          "functionCallsPerDay": {
+            "type": "number",
+            "nullable": true
+          },
+          "variableCallsPerDay": {
+            "type": "number",
+            "nullable": true
+          },
+          "apiFunctionCallsPerMinute": {
+            "type": "number",
+            "nullable": true
+          },
+          "serverFunctionCallsPerMinute": {
+            "type": "number",
+            "nullable": true
+          },
+          "serverFunctionLimitCpu": {
+            "type": "number",
+            "nullable": true
+          },
+          "serverFunctionLimitMemory": {
+            "type": "number",
+            "nullable": true
+          },
+          "serverFunctionLimitTime": {
+            "type": "number",
+            "nullable": true
+          },
+          "annualPrice": {
+            "type": "string",
+            "nullable": true
+          },
+          "maxDeveloperSeats": {
+            "type": "number",
+            "nullable": true
+          },
+          "includedAnnualInvocations": {
+            "type": "number",
+            "description": "Defaults to 0 when omitted."
+          },
+          "pricePerAdditionalInvocation": {
+            "type": "string",
+            "nullable": true
+          },
+          "pricePerAlwaysOnFunction": {
+            "type": "string",
+            "nullable": true
+          },
+          "maxAlwaysOnFunctions": {
+            "type": "number",
+            "nullable": true
+          },
+          "emailAndCommunitySupport": {
+            "type": "boolean",
+            "description": "Defaults to true when omitted."
+          },
+          "phoneAndLiveSupport": {
+            "type": "boolean",
+            "description": "Defaults to false when omitted."
+          }
+        },
+        "required": [
+          "name",
+          "maxFunctions",
+          "chatQuestionsPerDay",
+          "functionCallsPerDay",
+          "variableCallsPerDay",
+          "apiFunctionCallsPerMinute",
+          "serverFunctionCallsPerMinute",
+          "serverFunctionLimitCpu",
+          "serverFunctionLimitMemory",
+          "serverFunctionLimitTime"
+        ]
+      },
+      "UpdateTierDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "selectableAtSignup": {
+            "type": "boolean",
+            "description": "Whether this tier is offered during signup. Omit to leave unchanged."
+          },
+          "maxFunctions": {
+            "type": "number",
+            "nullable": true
+          },
+          "chatQuestionsPerDay": {
+            "type": "number",
+            "nullable": true
+          },
+          "functionCallsPerDay": {
+            "type": "number",
+            "nullable": true
+          },
+          "variableCallsPerDay": {
+            "type": "number",
+            "nullable": true
+          },
+          "apiFunctionCallsPerMinute": {
+            "type": "number",
+            "nullable": true
+          },
+          "serverFunctionCallsPerMinute": {
+            "type": "number",
+            "nullable": true
+          },
+          "serverFunctionLimitCpu": {
+            "type": "number",
+            "nullable": true
+          },
+          "serverFunctionLimitMemory": {
+            "type": "number",
+            "nullable": true
+          },
+          "serverFunctionLimitTime": {
+            "type": "number",
+            "nullable": true
+          },
+          "annualPrice": {
+            "type": "string",
+            "nullable": true
+          },
+          "maxDeveloperSeats": {
+            "type": "number",
+            "nullable": true
+          },
+          "includedAnnualInvocations": {
+            "type": "number"
+          },
+          "pricePerAdditionalInvocation": {
+            "type": "string",
+            "nullable": true
+          },
+          "pricePerAlwaysOnFunction": {
+            "type": "string",
+            "nullable": true
+          },
+          "maxAlwaysOnFunctions": {
+            "type": "number",
+            "nullable": true
+          },
+          "emailAndCommunitySupport": {
+            "type": "boolean"
+          },
+          "phoneAndLiveSupport": {
+            "type": "boolean"
+          }
+        }
+      },
+      "CreateTosDto": {
+        "type": "object",
+        "properties": {
+          "content": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "content",
+          "version"
+        ]
+      },
+      "TosDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "content": {
+            "type": "string"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "content",
+          "createdAt",
+          "version"
+        ]
+      },
+      "GenerateDeprecationNotificationEmailsDto": {
+        "type": "object",
+        "properties": {
+          "functionIds": {
+            "minItems": 1,
+            "uniqueItems": true,
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "functionIds"
+        ]
       },
       "FunctionPublicBasicDtoV2": {
         "type": "object",
@@ -3567,7 +4046,8 @@
           "key": {
             "type": "string",
             "enum": [
-              "key"
+              "key",
+              "value"
             ]
           }
         },
@@ -4049,6 +4529,9 @@
           "createdAt": {
             "type": "string"
           },
+          "type": {
+            "type": "string"
+          },
           "source": {
             "$ref": "#/components/schemas/SourceDto"
           },
@@ -4084,6 +4567,9 @@
             "items": {
               "$ref": "#/components/schemas/SchemaRef"
             }
+          },
+          "deployExecutionId": {
+            "type": "string"
           }
         },
         "required": [
@@ -4095,6 +4581,7 @@
           "visibility",
           "state",
           "createdAt",
+          "type",
           "enabledRedirect",
           "arguments",
           "returnType"
@@ -4226,6 +4713,9 @@
             "items": {
               "$ref": "#/components/schemas/SchemaRef"
             }
+          },
+          "deployExecutionId": {
+            "type": "string"
           }
         },
         "required": [
@@ -4375,6 +4865,9 @@
             "items": {
               "$ref": "#/components/schemas/SchemaRef"
             }
+          },
+          "deployExecutionId": {
+            "type": "string"
           }
         },
         "required": [
@@ -4815,6 +5308,10 @@
               "$ref": "#/components/schemas/FunctionArgument"
             }
           },
+          "synchronous": {
+            "type": "boolean",
+            "description": "Set when the client already transpiled the function.\nOmitted calls keep the historical default and let the server transpiler decide."
+          },
           "requirements": {
             "nullable": true,
             "type": "array",
@@ -4879,6 +5376,9 @@
             "type": "string"
           },
           "createdAt": {
+            "type": "string"
+          },
+          "type": {
             "type": "string"
           },
           "code": {
@@ -4949,6 +5449,9 @@
             "items": {
               "$ref": "#/components/schemas/SchemaRef"
             }
+          },
+          "deployExecutionId": {
+            "type": "string"
           }
         },
         "required": [
@@ -4960,6 +5463,7 @@
           "visibility",
           "state",
           "createdAt",
+          "type",
           "code",
           "language",
           "internalDependencies",
@@ -5020,6 +5524,20 @@
           "logsEnabled": {
             "type": "boolean"
           },
+          "image": {
+            "type": "string",
+            "nullable": true,
+            "pattern": "^[^/]*$"
+          },
+          "tolerations": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "nodeSelector": {
+            "type": "object"
+          },
           "serverSideAsync": {
             "type": "boolean"
           },
@@ -5034,6 +5552,9 @@
             "type": "string"
           },
           "cachePolyLibrary": {
+            "type": "boolean"
+          },
+          "usePerch": {
             "type": "boolean"
           },
           "name": {
@@ -5077,6 +5598,10 @@
             "items": {
               "$ref": "#/components/schemas/FunctionArgument"
             }
+          },
+          "synchronous": {
+            "type": "boolean",
+            "description": "Set when the client already transpiled the function.\nOmitted calls keep the historical default and let the server transpiler decide."
           },
           "requirements": {
             "nullable": true,
@@ -5147,41 +5672,74 @@
       "CustomFunctionDetailsDto": {
         "type": "object",
         "properties": {
-          "id": {
-            "type": "string"
-          },
-          "context": {
-            "type": "string"
-          },
-          "name": {
-            "type": "string"
-          },
-          "contextName": {
-            "type": "string"
-          },
-          "description": {
-            "type": "string"
-          },
-          "visibility": {
+          "autoscalingMetric": {
+            "nullable": true,
+            "description": "`null` means the default behaviour: `rps` for always-on JavaScript functions, Knative's default otherwise.",
+            "type": "string",
             "enum": [
-              "ENVIRONMENT",
-              "TENANT",
-              "PUBLIC"
-            ],
+              "concurrency",
+              "rps"
+            ]
+          },
+          "autoscalingTarget": {
+            "type": "number",
+            "nullable": true,
+            "description": "`null` means Knative's default target for the metric in use (200 for the always-on JavaScript `rps` default)."
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "apiKeyId": {
+            "type": "string",
+            "nullable": true
+          },
+          "alwaysOn": {
+            "type": "boolean",
+            "nullable": true
+          },
+          "sleepCycleInterval": {
+            "type": "number",
+            "nullable": true
+          },
+          "limitTime": {
+            "type": "number",
+            "nullable": true
+          },
+          "containerConcurrency": {
+            "type": "number",
+            "nullable": true,
+            "description": "Configured per-container concurrency. `null` means no explicit override. Visible to all authorized readers."
+          },
+          "maxExecutionTime": {
+            "type": "number",
+            "nullable": true
+          },
+          "cachePolyLibrary": {
+            "type": "boolean"
+          },
+          "instances": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/KnativeFunctionInfo"
+            }
+          },
+          "revision": {
+            "type": "number"
+          },
+          "environmentId": {
             "type": "string"
           },
-          "state": {
-            "enum": [
-              "ALPHA",
-              "BETA",
-              "STABLE",
-              "DEPRECATED",
-              "DISABLED"
-            ],
+          "environmentName": {
             "type": "string"
           },
-          "createdAt": {
+          "tenantId": {
             "type": "string"
+          },
+          "tenantName": {
+            "type": "string"
+          },
+          "usePerch": {
+            "type": "boolean"
           },
           "code": {
             "type": "string"
@@ -5252,55 +5810,60 @@
               "$ref": "#/components/schemas/SchemaRef"
             }
           },
-          "enabled": {
-            "type": "boolean"
-          },
-          "apiKeyId": {
-            "type": "string",
-            "nullable": true
-          },
-          "alwaysOn": {
-            "type": "boolean",
-            "nullable": true
-          },
-          "sleepCycleInterval": {
-            "type": "number",
-            "nullable": true
-          },
-          "limitTime": {
-            "type": "number",
-            "nullable": true
-          },
-          "maxExecutionTime": {
-            "type": "number",
-            "nullable": true
-          },
-          "cachePolyLibrary": {
-            "type": "boolean"
-          },
-          "instances": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/KnativeFunctionInfo"
-            }
-          },
-          "revision": {
-            "type": "number"
-          },
-          "environmentId": {
+          "deployExecutionId": {
             "type": "string"
           },
-          "environmentName": {
+          "id": {
             "type": "string"
           },
-          "tenantId": {
+          "context": {
             "type": "string"
           },
-          "tenantName": {
+          "name": {
+            "type": "string"
+          },
+          "contextName": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "visibility": {
+            "enum": [
+              "ENVIRONMENT",
+              "TENANT",
+              "PUBLIC"
+            ],
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "ALPHA",
+              "BETA",
+              "STABLE",
+              "DEPRECATED",
+              "DISABLED"
+            ],
+            "type": "string"
+          },
+          "createdAt": {
             "type": "string"
           }
         },
         "required": [
+          "alwaysOn",
+          "sleepCycleInterval",
+          "limitTime",
+          "containerConcurrency",
+          "cachePolyLibrary",
+          "instances",
+          "revision",
+          "code",
+          "language",
+          "internalDependencies",
+          "externalDependencies",
+          "arguments",
+          "returnType",
           "id",
           "context",
           "name",
@@ -5308,19 +5871,7 @@
           "description",
           "visibility",
           "state",
-          "createdAt",
-          "code",
-          "language",
-          "internalDependencies",
-          "externalDependencies",
-          "arguments",
-          "returnType",
-          "alwaysOn",
-          "sleepCycleInterval",
-          "limitTime",
-          "cachePolyLibrary",
-          "instances",
-          "revision"
+          "createdAt"
         ]
       },
       "UpdateServerCustomFunctionDto": {
@@ -5328,6 +5879,20 @@
         "properties": {
           "logsEnabled": {
             "type": "boolean"
+          },
+          "image": {
+            "type": "string",
+            "nullable": true,
+            "pattern": "^[^/]*$"
+          },
+          "tolerations": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "nodeSelector": {
+            "type": "object"
           },
           "serverSideAsync": {
             "type": "boolean"
@@ -5340,17 +5905,17 @@
           },
           "minScale": {
             "type": "number",
-            "description": "This option can only be used with `alwaysOn = true`. If `alwaysOn` is `true` and this option is not provided, the default value will be set as `1`.",
+            "description": "Super admins only. An integer from 0 to 20. Positive values require `alwaysOn = true`\nin the request or saved function. Omission preserves the saved value; always-on functions default to 1.\nDisabling `alwaysOn` clears an omitted minimum.\nThe effective minimum must not exceed `maxScale`.",
             "example": 1,
             "minimum": 0,
-            "maximum": 3
+            "maximum": 20
           },
           "maxScale": {
             "type": "number",
-            "description": "The max amount of replicas that a function can scale to.\nIf this option is not provided, the default value is `3`.",
+            "description": "Super admins only. The maximum number of replicas, an integer from 1 to 30.\nOmission preserves the saved value, or defaults to 3 if none is saved.\nMust be at least the effective `minScale`.",
             "example": 3,
             "minimum": 1,
-            "maximum": 20
+            "maximum": 30
           },
           "sleepCycleInterval": {
             "type": "number",
@@ -5363,10 +5928,27 @@
           "containerConcurrency": {
             "type": "number"
           },
+          "autoscalingMetric": {
+            "nullable": true,
+            "description": "The metric Knative scales this function on. Super admins only. Send `null` to go back to the default behaviour.",
+            "example": "rps",
+            "type": "object"
+          },
+          "autoscalingTarget": {
+            "type": "number",
+            "nullable": true,
+            "description": "The level of `autoscalingMetric` Knative aims to keep each replica at: requests per second, or concurrent\nrequests. A lower number scales up sooner. Super admins only. Send `null` to go back to the default.",
+            "example": 50,
+            "minimum": 1,
+            "maximum": 1000
+          },
           "executionApiKey": {
             "type": "string"
           },
           "cachePolyLibrary": {
+            "type": "boolean"
+          },
+          "usePerch": {
             "type": "boolean"
           },
           "name": {
@@ -5479,6 +6061,9 @@
             "items": {
               "$ref": "#/components/schemas/SchemaRef"
             }
+          },
+          "deployExecutionId": {
+            "type": "string"
           }
         },
         "required": [
@@ -5958,6 +6543,14 @@
           },
           "xmlParserOptions": {
             "$ref": "#/components/schemas/WebhookHandleXmlParserOptions"
+          },
+          "queueId": {
+            "type": "string",
+            "nullable": true
+          },
+          "serverFunctionId": {
+            "type": "string",
+            "nullable": true
           }
         },
         "required": [
@@ -5979,7 +6572,8 @@
           "requirePolyApiKey",
           "securityFunctions",
           "enabled",
-          "xmlParserOptions"
+          "xmlParserOptions",
+          "serverFunctionId"
         ]
       },
       "WebhookHandleTenantDto": {
@@ -6061,6 +6655,14 @@
           },
           "xmlParserOptions": {
             "$ref": "#/components/schemas/WebhookHandleXmlParserOptions"
+          },
+          "queueId": {
+            "type": "string",
+            "nullable": true
+          },
+          "serverFunctionId": {
+            "type": "string",
+            "nullable": true
           }
         },
         "required": [
@@ -6081,7 +6683,8 @@
           "requirePolyApiKey",
           "securityFunctions",
           "enabled",
-          "xmlParserOptions"
+          "xmlParserOptions",
+          "serverFunctionId"
         ]
       },
       "UpdatePublicWebhookHandleDto": {
@@ -6171,6 +6774,14 @@
           },
           "xmlParserOptions": {
             "$ref": "#/components/schemas/WebhookHandleXmlParserOptions"
+          },
+          "queueId": {
+            "type": "string",
+            "nullable": true
+          },
+          "serverFunctionId": {
+            "type": "string",
+            "nullable": true
           }
         },
         "required": [
@@ -6190,7 +6801,8 @@
           "requirePolyApiKey",
           "securityFunctions",
           "enabled",
-          "xmlParserOptions"
+          "xmlParserOptions",
+          "serverFunctionId"
         ]
       },
       "CreateWebhookHandleDto": {
@@ -6254,15 +6866,7 @@
             "type": "string"
           },
           "method": {
-            "type": "string",
-            "enum": [
-              "GET",
-              "POST",
-              "PUT",
-              "PATCH",
-              "DELETE",
-              "HEAD"
-            ]
+            "type": "string"
           },
           "requirePolyApiKey": {
             "type": "boolean"
@@ -6278,6 +6882,14 @@
           },
           "ownerUserId": {
             "type": "string"
+          },
+          "queueId": {
+            "type": "string",
+            "nullable": true
+          },
+          "serverFunctionId": {
+            "type": "string",
+            "nullable": true
           }
         },
         "required": [
@@ -6346,15 +6958,7 @@
             "type": "string"
           },
           "method": {
-            "type": "string",
-            "enum": [
-              "GET",
-              "POST",
-              "PUT",
-              "PATCH",
-              "DELETE",
-              "HEAD"
-            ]
+            "type": "string"
           },
           "requirePolyApiKey": {
             "type": "boolean"
@@ -6370,6 +6974,14 @@
           },
           "ownerUserId": {
             "type": "string"
+          },
+          "queueId": {
+            "type": "string",
+            "nullable": true
+          },
+          "serverFunctionId": {
+            "type": "string",
+            "nullable": true
           },
           "templateBody": {
             "type": "string"
@@ -6447,15 +7059,7 @@
             "type": "string"
           },
           "method": {
-            "type": "string",
-            "enum": [
-              "GET",
-              "POST",
-              "PUT",
-              "PATCH",
-              "DELETE",
-              "HEAD"
-            ]
+            "type": "string"
           },
           "requirePolyApiKey": {
             "type": "boolean"
@@ -6477,6 +7081,14 @@
           },
           "ownerUserId": {
             "type": "string"
+          },
+          "queueId": {
+            "type": "string",
+            "nullable": true
+          },
+          "serverFunctionId": {
+            "type": "string",
+            "nullable": true
           }
         },
         "required": [
@@ -6526,417 +7138,6 @@
           "name",
           "context",
           "description"
-        ]
-      },
-      "AuthProviderDto": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string"
-          },
-          "context": {
-            "type": "string"
-          },
-          "name": {
-            "type": "string",
-            "nullable": true
-          },
-          "authorizeUrl": {
-            "type": "string"
-          },
-          "tokenUrl": {
-            "type": "string"
-          },
-          "audienceRequired": {
-            "type": "boolean"
-          },
-          "refreshEnabled": {
-            "type": "boolean"
-          },
-          "revokeUrl": {
-            "type": "string",
-            "nullable": true
-          },
-          "introspectUrl": {
-            "type": "string",
-            "nullable": true
-          },
-          "callbackUrl": {
-            "type": "string"
-          },
-          "visibility": {
-            "enum": [
-              "ENVIRONMENT",
-              "TENANT",
-              "PUBLIC"
-            ],
-            "type": "string"
-          },
-          "ownerUserId": {
-            "type": "string",
-            "nullable": true
-          }
-        },
-        "required": [
-          "id",
-          "context",
-          "name",
-          "authorizeUrl",
-          "tokenUrl",
-          "audienceRequired",
-          "refreshEnabled",
-          "revokeUrl",
-          "introspectUrl",
-          "callbackUrl",
-          "visibility"
-        ]
-      },
-      "AuthProviderPublicDto": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string"
-          },
-          "context": {
-            "type": "string"
-          },
-          "name": {
-            "type": "string",
-            "nullable": true
-          },
-          "authorizeUrl": {
-            "type": "string"
-          },
-          "tokenUrl": {
-            "type": "string"
-          },
-          "audienceRequired": {
-            "type": "boolean"
-          },
-          "refreshEnabled": {
-            "type": "boolean"
-          },
-          "revokeUrl": {
-            "type": "string",
-            "nullable": true
-          },
-          "introspectUrl": {
-            "type": "string",
-            "nullable": true
-          },
-          "callbackUrl": {
-            "type": "string"
-          },
-          "visibility": {
-            "enum": [
-              "ENVIRONMENT",
-              "TENANT",
-              "PUBLIC"
-            ],
-            "type": "string"
-          },
-          "ownerUserId": {
-            "type": "string",
-            "nullable": true
-          },
-          "tenant": {
-            "type": "string"
-          },
-          "hidden": {
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "id",
-          "context",
-          "name",
-          "authorizeUrl",
-          "tokenUrl",
-          "audienceRequired",
-          "refreshEnabled",
-          "revokeUrl",
-          "introspectUrl",
-          "callbackUrl",
-          "visibility",
-          "tenant",
-          "hidden"
-        ]
-      },
-      "AuthProviderTenantDto": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string"
-          },
-          "context": {
-            "type": "string"
-          },
-          "name": {
-            "type": "string",
-            "nullable": true
-          },
-          "authorizeUrl": {
-            "type": "string"
-          },
-          "tokenUrl": {
-            "type": "string"
-          },
-          "audienceRequired": {
-            "type": "boolean"
-          },
-          "refreshEnabled": {
-            "type": "boolean"
-          },
-          "revokeUrl": {
-            "type": "string",
-            "nullable": true
-          },
-          "introspectUrl": {
-            "type": "string",
-            "nullable": true
-          },
-          "callbackUrl": {
-            "type": "string"
-          },
-          "visibility": {
-            "enum": [
-              "ENVIRONMENT",
-              "TENANT",
-              "PUBLIC"
-            ],
-            "type": "string"
-          },
-          "ownerUserId": {
-            "type": "string",
-            "nullable": true
-          },
-          "environment": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "context",
-          "name",
-          "authorizeUrl",
-          "tokenUrl",
-          "audienceRequired",
-          "refreshEnabled",
-          "revokeUrl",
-          "introspectUrl",
-          "callbackUrl",
-          "visibility",
-          "environment"
-        ]
-      },
-      "AuthProviderTenantDetailsDto": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string"
-          },
-          "context": {
-            "type": "string"
-          },
-          "name": {
-            "type": "string",
-            "nullable": true
-          },
-          "authorizeUrl": {
-            "type": "string"
-          },
-          "tokenUrl": {
-            "type": "string"
-          },
-          "audienceRequired": {
-            "type": "boolean"
-          },
-          "refreshEnabled": {
-            "type": "boolean"
-          },
-          "revokeUrl": {
-            "type": "string",
-            "nullable": true
-          },
-          "introspectUrl": {
-            "type": "string",
-            "nullable": true
-          },
-          "callbackUrl": {
-            "type": "string"
-          },
-          "visibility": {
-            "enum": [
-              "ENVIRONMENT",
-              "TENANT",
-              "PUBLIC"
-            ],
-            "type": "string"
-          },
-          "ownerUserId": {
-            "type": "string",
-            "nullable": true
-          },
-          "environment": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "context",
-          "name",
-          "authorizeUrl",
-          "tokenUrl",
-          "audienceRequired",
-          "refreshEnabled",
-          "revokeUrl",
-          "introspectUrl",
-          "callbackUrl",
-          "visibility",
-          "environment"
-        ]
-      },
-      "CreateAuthProviderDto": {
-        "type": "object",
-        "properties": {
-          "name": {
-            "type": "string"
-          },
-          "context": {
-            "type": "string"
-          },
-          "authorizeUrl": {
-            "type": "string",
-            "format": "uri"
-          },
-          "tokenUrl": {
-            "type": "string",
-            "format": "uri"
-          },
-          "ownerUserId": {
-            "type": "string"
-          },
-          "audienceRequired": {
-            "type": "boolean"
-          },
-          "refreshEnabled": {
-            "type": "boolean"
-          },
-          "revokeUrl": {
-            "type": "string",
-            "format": "uri"
-          },
-          "introspectUrl": {
-            "type": "string",
-            "format": "uri"
-          }
-        },
-        "required": [
-          "context",
-          "authorizeUrl",
-          "tokenUrl"
-        ]
-      },
-      "UpdateAuthProviderDto": {
-        "type": "object",
-        "properties": {
-          "name": {
-            "type": "string"
-          },
-          "context": {
-            "type": "string"
-          },
-          "authorizeUrl": {
-            "type": "string",
-            "format": "uri"
-          },
-          "tokenUrl": {
-            "type": "string",
-            "format": "uri"
-          },
-          "ownerUserId": {
-            "type": "string"
-          },
-          "audienceRequired": {
-            "type": "boolean"
-          },
-          "refreshEnabled": {
-            "type": "boolean"
-          },
-          "revokeUrl": {
-            "type": "string",
-            "nullable": true,
-            "format": "uri"
-          },
-          "introspectUrl": {
-            "type": "string",
-            "nullable": true,
-            "format": "uri"
-          },
-          "visibility": {
-            "enum": [
-              "ENVIRONMENT",
-              "TENANT",
-              "PUBLIC"
-            ],
-            "type": "string"
-          }
-        }
-      },
-      "ExecuteAuthProviderDto": {
-        "type": "object",
-        "properties": {
-          "eventsClientId": {
-            "type": "string"
-          },
-          "clientId": {
-            "type": "string"
-          },
-          "clientSecret": {
-            "type": "string"
-          },
-          "audience": {
-            "type": "string"
-          },
-          "scopes": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "callbackUrl": {
-            "type": "string"
-          },
-          "userId": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "eventsClientId",
-          "clientId",
-          "clientSecret"
-        ]
-      },
-      "ExecuteAuthProviderResponseDto": {
-        "type": "object",
-        "properties": {
-          "url": {
-            "type": "string"
-          },
-          "token": {
-            "type": "string"
-          }
-        }
-      },
-      "AuthTokenDto": {
-        "type": "object",
-        "properties": {
-          "token": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "token"
         ]
       },
       "VariableListDtoV2": {
@@ -7489,6 +7690,417 @@
           }
         }
       },
+      "AuthProviderDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "context": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string",
+            "nullable": true
+          },
+          "authorizeUrl": {
+            "type": "string"
+          },
+          "tokenUrl": {
+            "type": "string"
+          },
+          "audienceRequired": {
+            "type": "boolean"
+          },
+          "refreshEnabled": {
+            "type": "boolean"
+          },
+          "revokeUrl": {
+            "type": "string",
+            "nullable": true
+          },
+          "introspectUrl": {
+            "type": "string",
+            "nullable": true
+          },
+          "callbackUrl": {
+            "type": "string"
+          },
+          "visibility": {
+            "enum": [
+              "ENVIRONMENT",
+              "TENANT",
+              "PUBLIC"
+            ],
+            "type": "string"
+          },
+          "ownerUserId": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "required": [
+          "id",
+          "context",
+          "name",
+          "authorizeUrl",
+          "tokenUrl",
+          "audienceRequired",
+          "refreshEnabled",
+          "revokeUrl",
+          "introspectUrl",
+          "callbackUrl",
+          "visibility"
+        ]
+      },
+      "AuthProviderPublicDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "context": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string",
+            "nullable": true
+          },
+          "authorizeUrl": {
+            "type": "string"
+          },
+          "tokenUrl": {
+            "type": "string"
+          },
+          "audienceRequired": {
+            "type": "boolean"
+          },
+          "refreshEnabled": {
+            "type": "boolean"
+          },
+          "revokeUrl": {
+            "type": "string",
+            "nullable": true
+          },
+          "introspectUrl": {
+            "type": "string",
+            "nullable": true
+          },
+          "callbackUrl": {
+            "type": "string"
+          },
+          "visibility": {
+            "enum": [
+              "ENVIRONMENT",
+              "TENANT",
+              "PUBLIC"
+            ],
+            "type": "string"
+          },
+          "ownerUserId": {
+            "type": "string",
+            "nullable": true
+          },
+          "tenant": {
+            "type": "string"
+          },
+          "hidden": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "context",
+          "name",
+          "authorizeUrl",
+          "tokenUrl",
+          "audienceRequired",
+          "refreshEnabled",
+          "revokeUrl",
+          "introspectUrl",
+          "callbackUrl",
+          "visibility",
+          "tenant",
+          "hidden"
+        ]
+      },
+      "AuthProviderTenantDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "context": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string",
+            "nullable": true
+          },
+          "authorizeUrl": {
+            "type": "string"
+          },
+          "tokenUrl": {
+            "type": "string"
+          },
+          "audienceRequired": {
+            "type": "boolean"
+          },
+          "refreshEnabled": {
+            "type": "boolean"
+          },
+          "revokeUrl": {
+            "type": "string",
+            "nullable": true
+          },
+          "introspectUrl": {
+            "type": "string",
+            "nullable": true
+          },
+          "callbackUrl": {
+            "type": "string"
+          },
+          "visibility": {
+            "enum": [
+              "ENVIRONMENT",
+              "TENANT",
+              "PUBLIC"
+            ],
+            "type": "string"
+          },
+          "ownerUserId": {
+            "type": "string",
+            "nullable": true
+          },
+          "environment": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "context",
+          "name",
+          "authorizeUrl",
+          "tokenUrl",
+          "audienceRequired",
+          "refreshEnabled",
+          "revokeUrl",
+          "introspectUrl",
+          "callbackUrl",
+          "visibility",
+          "environment"
+        ]
+      },
+      "AuthProviderTenantDetailsDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "context": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string",
+            "nullable": true
+          },
+          "authorizeUrl": {
+            "type": "string"
+          },
+          "tokenUrl": {
+            "type": "string"
+          },
+          "audienceRequired": {
+            "type": "boolean"
+          },
+          "refreshEnabled": {
+            "type": "boolean"
+          },
+          "revokeUrl": {
+            "type": "string",
+            "nullable": true
+          },
+          "introspectUrl": {
+            "type": "string",
+            "nullable": true
+          },
+          "callbackUrl": {
+            "type": "string"
+          },
+          "visibility": {
+            "enum": [
+              "ENVIRONMENT",
+              "TENANT",
+              "PUBLIC"
+            ],
+            "type": "string"
+          },
+          "ownerUserId": {
+            "type": "string",
+            "nullable": true
+          },
+          "environment": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "context",
+          "name",
+          "authorizeUrl",
+          "tokenUrl",
+          "audienceRequired",
+          "refreshEnabled",
+          "revokeUrl",
+          "introspectUrl",
+          "callbackUrl",
+          "visibility",
+          "environment"
+        ]
+      },
+      "CreateAuthProviderDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "context": {
+            "type": "string"
+          },
+          "authorizeUrl": {
+            "type": "string",
+            "format": "uri"
+          },
+          "tokenUrl": {
+            "type": "string",
+            "format": "uri"
+          },
+          "ownerUserId": {
+            "type": "string"
+          },
+          "audienceRequired": {
+            "type": "boolean"
+          },
+          "refreshEnabled": {
+            "type": "boolean"
+          },
+          "revokeUrl": {
+            "type": "string",
+            "format": "uri"
+          },
+          "introspectUrl": {
+            "type": "string",
+            "format": "uri"
+          }
+        },
+        "required": [
+          "context",
+          "authorizeUrl",
+          "tokenUrl"
+        ]
+      },
+      "UpdateAuthProviderDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "context": {
+            "type": "string"
+          },
+          "authorizeUrl": {
+            "type": "string",
+            "format": "uri"
+          },
+          "tokenUrl": {
+            "type": "string",
+            "format": "uri"
+          },
+          "ownerUserId": {
+            "type": "string"
+          },
+          "audienceRequired": {
+            "type": "boolean"
+          },
+          "refreshEnabled": {
+            "type": "boolean"
+          },
+          "revokeUrl": {
+            "type": "string",
+            "nullable": true,
+            "format": "uri"
+          },
+          "introspectUrl": {
+            "type": "string",
+            "nullable": true,
+            "format": "uri"
+          },
+          "visibility": {
+            "enum": [
+              "ENVIRONMENT",
+              "TENANT",
+              "PUBLIC"
+            ],
+            "type": "string"
+          }
+        }
+      },
+      "ExecuteAuthProviderDto": {
+        "type": "object",
+        "properties": {
+          "eventsClientId": {
+            "type": "string"
+          },
+          "clientId": {
+            "type": "string"
+          },
+          "clientSecret": {
+            "type": "string"
+          },
+          "audience": {
+            "type": "string"
+          },
+          "scopes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "callbackUrl": {
+            "type": "string"
+          },
+          "userId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "eventsClientId",
+          "clientId",
+          "clientSecret"
+        ]
+      },
+      "ExecuteAuthProviderResponseDto": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string"
+          },
+          "token": {
+            "type": "string"
+          }
+        }
+      },
+      "AuthTokenDto": {
+        "type": "object",
+        "properties": {
+          "token": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "token"
+        ]
+      },
       "TriggerErrorHandler": {
         "type": "object",
         "properties": {
@@ -7663,273 +8275,6 @@
             "type": "string"
           },
           "enabled": {
-            "type": "boolean"
-          }
-        }
-      },
-      "TierDto": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string"
-          },
-          "name": {
-            "type": "string"
-          },
-          "selectableAtSignup": {
-            "type": "boolean"
-          },
-          "maxFunctions": {
-            "type": "number",
-            "nullable": true
-          },
-          "chatQuestionsPerDay": {
-            "type": "number",
-            "nullable": true
-          },
-          "functionCallsPerDay": {
-            "type": "number",
-            "nullable": true
-          },
-          "variableCallsPerDay": {
-            "type": "number",
-            "nullable": true
-          },
-          "apiFunctionCallsPerMinute": {
-            "type": "number",
-            "nullable": true
-          },
-          "serverFunctionCallsPerMinute": {
-            "type": "number",
-            "nullable": true
-          },
-          "serverFunctionLimitCpu": {
-            "type": "number",
-            "nullable": true
-          },
-          "serverFunctionLimitMemory": {
-            "type": "number",
-            "nullable": true
-          },
-          "serverFunctionLimitTime": {
-            "type": "number",
-            "nullable": true
-          },
-          "annualPrice": {
-            "type": "string",
-            "nullable": true
-          },
-          "maxDeveloperSeats": {
-            "type": "number",
-            "nullable": true
-          },
-          "includedAnnualInvocations": {
-            "type": "number"
-          },
-          "pricePerAdditionalInvocation": {
-            "type": "string",
-            "nullable": true
-          },
-          "pricePerAlwaysOnFunction": {
-            "type": "string",
-            "nullable": true
-          },
-          "maxAlwaysOnFunctions": {
-            "type": "number",
-            "nullable": true
-          },
-          "emailAndCommunitySupport": {
-            "type": "boolean"
-          },
-          "phoneAndLiveSupport": {
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "id",
-          "name",
-          "selectableAtSignup",
-          "maxFunctions",
-          "chatQuestionsPerDay",
-          "functionCallsPerDay",
-          "variableCallsPerDay",
-          "apiFunctionCallsPerMinute",
-          "serverFunctionCallsPerMinute",
-          "serverFunctionLimitCpu",
-          "serverFunctionLimitMemory",
-          "serverFunctionLimitTime",
-          "annualPrice",
-          "maxDeveloperSeats",
-          "includedAnnualInvocations",
-          "pricePerAdditionalInvocation",
-          "pricePerAlwaysOnFunction",
-          "maxAlwaysOnFunctions",
-          "emailAndCommunitySupport",
-          "phoneAndLiveSupport"
-        ]
-      },
-      "CreateTierDto": {
-        "type": "object",
-        "properties": {
-          "name": {
-            "type": "string"
-          },
-          "maxFunctions": {
-            "type": "number",
-            "nullable": true
-          },
-          "chatQuestionsPerDay": {
-            "type": "number",
-            "nullable": true
-          },
-          "functionCallsPerDay": {
-            "type": "number",
-            "nullable": true
-          },
-          "variableCallsPerDay": {
-            "type": "number",
-            "nullable": true
-          },
-          "apiFunctionCallsPerMinute": {
-            "type": "number",
-            "nullable": true
-          },
-          "serverFunctionCallsPerMinute": {
-            "type": "number",
-            "nullable": true
-          },
-          "serverFunctionLimitCpu": {
-            "type": "number",
-            "nullable": true
-          },
-          "serverFunctionLimitMemory": {
-            "type": "number",
-            "nullable": true
-          },
-          "serverFunctionLimitTime": {
-            "type": "number",
-            "nullable": true
-          },
-          "annualPrice": {
-            "type": "string",
-            "nullable": true
-          },
-          "maxDeveloperSeats": {
-            "type": "number",
-            "nullable": true
-          },
-          "includedAnnualInvocations": {
-            "type": "number"
-          },
-          "pricePerAdditionalInvocation": {
-            "type": "string",
-            "nullable": true
-          },
-          "pricePerAlwaysOnFunction": {
-            "type": "string",
-            "nullable": true
-          },
-          "maxAlwaysOnFunctions": {
-            "type": "number",
-            "nullable": true
-          },
-          "emailAndCommunitySupport": {
-            "type": "boolean"
-          },
-          "phoneAndLiveSupport": {
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "name",
-          "maxFunctions",
-          "chatQuestionsPerDay",
-          "functionCallsPerDay",
-          "variableCallsPerDay",
-          "apiFunctionCallsPerMinute",
-          "serverFunctionCallsPerMinute",
-          "serverFunctionLimitCpu",
-          "serverFunctionLimitMemory",
-          "serverFunctionLimitTime",
-          "annualPrice",
-          "maxDeveloperSeats",
-          "includedAnnualInvocations",
-          "pricePerAdditionalInvocation",
-          "pricePerAlwaysOnFunction",
-          "maxAlwaysOnFunctions",
-          "emailAndCommunitySupport",
-          "phoneAndLiveSupport"
-        ]
-      },
-      "UpdateTierDto": {
-        "type": "object",
-        "properties": {
-          "name": {
-            "type": "string"
-          },
-          "maxFunctions": {
-            "type": "number",
-            "nullable": true
-          },
-          "chatQuestionsPerDay": {
-            "type": "number",
-            "nullable": true
-          },
-          "functionCallsPerDay": {
-            "type": "number",
-            "nullable": true
-          },
-          "variableCallsPerDay": {
-            "type": "number",
-            "nullable": true
-          },
-          "apiFunctionCallsPerMinute": {
-            "type": "number",
-            "nullable": true
-          },
-          "serverFunctionCallsPerMinute": {
-            "type": "number",
-            "nullable": true
-          },
-          "serverFunctionLimitCpu": {
-            "type": "number",
-            "nullable": true
-          },
-          "serverFunctionLimitMemory": {
-            "type": "number",
-            "nullable": true
-          },
-          "serverFunctionLimitTime": {
-            "type": "number",
-            "nullable": true
-          },
-          "annualPrice": {
-            "type": "string",
-            "nullable": true
-          },
-          "maxDeveloperSeats": {
-            "type": "number",
-            "nullable": true
-          },
-          "includedAnnualInvocations": {
-            "type": "number"
-          },
-          "pricePerAdditionalInvocation": {
-            "type": "string",
-            "nullable": true
-          },
-          "pricePerAlwaysOnFunction": {
-            "type": "string",
-            "nullable": true
-          },
-          "maxAlwaysOnFunctions": {
-            "type": "number",
-            "nullable": true
-          },
-          "emailAndCommunitySupport": {
-            "type": "boolean"
-          },
-          "phoneAndLiveSupport": {
             "type": "boolean"
           }
         }
@@ -8368,16 +8713,24 @@
             ],
             "type": "string"
           },
+          "value": {
+            "description": "Whole number of minutes (e.g. 5), or a duration string such as \"10s\", \"30m\" or \"2h\". Minimum 10 seconds.",
+            "oneOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "example": "30s"
+          },
           "acceptableDelayTime": {
             "type": "number",
             "nullable": true,
             "minimum": 0,
             "description": "Acceptable Delay Time in minutes. Whole integers, minimum 0.",
             "example": 30
-          },
-          "value": {
-            "type": "number",
-            "description": "The interval in minutes."
           }
         },
         "required": [
@@ -8641,6 +8994,25 @@
           }
         }
       },
+      "TriggerJobDto": {
+        "type": "object",
+        "properties": {
+          "jobId": {
+            "type": "string"
+          },
+          "runId": {
+            "type": "string"
+          },
+          "queuedAt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "jobId",
+          "runId",
+          "queuedAt"
+        ]
+      },
       "Invocation": {
         "type": "object",
         "properties": {
@@ -8775,7 +9147,90 @@
           "status"
         ]
       },
-      "GraphQLSubscriptionCreateDto": {
+      "QueueListDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "context": {
+            "type": "string"
+          },
+          "contextName": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string",
+            "nullable": true
+          },
+          "visibility": {
+            "enum": [
+              "ENVIRONMENT",
+              "TENANT"
+            ],
+            "type": "string"
+          },
+          "ordered": {
+            "type": "boolean"
+          },
+          "compress": {
+            "type": "boolean"
+          },
+          "checksum": {
+            "type": "boolean"
+          },
+          "durability": {
+            "enum": [
+              "STANDARD",
+              "HIGH"
+            ],
+            "type": "string"
+          },
+          "serverFunctionId": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "context",
+          "contextName",
+          "visibility",
+          "ordered",
+          "compress",
+          "checksum",
+          "durability",
+          "serverFunctionId"
+        ]
+      },
+      "PaginatedQueueDto": {
+        "type": "object",
+        "properties": {
+          "pagination": {
+            "description": "Object containing pagination data for results",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PaginationDto"
+              }
+            ]
+          },
+          "results": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/QueueListDto"
+            }
+          }
+        },
+        "required": [
+          "pagination",
+          "results"
+        ]
+      },
+      "CreateQueueDto": {
         "type": "object",
         "properties": {
           "name": {
@@ -8797,85 +9252,47 @@
             ],
             "type": "string"
           },
-          "type": {
-            "enum": [
-              "CUSTOM",
-              "OHIP"
-            ],
-            "type": "string"
+          "ordered": {
+            "type": "boolean"
           },
-          "transportProtocol": {
-            "enum": [
-              "WS",
-              "HTTP"
-            ],
-            "type": "string"
+          "compress": {
+            "type": "boolean"
           },
-          "websocketUrl": {
-            "type": "string"
+          "checksum": {
+            "type": "boolean"
           },
-          "query": {
-            "type": "string"
-          },
-          "paramsVariableId": {
-            "type": "string"
-          },
-          "paramsSfxId": {
-            "type": "string"
-          },
-          "paramsObject": {
+          "durability": {
             "type": "object"
           },
-          "functionId": {
+          "serverFunctionId": {
             "type": "string"
-          },
-          "functionParams": {
-            "type": "object",
-            "nullable": true
-          },
-          "enabled": {
-            "type": "boolean"
-          },
-          "ohipOffsetSelection": {
-            "enum": [
-              "PROVIDER_HIGHEST",
-              "SPECIFIC"
-            ],
-            "type": "string"
-          },
-          "ohipOffset": {
-            "type": "string",
-            "maxLength": 256
-          },
-          "ohipMaintainOffset": {
-            "type": "boolean"
-          },
-          "eventInactivityThresholdMs": {
-            "type": "number",
-            "nullable": true,
-            "minimum": 60000,
-            "maximum": 86400000
           }
         },
         "required": [
           "name",
-          "context",
-          "type",
-          "websocketUrl",
-          "query",
-          "functionId"
+          "ownerUserId"
         ]
       },
-      "GraphQLSubscriptionUpdateDto": {
+      "QueueDto": {
         "type": "object",
         "properties": {
+          "id": {
+            "type": "string"
+          },
           "name": {
             "type": "string"
           },
           "context": {
             "type": "string"
           },
+          "contextName": {
+            "type": "string"
+          },
           "description": {
+            "type": "string",
+            "nullable": true
+          },
+          "ownerUserId": {
             "type": "string",
             "nullable": true
           },
@@ -8886,125 +9303,712 @@
             ],
             "type": "string"
           },
+          "ordered": {
+            "type": "boolean"
+          },
+          "compress": {
+            "type": "boolean"
+          },
+          "checksum": {
+            "type": "boolean"
+          },
+          "durability": {
+            "enum": [
+              "STANDARD",
+              "HIGH"
+            ],
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "lastUpdatedAt": {
+            "type": "string"
+          },
+          "schema": {
+            "type": "object",
+            "nullable": true
+          },
+          "serverFunctionId": {
+            "type": "string",
+            "nullable": true
+          },
+          "streamId": {
+            "type": "string"
+          },
+          "queueId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "context",
+          "contextName",
+          "ownerUserId",
+          "visibility",
+          "ordered",
+          "compress",
+          "checksum",
+          "durability",
+          "createdAt",
+          "lastUpdatedAt",
+          "schema",
+          "serverFunctionId",
+          "streamId",
+          "queueId"
+        ]
+      },
+      "UpdateQueueDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "context": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
           "ownerUserId": {
             "type": "string"
           },
-          "type": {
+          "visibility": {
             "enum": [
-              "CUSTOM",
-              "OHIP"
+              "ENVIRONMENT",
+              "TENANT"
             ],
             "type": "string"
           },
-          "transportProtocol": {
-            "enum": [
-              "WS",
-              "HTTP"
-            ],
-            "type": "string"
-          },
-          "websocketUrl": {
-            "type": "string"
-          },
-          "query": {
-            "type": "string"
-          },
-          "paramsVariableId": {
-            "type": "string",
-            "nullable": true
-          },
-          "paramsSfxId": {
-            "type": "string",
-            "nullable": true
-          },
-          "paramsObject": {
-            "type": "object",
-            "nullable": true
-          },
-          "functionId": {
-            "type": "string"
-          },
-          "functionParams": {
-            "type": "object",
-            "nullable": true
-          },
-          "enabled": {
+          "ordered": {
             "type": "boolean"
           },
-          "ohipOffsetSelection": {
-            "enum": [
-              "PROVIDER_HIGHEST",
-              "PERSISTED"
-            ],
-            "type": "string"
-          },
-          "ohipMaintainOffset": {
+          "compress": {
             "type": "boolean"
           },
-          "eventInactivityThresholdMs": {
-            "type": "number",
-            "nullable": true,
-            "minimum": 60000,
-            "maximum": 86400000
+          "checksum": {
+            "type": "boolean"
+          },
+          "durability": {
+            "type": "object"
+          },
+          "serverFunctionId": {
+            "type": "string"
           }
         }
       },
-      "GraphQLSubscriptionRecoverDto": {
+      "QueueEventDto": {
         "type": "object",
         "properties": {
-          "reason": {
-            "type": "string",
-            "maxLength": 500
-          },
-          "restart": {
-            "type": "boolean"
-          },
-          "ohipOffsetSelection": {
-            "enum": [
-              "PROVIDER_HIGHEST",
-              "PERSISTED"
-            ],
+          "id": {
             "type": "string"
           },
-          "waitForCloseMs": {
-            "type": "number",
-            "minimum": 0,
-            "maximum": 60000
+          "createdAt": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "ready",
+              "active",
+              "complete",
+              "skipped",
+              "aborted",
+              "failed",
+              "dead"
+            ]
+          },
+          "headers": {
+            "type": "object"
+          },
+          "claimedAt": {
+            "type": "string"
+          },
+          "lastHeartbeat": {
+            "type": "string"
+          },
+          "consumedAt": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "retryCount": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "createdAt",
+          "status",
+          "headers"
+        ]
+      },
+      "PaginatedQueueEventsDto": {
+        "type": "object",
+        "properties": {
+          "pagination": {
+            "description": "Object containing pagination data for results",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PaginationDto"
+              }
+            ]
+          },
+          "results": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/QueueEventDto"
+            }
+          }
+        },
+        "required": [
+          "pagination",
+          "results"
+        ]
+      },
+      "CompleteQueueEventDto": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "complete",
+              "aborted",
+              "failed",
+              "dead"
+            ]
+          },
+          "message": {
+            "type": "string"
           }
         }
       },
-      "GraphQLSubscriptionRecoverResponseDto": {
+      "CreateAiFunctionConversationDto": {
         "type": "object",
         "properties": {
-          "requestId": {
-            "type": "string"
-          },
-          "subscriptionId": {
-            "type": "string"
-          },
-          "previousClientId": {
-            "type": "string"
-          },
-          "forceCloseRequested": {
-            "type": "boolean"
-          },
-          "closed": {
-            "type": "boolean"
-          },
-          "restarted": {
-            "type": "boolean"
-          },
           "message": {
             "type": "string"
           }
         },
         "required": [
-          "requestId",
-          "subscriptionId",
-          "forceCloseRequested",
-          "closed",
-          "restarted",
           "message"
+        ]
+      },
+      "CreateAiFunctionDto": {
+        "type": "object",
+        "properties": {
+          "slug": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "functionIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "slug"
+        ]
+      },
+      "CreateAiFunctionV2Dto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "context": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "systemPrompt": {
+            "type": "string"
+          },
+          "systemPromptVariableId": {
+            "type": "string"
+          },
+          "inputTemplate": {
+            "type": "string"
+          },
+          "arguments": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "returnType": {
+            "type": "string"
+          },
+          "returnTypeSchema": {
+            "type": "object"
+          },
+          "outputSchema": {
+            "type": "object",
+            "nullable": true
+          },
+          "errorSchema": {
+            "type": "object",
+            "nullable": true
+          },
+          "toolFunctionIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "toolFunctions": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "clientPromptEnabled": {
+            "type": "boolean"
+          },
+          "clientPromptRequired": {
+            "type": "boolean"
+          },
+          "clientPromptArgName": {
+            "type": "string"
+          },
+          "visibility": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "type": {
+            "type": "object"
+          },
+          "voiceConnectProvider": {
+            "type": "string"
+          },
+          "voiceOutput": {
+            "type": "string",
+            "enum": [
+              "ALLOY",
+              "ASH",
+              "BALLAD",
+              "CORAL",
+              "ECHO",
+              "SAGE",
+              "SHIMMER",
+              "VERSE"
+            ]
+          },
+          "voiceInitialMessage": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 500
+          },
+          "twilioAuthTokenVariableId": {
+            "type": "string",
+            "nullable": true,
+            "description": "Voice functions only. The id of a SECRET variable in this function's environment that holds your own Twilio\nauth token, used to verify Twilio's webhook signature. Omit it to use the platform's Twilio credentials."
+          },
+          "router": {
+            "type": "boolean"
+          },
+          "routerServerFunctionId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "context"
+        ]
+      },
+      "AiFunctionExecutionLogDto": {
+        "type": "object",
+        "properties": {
+          "timestamp": {
+            "type": "string"
+          },
+          "level": {
+            "enum": [
+              "INFO",
+              "ERROR"
+            ],
+            "type": "string"
+          },
+          "executionId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "object"
+          },
+          "statusCode": {
+            "type": "number"
+          },
+          "durationMs": {
+            "type": "number"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "number"
+          },
+          "request": {
+            "type": "object"
+          },
+          "response": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "timestamp",
+          "level",
+          "status",
+          "statusCode",
+          "durationMs",
+          "provider",
+          "model",
+          "revision",
+          "request",
+          "response"
+        ]
+      },
+      "AiFunctionExecutionLogsDto": {
+        "type": "object",
+        "properties": {
+          "logs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AiFunctionExecutionLogDto"
+            }
+          }
+        },
+        "required": [
+          "logs"
+        ]
+      },
+      "UpdateAiFunctionV2Dto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "systemPrompt": {
+            "type": "string"
+          },
+          "systemPromptVariableId": {
+            "type": "string"
+          },
+          "inputTemplate": {
+            "type": "string"
+          },
+          "arguments": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "returnType": {
+            "type": "string"
+          },
+          "returnTypeSchema": {
+            "type": "object"
+          },
+          "outputSchema": {
+            "type": "object",
+            "nullable": true
+          },
+          "errorSchema": {
+            "type": "object",
+            "nullable": true
+          },
+          "toolFunctionIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "toolFunctions": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "clientPromptEnabled": {
+            "type": "boolean"
+          },
+          "clientPromptRequired": {
+            "type": "boolean"
+          },
+          "clientPromptArgName": {
+            "type": "string"
+          },
+          "visibility": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "type": {
+            "type": "object"
+          },
+          "voiceConnectProvider": {
+            "type": "string"
+          },
+          "voiceOutput": {
+            "type": "string",
+            "enum": [
+              "ALLOY",
+              "ASH",
+              "BALLAD",
+              "CORAL",
+              "ECHO",
+              "SAGE",
+              "SHIMMER",
+              "VERSE"
+            ]
+          },
+          "voiceInitialMessage": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 500
+          },
+          "twilioAuthTokenVariableId": {
+            "type": "string",
+            "nullable": true,
+            "description": "Voice functions only. The id of a SECRET variable in this function's environment that holds your own Twilio\nauth token, used to verify Twilio's webhook signature. Omit the field to keep the current selection. Send\n`null` to go back to the platform's Twilio credentials."
+          },
+          "router": {
+            "type": "boolean"
+          },
+          "routerServerFunctionId": {
+            "type": "string"
+          }
+        }
+      },
+      "ExecuteAiFunctionDto": {
+        "type": "object",
+        "properties": {}
+      },
+      "GenerateOutputSchemaDto": {
+        "type": "object",
+        "properties": {
+          "prompt": {
+            "type": "string",
+            "description": "What the output should contain, or the change to make when `currentSchema` is sent.",
+            "maxLength": 2000
+          },
+          "currentSchema": {
+            "type": "object",
+            "nullable": true,
+            "description": "The schema to modify. Omit it, or send null, to generate one from scratch."
+          }
+        },
+        "required": [
+          "prompt"
+        ]
+      },
+      "OutputSchemaDto": {
+        "type": "object",
+        "properties": {
+          "schema": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "schema"
+        ]
+      },
+      "GenerateOutputSchemaExampleDto": {
+        "type": "object",
+        "properties": {
+          "schema": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "schema"
+        ]
+      },
+      "OutputSchemaExampleDto": {
+        "type": "object",
+        "properties": {
+          "example": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "example"
+        ]
+      },
+      "SystemPromptArgumentDto": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 1000
+          }
+        },
+        "required": [
+          "key"
+        ]
+      },
+      "SystemPromptContextDto": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "TEXT",
+              "VOICE"
+            ]
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 500
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 2000
+          },
+          "arguments": {
+            "description": "The arguments the prompt can refer to as {{key}}.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SystemPromptArgumentDto"
+            }
+          },
+          "toolFunctionIds": {
+            "description": "Ids of the tool functions the AI can call. The server looks up their names and descriptions.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "type"
+        ]
+      },
+      "GenerateSystemPromptDto": {
+        "type": "object",
+        "properties": {
+          "prompt": {
+            "type": "string",
+            "description": "What the prompt should do, or the change to make when `currentPrompt` is sent.",
+            "maxLength": 2000
+          },
+          "currentPrompt": {
+            "type": "string",
+            "nullable": true,
+            "description": "The prompt to modify. Omit it, or send an empty string, to write one from scratch.",
+            "maxLength": 50000
+          },
+          "context": {
+            "$ref": "#/components/schemas/SystemPromptContextDto"
+          }
+        },
+        "required": [
+          "prompt",
+          "context"
+        ]
+      },
+      "SystemPromptDto": {
+        "type": "object",
+        "properties": {
+          "systemPrompt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "systemPrompt"
+        ]
+      },
+      "StoreMessageDto": {
+        "type": "object",
+        "properties": {
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "message"
+        ]
+      },
+      "MessageUUIDDto": {
+        "type": "object",
+        "properties": {
+          "uuid": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "uuid"
+        ]
+      },
+      "Object": {
+        "type": "object",
+        "properties": {}
+      },
+      "SendCommandDto": {
+        "type": "object",
+        "properties": {
+          "command": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "command"
+        ]
+      },
+      "TeachSystemPromptDto": {
+        "type": "object",
+        "properties": {
+          "prompt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "prompt"
+        ]
+      },
+      "TeachSystemPromptResponseDto": {
+        "type": "object",
+        "properties": {
+          "response": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "response"
         ]
       },
       "SnippetDto": {
@@ -9654,43 +10658,515 @@
           "deleted"
         ]
       },
-      "CreateTosDto": {
+      "GraphQLSubscriptionCreateDto": {
         "type": "object",
         "properties": {
-          "content": {
+          "name": {
             "type": "string"
           },
-          "version": {
+          "context": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "ownerUserId": {
+            "type": "string"
+          },
+          "visibility": {
+            "enum": [
+              "ENVIRONMENT",
+              "TENANT"
+            ],
+            "type": "string"
+          },
+          "type": {
+            "enum": [
+              "CUSTOM",
+              "OHIP"
+            ],
+            "type": "string"
+          },
+          "transportProtocol": {
+            "enum": [
+              "WS",
+              "HTTP"
+            ],
+            "type": "string"
+          },
+          "websocketUrl": {
+            "type": "string"
+          },
+          "query": {
+            "type": "string"
+          },
+          "paramsVariableId": {
+            "type": "string"
+          },
+          "paramsSfxId": {
+            "type": "string"
+          },
+          "paramsObject": {
+            "type": "object"
+          },
+          "functionId": {
+            "type": "string"
+          },
+          "functionParams": {
+            "type": "object",
+            "nullable": true
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "ohipOffsetSelection": {
+            "enum": [
+              "PROVIDER_HIGHEST",
+              "SPECIFIC"
+            ],
+            "type": "string"
+          },
+          "ohipOffset": {
+            "type": "string",
+            "maxLength": 256
+          },
+          "ohipMaintainOffset": {
+            "type": "boolean"
+          },
+          "eventInactivityThresholdMs": {
+            "type": "number",
+            "nullable": true,
+            "minimum": 60000,
+            "maximum": 86400000
+          },
+          "queueId": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "required": [
+          "name",
+          "context",
+          "type",
+          "websocketUrl",
+          "query",
+          "functionId"
+        ]
+      },
+      "GraphQLSubscriptionUpdateDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "context": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string",
+            "nullable": true
+          },
+          "visibility": {
+            "enum": [
+              "ENVIRONMENT",
+              "TENANT"
+            ],
+            "type": "string"
+          },
+          "ownerUserId": {
+            "type": "string"
+          },
+          "type": {
+            "enum": [
+              "CUSTOM",
+              "OHIP"
+            ],
+            "type": "string"
+          },
+          "transportProtocol": {
+            "enum": [
+              "WS",
+              "HTTP"
+            ],
+            "type": "string"
+          },
+          "websocketUrl": {
+            "type": "string"
+          },
+          "query": {
+            "type": "string"
+          },
+          "paramsVariableId": {
+            "type": "string",
+            "nullable": true
+          },
+          "paramsSfxId": {
+            "type": "string",
+            "nullable": true
+          },
+          "paramsObject": {
+            "type": "object",
+            "nullable": true
+          },
+          "functionId": {
+            "type": "string"
+          },
+          "functionParams": {
+            "type": "object",
+            "nullable": true
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "ohipOffsetSelection": {
+            "enum": [
+              "PROVIDER_HIGHEST",
+              "PERSISTED"
+            ],
+            "type": "string"
+          },
+          "ohipMaintainOffset": {
+            "type": "boolean"
+          },
+          "eventInactivityThresholdMs": {
+            "type": "number",
+            "nullable": true,
+            "minimum": 60000,
+            "maximum": 86400000
+          },
+          "queueId": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "GraphQLSubscriptionRecoverDto": {
+        "type": "object",
+        "properties": {
+          "reason": {
+            "type": "string",
+            "maxLength": 500
+          },
+          "restart": {
+            "type": "boolean"
+          },
+          "ohipOffsetSelection": {
+            "enum": [
+              "PROVIDER_HIGHEST",
+              "PERSISTED"
+            ],
+            "type": "string"
+          },
+          "waitForCloseMs": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 60000
+          }
+        }
+      },
+      "GraphQLSubscriptionRecoverResponseDto": {
+        "type": "object",
+        "properties": {
+          "requestId": {
+            "type": "string"
+          },
+          "subscriptionId": {
+            "type": "string"
+          },
+          "previousClientId": {
+            "type": "string"
+          },
+          "forceCloseRequested": {
+            "type": "boolean"
+          },
+          "closed": {
+            "type": "boolean"
+          },
+          "restarted": {
+            "type": "boolean"
+          },
+          "message": {
             "type": "string"
           }
         },
         "required": [
-          "content",
-          "version"
+          "requestId",
+          "subscriptionId",
+          "forceCloseRequested",
+          "closed",
+          "restarted",
+          "message"
         ]
       },
-      "TosDto": {
+      "LockListDto": {
         "type": "object",
         "properties": {
           "id": {
             "type": "string"
           },
-          "content": {
+          "name": {
             "type": "string"
           },
-          "createdAt": {
-            "format": "date-time",
+          "context": {
             "type": "string"
           },
-          "version": {
+          "contextName": {
             "type": "string"
+          },
+          "description": {
+            "type": "string",
+            "nullable": true
           }
         },
         "required": [
           "id",
-          "content",
+          "name",
+          "context",
+          "contextName"
+        ]
+      },
+      "PaginatedLockDto": {
+        "type": "object",
+        "properties": {
+          "pagination": {
+            "description": "Object containing pagination data for results",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PaginationDto"
+              }
+            ]
+          },
+          "results": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LockListDto"
+            }
+          }
+        },
+        "required": [
+          "pagination",
+          "results"
+        ]
+      },
+      "CreateLockDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "context": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string",
+            "nullable": true
+          },
+          "ownerUserId": {
+            "type": "string"
+          },
+          "visibility": {
+            "enum": [
+              "ENVIRONMENT",
+              "TENANT"
+            ],
+            "type": "string"
+          },
+          "holdTimeout": {
+            "type": "number",
+            "minimum": 1,
+            "maximum": 86400
+          },
+          "renewable": {
+            "type": "boolean"
+          },
+          "capacity": {
+            "type": "number",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "name",
+          "context",
+          "ownerUserId"
+        ]
+      },
+      "LockDetailDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "context": {
+            "type": "string"
+          },
+          "contextName": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string",
+            "nullable": true
+          },
+          "ownerUserId": {
+            "type": "string",
+            "nullable": true
+          },
+          "visibility": {
+            "enum": [
+              "ENVIRONMENT",
+              "TENANT"
+            ],
+            "type": "string"
+          },
+          "holdTimeout": {
+            "type": "number",
+            "minimum": 1,
+            "maximum": 86400
+          },
+          "renewable": {
+            "type": "boolean"
+          },
+          "capacity": {
+            "type": "number",
+            "minimum": 1
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "lastUpdatedAt": {
+            "type": "string"
+          },
+          "streamId": {
+            "type": "string"
+          },
+          "lockId": {
+            "type": "string"
+          },
+          "locked": {
+            "type": "boolean"
+          },
+          "count": {
+            "type": "number",
+            "minimum": 0
+          },
+          "expiresAt": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "context",
+          "contextName",
+          "ownerUserId",
+          "visibility",
+          "holdTimeout",
+          "renewable",
+          "capacity",
           "createdAt",
-          "version"
+          "lastUpdatedAt",
+          "streamId",
+          "lockId",
+          "locked",
+          "count",
+          "expiresAt"
+        ]
+      },
+      "UpdateLockDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "context": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string",
+            "nullable": true
+          },
+          "ownerUserId": {
+            "type": "string",
+            "nullable": true
+          },
+          "visibility": {
+            "enum": [
+              "ENVIRONMENT",
+              "TENANT"
+            ],
+            "type": "string"
+          },
+          "holdTimeout": {
+            "type": "number",
+            "minimum": 1,
+            "maximum": 86400
+          },
+          "renewable": {
+            "type": "boolean"
+          },
+          "capacity": {
+            "type": "number",
+            "minimum": 1
+          }
+        }
+      },
+      "LockSessionDto": {
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": "string"
+          },
+          "locked": {
+            "type": "boolean"
+          },
+          "expiresAt": {
+            "type": "string",
+            "nullable": true
+          },
+          "renewable": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "sessionId",
+          "locked",
+          "expiresAt",
+          "renewable"
+        ]
+      },
+      "LockControlDto": {
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "sessionId"
+        ]
+      },
+      "LockStatusDto": {
+        "type": "object",
+        "properties": {
+          "locked": {
+            "type": "boolean"
+          },
+          "count": {
+            "type": "number",
+            "minimum": 0
+          },
+          "expiresAt": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "required": [
+          "locked",
+          "count",
+          "expiresAt"
         ]
       },
       "ClientMetadata": {
@@ -9955,411 +11431,6 @@
           "environmentId"
         ]
       },
-      "StoreMessageDto": {
-        "type": "object",
-        "properties": {
-          "message": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "message"
-        ]
-      },
-      "MessageUUIDDto": {
-        "type": "object",
-        "properties": {
-          "uuid": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "uuid"
-        ]
-      },
-      "Object": {
-        "type": "object",
-        "properties": {}
-      },
-      "SendCommandDto": {
-        "type": "object",
-        "properties": {
-          "command": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "command"
-        ]
-      },
-      "TeachSystemPromptDto": {
-        "type": "object",
-        "properties": {
-          "prompt": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "prompt"
-        ]
-      },
-      "TeachSystemPromptResponseDto": {
-        "type": "object",
-        "properties": {
-          "response": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "response"
-        ]
-      },
-      "ClientReferenceItemDto": {
-        "type": "object",
-        "properties": {
-          "content": {
-            "type": "string"
-          },
-          "language": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "content",
-          "language"
-        ]
-      },
-      "ClientReferenceMetadataDto": {
-        "type": "object",
-        "properties": {
-          "title": {
-            "type": "string"
-          },
-          "icon": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "title",
-          "icon"
-        ]
-      },
-      "ClientReferenceDto": {
-        "type": "object",
-        "properties": {
-          "type": {
-            "type": "string"
-          },
-          "name": {
-            "type": "string"
-          },
-          "data": {
-            "$ref": "#/components/schemas/ClientReferenceItemDto"
-          },
-          "metadata": {
-            "$ref": "#/components/schemas/ClientReferenceMetadataDto"
-          }
-        },
-        "required": [
-          "type",
-          "name",
-          "data",
-          "metadata"
-        ]
-      },
-      "ClientConfirmationDto": {
-        "type": "object",
-        "properties": {
-          "state": {
-            "enum": [
-              "accepted",
-              "dismissed"
-            ],
-            "type": "string"
-          },
-          "confirmation": {
-            "type": "object"
-          }
-        },
-        "required": [
-          "state",
-          "confirmation"
-        ]
-      },
-      "AgentErrorDto": {
-        "type": "object",
-        "properties": {
-          "type": {
-            "enum": [
-              "reference",
-              "function",
-              "agent"
-            ],
-            "type": "string"
-          },
-          "code": {
-            "type": "string"
-          },
-          "message": {
-            "type": "string"
-          },
-          "identifier": {
-            "type": "string"
-          },
-          "additionalMessage": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "type",
-          "code",
-          "message",
-          "identifier"
-        ]
-      },
-      "ClientChatMessageDto": {
-        "type": "object",
-        "properties": {
-          "role": {
-            "type": "string"
-          },
-          "content": {
-            "type": "string"
-          },
-          "copilotReferences": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/ClientReferenceDto"
-            }
-          },
-          "copilotConfirmations": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/ClientConfirmationDto"
-            }
-          },
-          "copilotErrors": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/AgentErrorDto"
-            }
-          }
-        },
-        "required": [
-          "role",
-          "content",
-          "copilotReferences",
-          "copilotConfirmations",
-          "copilotErrors"
-        ]
-      },
-      "ClientChatDataDto": {
-        "type": "object",
-        "properties": {
-          "copilotThreadId": {
-            "type": "string"
-          },
-          "messages": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/ClientChatMessageDto"
-            }
-          },
-          "language": {
-            "type": "string"
-          },
-          "lastUserMessage": {
-            "type": "string",
-            "nullable": true
-          },
-          "githubUserId": {
-            "type": "number"
-          },
-          "githubUserName": {
-            "type": "string"
-          },
-          "polyInstance": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "copilotThreadId",
-          "messages",
-          "language",
-          "lastUserMessage",
-          "githubUserId",
-          "githubUserName",
-          "polyInstance"
-        ]
-      },
-      "AuthResponseContentDto": {
-        "type": "object",
-        "properties": {
-          "message": {
-            "type": "string"
-          },
-          "deviceCode": {
-            "type": "string"
-          },
-          "interval": {
-            "type": "number"
-          }
-        },
-        "required": [
-          "message",
-          "deviceCode",
-          "interval"
-        ]
-      },
-      "AuthResponseDto": {
-        "type": "object",
-        "properties": {
-          "status": {
-            "type": "number"
-          },
-          "content": {
-            "$ref": "#/components/schemas/AuthResponseContentDto"
-          },
-          "message": {
-            "type": "string"
-          },
-          "error": {
-            "type": "object"
-          }
-        },
-        "required": [
-          "status"
-        ]
-      },
-      "PollResponseContentDto": {
-        "type": "object",
-        "properties": {
-          "access_token": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "access_token"
-        ]
-      },
-      "PollResponseDto": {
-        "type": "object",
-        "properties": {
-          "status": {
-            "type": "number"
-          },
-          "content": {
-            "$ref": "#/components/schemas/PollResponseContentDto"
-          },
-          "message": {
-            "type": "string"
-          },
-          "error": {
-            "type": "object"
-          }
-        },
-        "required": [
-          "status"
-        ]
-      },
-      "UserDetailDto": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "number"
-          },
-          "login": {
-            "type": "string"
-          },
-          "name": {
-            "type": "string"
-          },
-          "email": {
-            "type": "string"
-          },
-          "avatarUrl": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "login",
-          "name",
-          "email",
-          "avatarUrl"
-        ]
-      },
-      "UserErrorDto": {
-        "type": "object",
-        "properties": {
-          "message": {
-            "type": "string"
-          },
-          "error": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "message"
-        ]
-      },
-      "UserContentDto": {
-        "type": "object",
-        "properties": {
-          "user": {
-            "$ref": "#/components/schemas/UserDetailDto"
-          },
-          "error": {
-            "$ref": "#/components/schemas/UserErrorDto"
-          }
-        }
-      },
-      "UserResponseDto": {
-        "type": "object",
-        "properties": {
-          "status": {
-            "type": "number"
-          },
-          "content": {
-            "$ref": "#/components/schemas/UserContentDto"
-          }
-        },
-        "required": [
-          "status",
-          "content"
-        ]
-      },
-      "CreateAssistantConversationDto": {
-        "type": "object",
-        "properties": {
-          "message": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "message"
-        ]
-      },
-      "CreateAssistantDto": {
-        "type": "object",
-        "properties": {
-          "slug": {
-            "type": "string"
-          },
-          "name": {
-            "type": "string"
-          },
-          "functionIds": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          }
-        },
-        "required": [
-          "slug"
-        ]
-      },
       "CreateWebhookHandleDtoForSpecificationInput": {
         "type": "object",
         "properties": {
@@ -10421,15 +11492,7 @@
             "type": "string"
           },
           "method": {
-            "type": "string",
-            "enum": [
-              "GET",
-              "POST",
-              "PUT",
-              "PATCH",
-              "DELETE",
-              "HEAD"
-            ]
+            "type": "string"
           },
           "requirePolyApiKey": {
             "type": "boolean"
@@ -10445,6 +11508,14 @@
           },
           "ownerUserId": {
             "type": "string"
+          },
+          "queueId": {
+            "type": "string",
+            "nullable": true
+          },
+          "serverFunctionId": {
+            "type": "string",
+            "nullable": true
           }
         },
         "required": [
@@ -10513,6 +11584,257 @@
           "webhooks",
           "schemas"
         ]
+      },
+      "MCPToolFunctionArgumentConfigDto": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "ai",
+              "hardcoded",
+              "argument",
+              "variable"
+            ]
+          },
+          "value": {
+            "type": "object"
+          },
+          "argumentKey": {
+            "type": "string"
+          },
+          "variableId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "source"
+        ]
+      },
+      "MCPToolWidgetSettingDto": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "variableId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "variableId"
+        ]
+      },
+      "MCPToolFunctionWidgetConfigDto": {
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "settings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MCPToolWidgetSettingDto"
+            }
+          }
+        },
+        "required": [
+          "enabled"
+        ]
+      },
+      "MCPToolFunctionConfigDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "argumentConfig": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MCPToolFunctionArgumentConfigDto"
+            }
+          },
+          "widget": {
+            "$ref": "#/components/schemas/MCPToolFunctionWidgetConfigDto"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "MCPServerDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "environmentId": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "isPublic": {
+            "type": "boolean"
+          },
+          "mcpUrl": {
+            "type": "string"
+          },
+          "oauthClientId": {
+            "type": "string",
+            "nullable": true
+          },
+          "oauthClientSecretVariableId": {
+            "type": "string",
+            "nullable": true
+          },
+          "oauthRedirectUris": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "toolFunctionIds": {
+            "nullable": true,
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "toolFunctions": {
+            "nullable": true,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MCPToolFunctionConfigDto"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "createdAt",
+          "updatedAt",
+          "name",
+          "description",
+          "environmentId",
+          "enabled",
+          "isPublic",
+          "oauthClientId",
+          "oauthClientSecretVariableId",
+          "oauthRedirectUris",
+          "toolFunctionIds",
+          "toolFunctions"
+        ]
+      },
+      "CreateMCPServerDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "oauthClientId": {
+            "type": "string",
+            "nullable": true
+          },
+          "oauthClientSecretVariableId": {
+            "type": "string",
+            "nullable": true
+          },
+          "oauthRedirectUris": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uri"
+            }
+          },
+          "description": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "isPublic": {
+            "type": "boolean"
+          },
+          "toolFunctionIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "toolFunctions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MCPToolFunctionConfigDto"
+            }
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "UpdateMCPServerDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "oauthClientId": {
+            "type": "string",
+            "nullable": true
+          },
+          "oauthClientSecretVariableId": {
+            "type": "string",
+            "nullable": true
+          },
+          "oauthRedirectUris": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uri"
+            }
+          },
+          "description": {
+            "type": "string"
+          },
+          "environmentId": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "isPublic": {
+            "type": "boolean"
+          },
+          "toolFunctionIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "toolFunctions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MCPToolFunctionConfigDto"
+            }
+          }
+        }
       },
       "CreateSavedRequestDto": {
         "type": "object",

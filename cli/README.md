@@ -31,6 +31,7 @@ flow push-dynamic --hubs
 flow train-openapi designs/ --context 'example.apis.{file}'
 flow delete-content --type api --context example.apis --dry-run
 flow logs <function-id> --keyword error
+flow jobs run <job-name> --dry-run
 ```
 
 When called through the workflows package, select the Flow file once for the
@@ -65,6 +66,7 @@ that build Flow before running it:
 pnpm flow train-openapi [spec-file-or-folder] --context 'example.apis.{file}'
 pnpm flow delete-content --type api --context example.apis --dry-run
 pnpm flow logs <function-id> --logs-page-size 100 --keyword error
+pnpm flow jobs run <job-name>
 ```
 
 The existing `pnpm workflows train:openapi` and `pnpm workflows delete:content`
@@ -305,6 +307,22 @@ includes log entries and pagination metadata. `--raw` prints the original
 response. Omitting the ID prompts for it. Reading logs does not trigger write
 or production confirmations.
 
+### Running a job now
+
+```bash
+pnpm flow jobs run motdSchedulerJob --dry-run
+pnpm flow jobs run motdSchedulerJob
+```
+
+`flow jobs run <job-name>` runs a deployed job once, immediately, through
+`POST /jobs/{id}/trigger` (PolyAPI R35 or later). The job's schedule and
+`enabled` flag are unchanged, so a disabled job can be run on demand. The job is
+found by its exact name in the target environment (a job ID is also accepted);
+duplicate names stop the command. Flow prints the queued `runId`. `--dry-run`
+resolves the job without running it. Because a run executes the job's
+functions, the command uses the same target pin, branch/environment and
+production checks as `push`, and OTP when enabled.
+
 ### Content deletion
 
 ```bash
@@ -512,7 +530,10 @@ Function deployment through the Poly CLI retains that CLI's authentication
 handling.
 
 `build` compiles TypeScript. `generate` and `postinstall` refresh
-`src/sdk/schema.d.ts` from `POLYAPI_OPENAPI_SPEC_URL` (or the default URL above).
+`src/sdk/schema.d.ts` and the request-body schemas in `schemas/openapi/` from
+`POLYAPI_OPENAPI_SPEC_URL` (or the default URL above). The value can also be a
+local OpenAPI JSON file, for example a server checkout's `swagger.json`:
+`POLYAPI_OPENAPI_SPEC_URL=../poly-alpha/swagger.json pnpm flow generate`.
 
 ## Updating Vari Values
 
@@ -571,6 +592,35 @@ The legacy `artifacts/` spelling is also supported for the same artefact folders
 
 Function metadata is read from inline `polyConfig` objects.
 
+### Server function settings
+
+Server functions also accept two runtime settings in `polyConfig`:
+
+```ts
+export const polyConfig = {
+  name: 'processOrders',
+  context: 'example.orders',
+  description: 'Processes queued orders.',
+  serverSideAsync: true, // "Run in Background"
+  containerConcurrency: 4, // requests per replica; null removes the override
+};
+```
+
+With `serverSideAsync: true`, an execution returns `202` with an execution ID
+and can run for longer than 30 minutes. `containerConcurrency` is a whole number
+(or a `{{ENV_NAME}}` placeholder for one); `null` returns to the platform
+default. Neither is a `poly function add` option, so Flow applies them with
+`PATCH /functions/server/{id}`: after a deployment, or on its own when only
+these settings differ from the target. After a code deployment Flow re-applies
+every declared setting, even ones PolyAPI already stores, because a code
+deployment currently drops the `containerConcurrency` override at the runtime
+level. A settings-only change is reported as
+`[PLAN] Update settings without redeploy` and does not rebuild the function.
+`push-dynamic` applies the declared settings after each server function it
+deploys. Omitted settings are left as they are on the platform. Autoscaling
+settings (`minScale`, `maxScale`, autoscaling metric and target) are
+super-admin only and are not managed by Flow.
+
 Canopy JSON can include an application `description`. Flow synchronizes it as
 application metadata; `id`, `description`, and `visibility` are kept outside
 the rendered application config. Omitting `description` preserves the remote
@@ -612,6 +662,30 @@ this:
 }
 ```
 
+Voice AI Functions (`"type": "VOICE"`) accept two more fields:
+
+```json
+{
+  "voiceInitialMessage": null,
+  "twilioAuthTokenVariable": {
+    "variableName": "twilioAuthToken",
+    "variableContext": "example.voice"
+  }
+}
+```
+
+`voiceInitialMessage` is the greeting played before the assistant speaks;
+`null` skips it. `twilioAuthTokenVariable` names a `SECRET` vari holding your own
+Twilio auth token, used to verify Twilio's webhook signatures. Flow resolves it
+to `twilioAuthTokenVariableId` and stops if the variable is not `SECRET`; `null`
+reverts to the platform's Twilio credentials.
+
+`outputSchema` and `errorSchema` must describe an object at the root (`type`
+`object`, or `properties` without a `type`). Flow rejects root primitives,
+arrays, `anyOf`/`oneOf`/`allOf`, `enum` and `const` before sync, as PolyAPI R35
+does. An `errorSchema` also needs an `outputSchema`, a required `status` fixed
+to `"failed"`, and a required string `message`.
+
 Use `--types ai-functions` to sync only these artefacts. Flow creates them with
 `POST /functions/ai`, sends changed mutable fields only with `PATCH
 /functions/ai/{id}`, and supports safe orphan reporting/deletion.
@@ -642,6 +716,28 @@ coding agents and chat assistants. Keep each server in
       ]
     }
   ]
+}
+```
+
+A tool can also enable its MCP widget and bind the widget's settings to vari
+values. Each setting's `variable` resolves to a `variableId`:
+
+```json
+{
+  "functionName": "getCurrentWeather",
+  "functionContext": "example.sampleWorkflow",
+  "widget": {
+    "enabled": true,
+    "settings": [
+      {
+        "key": "mapsApiKey",
+        "variable": {
+          "variableName": "mapsApiKey",
+          "variableContext": "example.sampleWorkflow"
+        }
+      }
+    ]
+  }
 }
 ```
 
@@ -685,6 +781,78 @@ Access depends on `isPublic`:
   private server; a complete OAuth sign-in has not yet been verified with Flow.
   When `oauthRedirectUris` is omitted, PolyAPI adds the claude.ai and ChatGPT
   connector callbacks.
+
+## Webhooks
+
+A webhook can run a server function directly, without a trigger artefact:
+
+```json
+{
+  "name": "orderCreated",
+  "context": "example.orders",
+  "description": "Order created events.",
+  "serverFunction": {
+    "functionName": "handleOrder",
+    "functionContext": "example.orders"
+  }
+}
+```
+
+Flow resolves `serverFunction` to the server function's `serverFunctionId`
+(deploy the function first) and includes it in the change comparison. Set it to
+`null` to disconnect the function; omit it to leave the connection unmanaged.
+If a trigger artefact also routes the same webhook to the same function, Flow
+warns: both routes would run, executing the function twice per event.
+
+## Jobs
+
+Interval schedules take a whole number of minutes or a duration string:
+
+```json
+{ "schedule": { "type": "interval", "value": "30s" } }
+```
+
+- A number or numeric string means minutes: `5` and `"5"` are five minutes.
+- `"<number><s|m|h>"` is a duration: `"30s"`, `"15m"`, `"2h"`.
+- The minimum is 10 seconds; shorter values fail validation before sync.
+
+PolyAPI returns whole minutes as a number and other values as a duration string
+(for example `"90s"`). Flow compares intervals in seconds, so `"60s"`, `"1m"`,
+`"1"` and `1` are the same schedule and do not show as a change. Use
+`flow jobs run <job-name>` to run a job immediately.
+
+## GraphQL subscriptions
+
+Existing subscriptions are updated in place with `PATCH
+/subscriptions/graphql/{id}` when only non-structural fields change:
+`description`, `visibility`, `ownerUserId`, `enabled`, `functionParams`,
+`paramsVariableId`, `paramsSfxId`, `ohipMaintainOffset` and
+`eventInactivityThresholdMs`. Since PolyAPI R35, enabling, disabling and
+inactivity settings change without restarting the stream; PolyAPI restarts it
+itself when another patched field needs it. Dry runs show `[PLAN] Update` with
+the fields that would change, and unchanged subscriptions are skipped.
+
+Changes to `type`, `transportProtocol`, `websocketUrl`, `query` or the
+`destination` function are structural. They are skipped with a warning unless
+`--force` is passed; with `--force`, Flow asks you to type `YES` and then deletes
+and re-creates the subscription (`[PLAN] Delete and recreate` in dry runs).
+Without an interactive terminal the re-create is skipped.
+
+`ohipOffsetSelection` and `ohipOffset` set the starting position when a
+subscription is created; PolyAPI does not return them, so they are not compared
+or patched. `paramsObject` is stored encrypted and returned redacted, so its
+changes cannot be detected: `--force` without structural changes patches every
+field, including `paramsObject`, instead of re-creating the subscription.
+
+## Canopy public access
+
+Canopy application config can set `publicAccess: true` to let anyone open a
+PUBLIC application without signing in. PolyAPI ignores it for other
+visibilities, so Flow stops the application's sync when the application is not
+PUBLIC (the deployed visibility counts for existing applications, because Flow
+sets `visibility` only on create). A push that newly turns public access on asks
+you to type `YES`; without an interactive terminal the application is skipped
+with a warning. Dry runs show the change as needing confirmation.
 
 All artefact payloads also support `{{ENV_VAR_NAME}}` placeholders. During sync,
 placeholders are substituted from the selected env file values. When an entire

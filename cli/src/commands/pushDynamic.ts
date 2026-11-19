@@ -37,11 +37,13 @@ import path from 'node:path';
 import type createClient from 'openapi-fetch';
 import {
   addFunction,
+  applyServerFunctionSettings,
   deleteClientFunction,
   deleteServerFunction,
   findFunctionFiles,
   fingerprintApiKey,
   getExistingFunctionDetails,
+  getServerFunctionSettingsPatch,
   locatePolyDir,
   normalizeMultilineText,
   readPolyGenerateProvenance,
@@ -1403,7 +1405,20 @@ export async function executePushDynamicPlan(
         `  → [${index + 1}/${order.length}] ${key} [${typeLabel(node.type)}]`
       )
     );
-    const result = await addFunction(file, plan.flagExecutionApiKey);
+    let result = await addFunction(file, plan.flagExecutionApiKey);
+    // serverSideAsync and containerConcurrency are not `poly function add`
+    // options: apply the declared values with a PATCH after the deploy.
+    if (
+      result === 'deployed' &&
+      !(await applyServerFunctionSettings(
+        context.client,
+        file,
+        getServerFunctionSettingsPatch(file, null),
+        plan.inventory?.get(remoteKey(file.type, key))?.id
+      ))
+    ) {
+      result = 'failed';
+    }
     if (result === 'deployed') {
       if (seedByKey.get(key)?.kind === 'create') {
         summary.created += 1;

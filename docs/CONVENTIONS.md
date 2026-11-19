@@ -203,6 +203,9 @@ Advanced projects can explicitly configure multiple owned roots with
 - Use one webhook JSON file per public endpoint.
 - Use one trigger JSON file to route a webhook or error handler to a server
   function.
+- A webhook can instead name its server function in `serverFunction`. Use
+  either that field or a webhook trigger for a given function, never both:
+  both routes run, so the function would execute twice per event.
 - Keep webhook, trigger, function name, and function context aligned.
 - Scoped syncs skip orphan detection to avoid false deletion reports.
 

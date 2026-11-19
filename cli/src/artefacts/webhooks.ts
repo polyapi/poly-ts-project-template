@@ -35,6 +35,7 @@ import {
 import { filterOrphansByContext } from '../utils/orphans';
 import { validateWebhookArtifact } from '../utils/validation';
 import { getReferenceableServerFunctions } from './references';
+import { findTriggerFiles } from './triggers';
 
 const log = createLogger('webhooks');
 type FindWebhookFileOptions = WalkDirOptions;
@@ -163,11 +164,96 @@ function normalizeSecurityFunctions(
     );
 }
 
+type ServerFunctionReference = {
+  functionName: string;
+  functionContext: string;
+};
+
+/**
+ * Resolve the artefact's `serverFunction` reference to `serverFunctionId`.
+ * `null` disconnects the function; an absent field leaves it unmanaged.
+ * Returns false when the reference cannot be resolved to exactly one function.
+ */
+export function resolveWebhookServerFunction(
+  payload: Record<string, unknown>,
+  functions: Array<{ id: string; name: string; context: string }>,
+  webhookName: string
+): boolean {
+  if (!('serverFunction' in payload)) {
+    return true;
+  }
+  const reference = payload.serverFunction as ServerFunctionReference | null;
+  delete payload.serverFunction;
+  if (reference === null) {
+    payload.serverFunctionId = null;
+    return true;
+  }
+
+  const ids = [
+    ...new Set(
+      functions
+        .filter(
+          fn =>
+            fn.name === reference.functionName &&
+            fn.context === reference.functionContext
+        )
+        .map(fn => fn.id)
+    ),
+  ];
+  if (ids.length !== 1) {
+    log.error(
+      {
+        webhook: webhookName,
+        functionName: reference.functionName,
+        functionContext: reference.functionContext,
+        matches: ids.length,
+      },
+      ids.length === 0
+        ? 'Server function not found for webhook serverFunction; deploy it first'
+        : 'Webhook serverFunction reference matches several server functions'
+    );
+    return false;
+  }
+  payload.serverFunctionId = ids[0];
+  return true;
+}
+
+/**
+ * Local webhook triggers that send this webhook to the same server function it
+ * is connected to directly. Both routes run, so each event executes twice.
+ */
+export function findDoubleExecutionTriggers(
+  webhook: {
+    name?: string;
+    context?: string;
+    serverFunction?: ServerFunctionReference | null;
+  },
+  triggers: Array<{ filePath: string; content: any }>
+): string[] {
+  const target = webhook.serverFunction;
+  if (!target) {
+    return [];
+  }
+  return triggers
+    .filter(
+      trigger =>
+        trigger.content?.source?.webhookName === webhook.name &&
+        trigger.content?.source?.webhookContext === webhook.context &&
+        trigger.content?.destination?.functionName === target.functionName &&
+        trigger.content?.destination?.functionContext === target.functionContext
+    )
+    .map(trigger => trigger.filePath);
+}
+
 async function buildWebhookPayload(
   webhook: WebhookFile,
   functions: any[]
 ): Promise<Record<string, unknown> | null> {
   const payload = { ...webhook.content } as Record<string, unknown>;
+
+  if (!resolveWebhookServerFunction(payload, functions, webhook.content.name)) {
+    return null;
+  }
 
   if (payload.eventPayload && payload.eventPayloadTypeSchema !== undefined) {
     delete payload.eventPayloadTypeSchema;
@@ -249,7 +335,7 @@ async function getExistingWebhookDetails(
   }
 }
 
-function buildRemoteWebhookPayload(
+export function buildRemoteWebhookPayload(
   localPayload: Record<string, unknown>,
   remoteWebhook: WebhookHandleDto,
   existingWebhook: WebhookHandleBasicDto
@@ -315,6 +401,11 @@ function buildRemoteWebhookPayload(
   }
   if (localPayload.enabled !== undefined) {
     payload.enabled = remoteWebhook.enabled;
+  }
+  if (localPayload.serverFunctionId !== undefined) {
+    payload.serverFunctionId =
+      (remoteWebhook as { serverFunctionId?: string | null })
+        .serverFunctionId ?? null;
   }
 
   return payload;
@@ -565,6 +656,14 @@ export async function syncWebhooks(
     }
   }
 
+  // Triggers anywhere in the project can route these webhooks, so check them
+  // all, not just the selected scope.
+  const localTriggers = webhookFiles.some(
+    webhook => webhook.content?.serverFunction
+  )
+    ? findTriggerFiles({ respectSkipPaths: false })
+    : [];
+
   // Step 3: Create or update local webhooks
   log.info(chalk.blue('Comparing local webhook payloads with API...'));
   for (const webhook of webhookFiles) {
@@ -592,6 +691,17 @@ export async function syncWebhooks(
       log.info(chalk.red('    [FAIL] Failed (namespace)'));
       summary.failed++;
       continue;
+    }
+
+    for (const triggerPath of findDoubleExecutionTriggers(
+      webhook.content,
+      localTriggers
+    )) {
+      log.warn(
+        warningColor(
+          `    [WARN] ${webhookName} is connected directly to ${webhook.content.serverFunction.functionContext}.${webhook.content.serverFunction.functionName}, and trigger ${triggerPath} routes it to the same function: every event will run the function twice. Remove the trigger or the serverFunction field.`
+        )
+      );
     }
 
     const result = await postWebhook(

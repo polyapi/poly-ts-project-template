@@ -31,6 +31,10 @@ export interface FunctionFile {
     generateContexts?: string[];
     executionApiKey?: string;
     cachePolyLibrary?: boolean;
+    /** Server functions only: "Run in Background" (202 + execution ID). */
+    serverSideAsync?: boolean;
+    /** Server functions only: concurrent requests per replica; null = no override. */
+    containerConcurrency?: number | null;
   };
 }
 
@@ -57,6 +61,20 @@ export interface AiToolFunction extends AiFunctionReference {
   argumentConfig?: AiFunctionArgumentConfig[];
 }
 
+export interface McpToolWidgetSetting {
+  key: string;
+  variable: AiVariableReference;
+}
+
+export interface McpToolWidget {
+  enabled: boolean;
+  settings?: McpToolWidgetSetting[];
+}
+
+export interface McpToolFunction extends AiToolFunction {
+  widget?: McpToolWidget;
+}
+
 export interface McpServerFile {
   filePath: string;
   fileName: string;
@@ -65,7 +83,7 @@ export interface McpServerFile {
     description?: string;
     enabled?: boolean;
     isPublic?: boolean;
-    toolFunctions?: AiToolFunction[];
+    toolFunctions?: McpToolFunction[];
     oauthClientId?: string | null;
     oauthClientSecretVariable?: AiVariableReference | null;
     oauthRedirectUris?: string[];
@@ -97,6 +115,7 @@ export interface AiFunctionFile {
     clientPromptArgName?: string;
     toolFunctions?: AiToolFunction[];
     outputSchema?: Record<string, unknown> | null;
+    errorSchema?: Record<string, unknown> | null;
     voiceConnectProvider?: string;
     voiceOutput?:
       | 'ALLOY'
@@ -107,7 +126,8 @@ export interface AiFunctionFile {
       | 'SAGE'
       | 'SHIMMER'
       | 'VERSE';
-    voiceInitialMessage?: string;
+    voiceInitialMessage?: string | null;
+    twilioAuthTokenVariable?: AiVariableReference | null;
   };
 }
 
@@ -225,7 +245,8 @@ export interface JobSchedulePeriodical {
 
 export interface JobScheduleInterval {
   type: 'interval';
-  value: number;
+  /** Minutes as a number or numeric string, or a "<int><s|m|h>" duration. */
+  value: number | string;
   acceptableDelayTime?: number | null;
 }
 
