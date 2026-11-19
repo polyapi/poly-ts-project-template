@@ -1,10 +1,12 @@
 # Skills
 
-Copy or install project-relevant skills here from:
+Install project-relevant skills here from
+<https://github.com/polyapi/poly-skills> with `pnpm flow skills add`, and
+refresh them with `pnpm flow skills update`. Flow refreshes unmodified folders
+it installed and asks before replacing folders with local edits or folders it
+did not install.
 
-<https://github.com/polyapi/poly-skills>
-
-Recommended starting points for a TypeScript PolyAPI project are skills for:
+The Coding in TypeScript setup covers skills for:
 
 - TypeScript coding conventions
 - PolyAPI SDK usage

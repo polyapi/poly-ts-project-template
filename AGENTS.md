@@ -77,11 +77,12 @@ ENVPATH=workflows/dev.env pnpm workflows push
 
 ## Skill Entry Points
 
-This template does not include skills by default. Bring relevant skills from:
+This template does not include skills by default. Install them from
+<https://github.com/polyapi/poly-skills> with `pnpm flow skills add`, choosing
+Coding in TypeScript, and refresh them with `pnpm flow skills update`. Flow
+records the selection in `.agents/flow-skills.json`.
 
-<https://github.com/polyapi/poly-skills>
-
-Recommended skill categories:
+The TypeScript setup covers these skill categories:
 
 - TypeScript coding conventions
 - PolyAPI SDK usage

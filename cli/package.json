@@ -1,6 +1,6 @@
 {
   "name": "flow-cli",
-  "version": "1.4.1",
+  "version": "1.4.2",
   "private": true,
   "description": "Flow CLI for syncing local PolyAPI TypeScript artefacts",
   "main": "dist/cli.js",
@@ -21,6 +21,7 @@
     "delete:content": "pnpm run build && node dist/cli.js delete:content",
     "logs": "pnpm run build && node dist/cli.js logs",
     "jobs": "pnpm run build && node dist/cli.js jobs",
+    "skills": "pnpm run build && node dist/cli.js skills",
     "postinstall": "pnpm generate",
     "generate": "pnpm exec tsx src/codegen/generate.ts",
     "train-openapi": "pnpm run build && node dist/cli.js train-openapi",
