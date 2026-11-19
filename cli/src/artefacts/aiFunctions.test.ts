@@ -278,6 +278,23 @@ test('ignores API-only metadata while comparing nested tool configuration', () =
   assert.deepEqual(update, { payload: {}, immutableChanges: [] });
 });
 
+test('removing a property from a hardcoded tool value updates the AI Function', () => {
+  const tool = (value: Record<string, unknown>) => ({
+    toolFunctions: [
+      {
+        id: 'function-id',
+        argumentConfig: [{ key: 'options', source: 'hardcoded', value }],
+      },
+    ],
+  });
+  const local = tool({ units: 'metric' });
+  const update = buildAiFunctionUpdatePayload(local, {
+    ...tool({ units: 'metric', legacy: true }),
+    id: 'ai-function-id',
+  });
+  assert.deepEqual(update, { payload: local, immutableChanges: [] });
+});
+
 const voiceFunction: AiFunctionFile = {
   filePath: '/workspace/src/voice/artefacts/ai-functions/frontDesk.json',
   fileName: 'frontDesk.json',
