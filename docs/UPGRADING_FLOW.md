@@ -120,6 +120,17 @@ yourself; upgrading does not commit, push, or deploy anything.
 
 ## Release notes requiring action
 
+### Table data folder
+
+Flow 1.5.0 syncs the rows of Tabi tables from `artefacts/tabi/data/`; see
+[table data](../cli/README.md#table-data). The `table-data` type is on by
+default and changes nothing until a project adds data files. Before 1.5.0,
+Flow read every JSON file under `artefacts/tabi/`, including that folder, as a
+table definition. Move any table definition kept in `artefacts/tabi/data/` up
+to `artefacts/tabi/` before pushing. Otherwise Flow reports the file as invalid
+table data, no longer deploys the definition, and treats its table as an
+orphan: a full push with `--delete-orphans --types tables` would delete it.
+
 ### Webhook triggers replaced by direct bindings
 
 Flow 1.4.3 turns a former warning into a validation error. When a webhook

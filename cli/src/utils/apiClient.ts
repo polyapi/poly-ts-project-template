@@ -38,6 +38,12 @@ class OtpManager {
 
 const otpManager = new OtpManager();
 
+/** POST endpoints that only read, such as Tabi row selects: no OTP needed. */
+const READ_ONLY_POST_PATHS: ReadonlySet<string> = new Set([
+  '/tables/{id}/select',
+  '/tables/{id}/count',
+]);
+
 async function promptForHiddenInput(prompt: string): Promise<string> {
   if (!process.stdin.isTTY || !process.stdout.isTTY) {
     throw new Error(
@@ -261,7 +267,13 @@ export function createPolyApiClient(): ReturnType<typeof createClient<paths>> {
   });
 
   client.use({
-    async onRequest({ request }) {
+    async onRequest({ request, schemaPath }) {
+      if (
+        request.method.toUpperCase() === 'POST' &&
+        READ_ONLY_POST_PATHS.has(schemaPath)
+      ) {
+        return request;
+      }
       const otpHeaders = await getOtpHeaders(request.method);
       for (const [name, value] of Object.entries(otpHeaders)) {
         request.headers.set(name, value);

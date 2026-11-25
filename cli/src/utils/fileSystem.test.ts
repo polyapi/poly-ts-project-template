@@ -1,6 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { isInArtefactDirectory, isInNamedDirectory } from './fileSystem';
+import {
+  getTableDataSegments,
+  isInArtefactDirectory,
+  isInNamedDirectory,
+  isTableDataPath,
+} from './fileSystem';
 
 test('recognizes canonical and legacy artefact directory spellings', () => {
   assert.equal(
@@ -37,4 +42,32 @@ test('does not match partial directory names', () => {
     ),
     false
   );
+});
+
+test('finds the segments below artefacts/tabi/data on any platform', () => {
+  assert.deepEqual(
+    getTableDataSegments('/workspace/src/hotels/artefacts/tabi/data/rows.json'),
+    ['rows.json']
+  );
+  assert.deepEqual(
+    getTableDataSegments(
+      String.raw`C:\workspace\src\hotels\artifacts\tabi\data\dev\rows.json`
+    ),
+    ['dev', 'rows.json']
+  );
+  assert.equal(
+    isTableDataPath('/workspace/src/hotels/artefacts/tabi/data/dev/rows.json'),
+    true
+  );
+});
+
+test('table definitions are not table data', () => {
+  for (const filePath of [
+    '/workspace/src/hotels/artefacts/tabi/hotels.json',
+    '/workspace/src/hotels/artefacts/tabi/data.json',
+    '/workspace/src/hotels/artefacts/tabi/data',
+    '/workspace/src/hotels/tabi/data/rows.json',
+  ]) {
+    assert.equal(isTableDataPath(filePath), false, filePath);
+  }
 });

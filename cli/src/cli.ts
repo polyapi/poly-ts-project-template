@@ -28,6 +28,14 @@ import {
   findGraphQLSubscriptionFiles,
   syncGraphQLSubscriptions,
 } from './artefacts/subscriptions';
+import {
+  findTableDataFiles,
+  getTableDataEnvironment,
+  syncTableData,
+  type TableDataFile,
+  type TableDataValidation,
+  validateTableDataFiles,
+} from './artefacts/tableData';
 import { findTableFiles, syncTables } from './artefacts/tables';
 import { findTriggerFiles, syncTriggers } from './artefacts/triggers';
 import { findVariableFiles, syncVariables } from './artefacts/variables';
@@ -113,6 +121,7 @@ type ArtifactType =
   | 'variables'
   | 'schemas'
   | 'tables'
+  | 'table-data'
   | 'functions'
   | 'ai-functions'
   | 'mcp-servers'
@@ -136,6 +145,8 @@ type CliArgs = {
   pathFilters: string[];
   enabledTypes: ArtifactType[];
   functionTypes: FunctionTypeSelection[] | null;
+  /** Delete table rows that no data file lists (table-data only). */
+  pruneTableData: boolean;
 };
 
 const SKIP_VALIDATION_ACKNOWLEDGEMENT = 'I know what am doing';
@@ -146,6 +157,7 @@ const DEFAULT_ENABLED_TYPES: ArtifactType[] = [
   'variables',
   'schemas',
   'tables',
+  'table-data',
   'functions',
   'ai-functions',
   'mcp-servers',
@@ -160,6 +172,7 @@ const SUPPORTED_TYPE_SELECTIONS = [
   'variables',
   'schemas',
   'tables',
+  'table-data',
   'functions',
   'client-functions',
   'server-functions',
@@ -194,6 +207,7 @@ Examples:
   flow push --dry-run
   flow push --paths exampleWorkflow
   flow push --paths src/utilities --types functions,ai-functions,jobs
+  flow push --types tables,table-data --dry-run
   flow push --delete-orphans
   flow push --help
   flow push-dynamic --dry-run
@@ -243,11 +257,13 @@ Usage:
 
   Options:
   --dry-run           Show planned actions without changing anything remotely
-  --force             Update existing remote artifacts even when payload is unchanged; subscriptions prompt to delete/re-create
+  --force             Update existing remote artifacts even when payload is unchanged; subscriptions prompt to delete/re-create;
+                      table rows changed in their table after their data file are overwritten
   --verbose           Print debug logging while scanning and diffing
   --delete-orphans    Delete remote artefacts that no longer exist locally
+  --prune-table-data  Delete table rows that no table data file lists (otherwise they are only reported)
   --build-schema      Regenerate OpenAPI SDK/schemas before sync
-  --types             Comma-separated types: canopy,variables,schemas,tables,functions,client-functions,server-functions,ai-functions,mcp-servers,webhooks,triggers,subscriptions,jobs
+  --types             Comma-separated types: canopy,variables,schemas,tables,table-data,functions,client-functions,server-functions,ai-functions,mcp-servers,webhooks,triggers,subscriptions,jobs
   --paths             Comma-separated scope filters, e.g. exampleWorkflow or src/utilities
   --show-config       Print resolved CLI config and exit
   --skip-generate     Skip pnpm workflows exec poly generate after sync
@@ -261,6 +277,9 @@ Notes:
   - MCP servers have no namespace context: they match by exact name and are never orphans.
   - Existing OBSCURED variables require --force. Replacing protected values also requires
     POLY_DEPLOY_UPDATE_EXISTING_SECRET_VARIABLES=true (default false).
+  - table-data syncs rows from artefacts/tabi/data/*.json into their Tabi tables by key, plus
+    artefacts/tabi/data/<environment>/ when the env file sets POLY_DEPLOY_TABLE_DATA_ENV. A row
+    changed in its table after its file's last commit is blocked unless --force.
   - Production safeguards are skipped for --dry-run.
 `);
 }
@@ -436,6 +455,7 @@ function parseCliArgs(argv: string[] = process.argv.slice(2)): CliArgs | null {
       force: { type: 'boolean' },
       verbose: { type: 'boolean' },
       'delete-orphans': { type: 'boolean' },
+      'prune-table-data': { type: 'boolean' },
       'build-schema': { type: 'boolean' },
       'skip-invalid': { type: 'boolean' },
       'skip-validation': { type: 'string' },
@@ -482,6 +502,7 @@ function parseCliArgs(argv: string[] = process.argv.slice(2)): CliArgs | null {
     pathFilters: parseCsvArgument(values.paths),
     enabledTypes: parsedTypes.enabledTypes,
     functionTypes: parsedTypes.functionTypes,
+    pruneTableData: Boolean(values['prune-table-data']),
   };
 }
 
@@ -517,6 +538,7 @@ function printSummary(
     { name: 'Subscriptions', data: summary.subscriptions },
     { name: 'Variables', data: summary.variables },
     { name: 'Tables', data: summary.tables },
+    { name: 'Table Data', data: summary.tableData },
     { name: 'Jobs', data: summary.jobs },
   ];
 
@@ -527,7 +549,8 @@ function printSummary(
         data.deleted +
         data.failed +
         data.skipped +
-        data.planned >
+        data.planned +
+        data.blocked >
       0
     ) {
       logger.info(chalk.bold(`${name}:`));
@@ -555,6 +578,10 @@ function printSummary(
         logger.info(
           `  ${chalk.blue('[?]')} Planned:  ${chalk.blue(data.planned)}`
         );
+      if (data.blocked > 0)
+        logger.info(
+          `  ${chalk.yellow('[!]')} Blocked:  ${chalk.yellow(data.blocked)}`
+        );
       logger.info('');
     }
   });
@@ -581,6 +608,10 @@ function printSummary(
   if (totals.planned > 0)
     logger.info(
       `  ${chalk.blue('[?]')} Planned:  ${chalk.blue(totals.planned)}`
+    );
+  if (totals.blocked > 0)
+    logger.info(
+      `  ${chalk.yellow('[!]')} Blocked:  ${chalk.yellow(totals.blocked)}`
     );
 
   logger.info(`\n${chalk.bold('Duration: ')}${chalk.cyan(`${duration}s`)}`);
@@ -651,6 +682,15 @@ function printSummary(
         chalk.underline(variablesCollectionUrl)
     );
     logger.info(chalk.bold(heavyRule()));
+  }
+
+  if (totals.blocked > 0) {
+    logger.info(
+      chalk.yellow(
+        '\n[BLOCKED] Table rows changed in their table after their data file were not overwritten.\n' +
+          "Copy the table's values into the file, or rerun with --force to overwrite them."
+      )
+    );
   }
 
   if (totals.failed > 0) {
@@ -1106,12 +1146,14 @@ function printConfig(
           skipGenerate: cliArgs.skipGenerate,
           enabledTypes: cliArgs.enabledTypes,
           functionTypes: cliArgs.functionTypes,
+          pruneTableData: cliArgs.pruneTableData,
           pathFilters: cliArgs.pathFilters.map(
             scope => path.relative(projectRoot, scope) || scope
           ),
         },
         envFile,
         preflight,
+        tableDataEnvironment: getTableDataEnvironment() || null,
         serverFunctionImages: Object.fromEntries(serverDeployment.images),
         serverFunctionScripts: [...serverDeployment.scripts.keys()],
         ...(dynamic
@@ -1138,8 +1180,8 @@ function printPushDynamicHelp(): void {
   logger.info(`\`flow push\` whose function step follows the call graph (dependency-aware deploy).
 
 Everything else is identical to push: the same discovery, validation, artefact types in the
-same order (variables, canopy, schemas, tables, functions, ai-functions, mcp-servers, webhooks,
-triggers, subscriptions, jobs), scope prompt, production safeguards, summary and post-push \`poly generate\`. Only the
+same order (variables, canopy, schemas, tables, table-data, functions, ai-functions, mcp-servers,
+webhooks, triggers, subscriptions, jobs), scope prompt, production safeguards, summary and post-push \`poly generate\`. Only the
 functions step differs: a changed client function (CFX) is picked up by a server function (SFX)
 only when that SFX is rebuilt, so changed functions are expanded to their transitive
 client-function callers up to the first server function on every path, the trees are merged,
@@ -1160,13 +1202,15 @@ Shared with push:
   --paths <csv>       Scope: artefacts under these paths are synced and only functions under them
                       are compared for changes (the function closure is never scoped). A bare
                       workflow name means src/<workflow>
-  --types <csv>       canopy,variables,schemas,tables,functions,client-functions,server-functions,
-                      ai-functions,mcp-servers,webhooks,triggers,subscriptions,jobs (function sub-types
-                      select functions)
+  --types <csv>       canopy,variables,schemas,tables,table-data,functions,client-functions,
+                      server-functions,ai-functions,mcp-servers,webhooks,triggers,subscriptions,jobs
+                      (function sub-types select functions)
   --force             Update unchanged artefacts (functions are governed by seeds, not --force)
                       Required for existing OBSCURED variables; replacing protected values also
                       requires POLY_DEPLOY_UPDATE_EXISTING_SECRET_VARIABLES=true (default false).
-  --delete-orphans, --build-schema, --skip-invalid, --show-config, --skip-generate, --verbose
+                      Overwrites table rows changed in their table after their data file.
+  --delete-orphans, --prune-table-data, --build-schema, --skip-invalid, --show-config,
+  --skip-generate, --verbose
                       as for push
   --skip-validation   Bypass interactive confirmations only when its value is exactly
                       "${SKIP_VALIDATION_ACKNOWLEDGEMENT}" (as for push)
@@ -1233,6 +1277,7 @@ function parsePushDynamicArgs(rest: string[]): ParsedPushDynamic | null {
       force: { type: 'boolean' },
       verbose: { type: 'boolean' },
       'delete-orphans': { type: 'boolean' },
+      'prune-table-data': { type: 'boolean' },
       'build-schema': { type: 'boolean' },
       'skip-invalid': { type: 'boolean' },
       'skip-validation': { type: 'string' },
@@ -1343,6 +1388,7 @@ function parsePushDynamicArgs(rest: string[]): ParsedPushDynamic | null {
     pathFilters,
     enabledTypes: functionsOnly ? ['functions'] : parsedTypes.enabledTypes,
     functionTypes: parsedTypes.functionTypes,
+    pruneTableData: Boolean(values['prune-table-data']),
   };
   const dynamic: PushDynamicArgs = {
     dryRun,
@@ -1517,6 +1563,7 @@ async function main(): Promise<void> {
     const projectRoot = process.cwd();
     let cliArgs = normalizeCliPathFilters(projectRoot, parsedArgs);
     readServerFunctionDeploymentConfig();
+    const tableDataEnvironment = getTableDataEnvironment();
     const preflight = buildDeploymentPreflight(projectRoot, envFile);
 
     warnForMissingDefaultEnvFile(envFile);
@@ -1639,13 +1686,17 @@ async function main(): Promise<void> {
             `Production Safeguards: ${describeProductionSafeguards(preflight, cliArgs)}`
           )
     );
-    const modeLabel = cliArgs.dryRun
-      ? 'Dry run'
-      : cliArgs.deleteOrphans
-        ? 'Delete orphaned resources'
-        : 'Safe sync (orphans will be reported)';
+    const prunesTableData =
+      cliArgs.pruneTableData && cliArgs.enabledTypes.includes('table-data');
+    const modeLabel =
+      (cliArgs.dryRun
+        ? 'Dry run'
+        : cliArgs.deleteOrphans
+          ? 'Delete orphaned resources'
+          : 'Safe sync (orphans will be reported)') +
+      (prunesTableData ? ' + prune table data' : '');
     logger.info(
-      cliArgs.dryRun || cliArgs.deleteOrphans
+      cliArgs.dryRun || cliArgs.deleteOrphans || prunesTableData
         ? chalk.yellow(
             `Mode: ${modeLabel}${dynamic ? ` ${bullet} push-dynamic` : ''}`
           )
@@ -1889,6 +1940,32 @@ async function main(): Promise<void> {
       }
     }
 
+    // Table data: every environment folder's files of the selected tables, so
+    // a broken prod file fails a dev run before anything is written. Local
+    // table definitions supply the columns; the sync step checks the rows
+    // again against the deployed table.
+    let tableDataFiles: TableDataFile[] = [];
+    let tableDataValidation: TableDataValidation | undefined;
+    if (cliArgs.enabledTypes.includes('table-data')) {
+      tableDataFiles = findTableDataFiles();
+      tableDataValidation = validateTableDataFiles(
+        tableDataFiles,
+        findTableFiles({ respectSkipPaths: false }),
+        cliArgs.pathFilters
+      );
+      totalArtifacts += tableDataValidation.fileCount;
+      totalValidated +=
+        tableDataValidation.fileCount - tableDataValidation.invalidFiles.size;
+      for (const problem of tableDataValidation.problems) {
+        logger.error(chalk.red(`Invalid table data: ${problem}`));
+      }
+      if (tableDataValidation.problems.length > 0 && !cliArgs.skipInvalid) {
+        throw new Error(
+          `Table data validation failed (${tableDataValidation.problems.length} problem(s)); fix the data files or use --skip-invalid`
+        );
+      }
+    }
+
     logger.info('');
     if (variableFiles.length > 0) {
       logger.info(
@@ -1919,6 +1996,15 @@ async function main(): Promise<void> {
         chalk.green(checkMark) +
           chalk.gray(
             ` Tables:     ${validTables}/${tableFiles.length} validated`
+          )
+      );
+    }
+    if (tableDataValidation && tableDataValidation.fileCount > 0) {
+      const { fileCount, invalidFiles } = tableDataValidation;
+      logger.info(
+        (invalidFiles.size > 0 ? chalk.yellow('!') : chalk.green(checkMark)) +
+          chalk.gray(
+            ` Table data: ${fileCount - invalidFiles.size}/${fileCount} validated (every environment folder)`
           )
       );
     }
@@ -2090,6 +2176,17 @@ async function main(): Promise<void> {
         cliArgs.skipInvalid,
         syncOptions
       );
+    }
+    if (cliArgs.enabledTypes.includes('table-data')) {
+      await syncTableData(client, summary.tableData, {
+        dryRun: cliArgs.dryRun,
+        force: cliArgs.force,
+        prune: cliArgs.pruneTableData,
+        pathFilters: cliArgs.pathFilters,
+        environment: tableDataEnvironment,
+        files: tableDataFiles,
+        invalidFiles: tableDataValidation?.invalidFiles,
+      });
     }
     if (dynamic && functionPlan) {
       logger.info(chalk.cyan(createHeader('FUNCTIONS')));

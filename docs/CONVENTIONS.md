@@ -25,6 +25,7 @@ workflows/src/<workflowName>/
     schemas/
     specs/
     tabi/
+      data/          # table rows; data/<environment>/ for one environment
     triggers/
     vari/
     webhooks/
@@ -229,10 +230,14 @@ Advanced projects can explicitly configure multiple owned roots with
 - `vari/` contains configuration, secret placeholders, retry policy, or token
   cache definitions.
 - `tabi/` contains persisted workflow state or lookup tables.
+- `tabi/data/` contains rows Flow keeps in sync with their table, such as
+  reference data; see [table data](../cli/README.md#table-data).
 - `jobs/` contains scheduled maintenance or lifecycle tasks.
 - `canopy/` contains Canopy UI assets when a project uses them.
 
-Use `vari` for configuration and `tabi` for persisted workflow state.
+Use `vari` for configuration and `tabi` for persisted workflow state. Keep
+rows in `tabi/data/` only when Git should own them; rows a workflow writes at
+runtime stay out of it.
 
 Scoped Flow pushes skip orphan detection. Full pushes report orphans but delete
 them only when `--delete-orphans` is explicitly passed. External resources used

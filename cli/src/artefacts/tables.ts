@@ -8,6 +8,7 @@ import {
   getSrcPath,
   isInArtefactDirectory,
   isInNamedDirectory,
+  isTableDataPath,
   readJsonFile,
   type WalkDirOptions,
   walkDir,
@@ -40,7 +41,8 @@ const log = createLogger('tables');
 type FindTableFileOptions = WalkDirOptions;
 
 /**
- * Find all table JSON files in the project (artefacts/tabi/*.json)
+ * Find all table JSON files in the project (artefacts/tabi/*.json). Rows kept
+ * in artefacts/tabi/data/ are table data, synced by artefacts/tableData.ts.
  */
 export function findTableFiles(
   options: FindTableFileOptions = {}
@@ -55,7 +57,8 @@ export function findTableFiles(
         file.endsWith('.json') &&
         !file.endsWith('.test.json') &&
         isInNamedDirectory(fullPath, 'tabi') &&
-        isInArtefactDirectory(fullPath)
+        isInArtefactDirectory(fullPath) &&
+        !isTableDataPath(fullPath)
       ) {
         const content = readJsonFile(fullPath);
         if (content) {
