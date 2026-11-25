@@ -9,6 +9,11 @@ export interface EnvLoadResult {
   fromEnvPath: boolean;
   /** Pin declared by the selected file, never inherited from the shell/setup. */
   declaredTargetEnvId?: string;
+  /**
+   * POLY_DEPLOY_TABLE_DATA_ENV as the selected file declares it, never
+   * inherited: it picks which environment's table rows this target gets.
+   */
+  declaredTableDataEnv?: string;
 }
 
 export interface BranchEnvBinding {

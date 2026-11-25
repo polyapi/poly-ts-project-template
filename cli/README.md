@@ -590,7 +590,7 @@ calls. See [environment selection](../docs/SETUP.md#select-a-flow-environment).
 When `OTP_ENABLED=true`, Flow prompts for an OTP at the first write request
 and sends it as `x-otp` on its POST, PUT, PATCH, and DELETE requests, including
 Canopy updates and table data writes. Input is hidden and the code is reused
-for that Flow run. Read requests, including Tabi's row select and count POSTs,
+for that Flow run. Read requests, including the POST that selects Tabi rows,
 and dry runs do not prompt. OTP-enabled writes require an
 interactive terminal; Flow does not read the OTP code from the environment.
 Function deployment through the Poly CLI retains that CLI's authentication
@@ -886,33 +886,51 @@ table:
   table may have several files. Files in `data/` sync to every environment.
   Files in `data/<environment>/` sync only where the selected environment file
   sets `POLY_DEPLOY_TABLE_DATA_ENV` to that folder's name, such as `dev` or
-  `prod`; without the setting, a run warns about the folders it skips. When
-  both hold a row with the same key, the environment row overlays the shared
-  one, column by column. A key listed twice at one level is an error, and so is
-  a file nested deeper than `data/<environment>/`.
+  `prod`. Like `TARGET_ENV_ID`, only the selected file counts: a shell export,
+  CI variable or other env layer is ignored with a warning, so one
+  environment's rows never reach another environment's target. A run warns
+  when the setting is missing but environment folders exist, or names a folder
+  that does not exist. When both folders hold a row with the same key, the
+  environment row overlays the shared one, column by column. A key listed
+  twice at one level is an error, and so is a file nested deeper than
+  `data/<environment>/`.
 - Data files are plain JSON, read as written: no comments and no
   `{{ENV_NAME}}` substitution, so content such as templates keeps its own
   placeholders. Use an environment folder for values that differ between
   environments, and never put secrets in data files.
 - `key` is the column, or list of columns, that identifies a row. It cannot be
   `id`, `createdAt` or `updatedAt`, which Tabi generates; rows cannot set them
-  either.
+  either. Write whole numbers beyond 2^53, such as large `bigint` IDs, as
+  strings: JSON numbers cannot carry them exactly, so validation rejects them.
 - A row the table lacks is inserted. It must set every required column without
   a default, and the columns it omits get their defaults. A row whose listed
   columns differ is updated in those columns only, plus `updatedAt`, so columns
   the file omits keep their values, such as settings edited in an app. A row
   may therefore list just its key and the columns it changes.
-- A row changed in its table (`updatedAt`) at or after its file's last Git
-  commit is blocked unless `--force`, so pushing an older checkout cannot
-  overwrite what someone saved in an app. A file with uncommitted changes
-  counts by its modification time. Blocked rows are reported and counted in the
-  summary. `--force` overwrites them, but does not rewrite unchanged rows.
+- A row changed in its table (`updatedAt`) at or after the last Git commit of
+  its file is blocked unless `--force-table-data`, so pushing an older checkout
+  does not overwrite what someone saved in an app. Plain `--force` leaves table
+  rows alone. A file with uncommitted changes counts by its modification time,
+  and the time is when the change was committed, not merged. The check dates
+  the whole file: once any change to a file is committed, its rows no longer
+  block for app edits made before that commit. Keep rows that people edit in
+  apps one per file. A shallow clone, such as a CI checkout with
+  `fetch-depth: 1`, may not hold a file's last change; its changed rows are
+  then blocked until the full history is fetched (`fetch-depth: 0`). Blocked
+  rows are reported and counted in the summary; `--force-table-data`
+  overwrites them, but does not rewrite unchanged rows.
 - Rows that no file lists are reported and kept; `--prune-table-data` deletes
-  them. A scoped run (`--paths`) selects whole tables: every file of a table
-  with a file in scope, so the rows of its other files are never pruned.
-- Values compare as the column stores them: numbers by value, timestamps and
-  dates as instants (UTC without an offset), UUIDs ignoring case, and JSON
-  ignoring key order. A second sync of the same files changes nothing.
+  them. Rows that another environment folder lists are never pruned, whatever
+  this run's `POLY_DEPLOY_TABLE_DATA_ENV` is, and a run prunes nothing while a
+  data file it cannot read could list the rows. Table rows without key values,
+  such as rows a workflow wrote, count as rows no file lists. A scoped run
+  (`--paths`) selects whole tables: every file of a table with a file in
+  scope, so the rows of its other files are never pruned.
+- Values and keys compare as the column stores them: numbers by exact value,
+  timestamps and dates as instants (UTC without an offset), UUIDs ignoring
+  case, and JSON ignoring key order. A second sync of the same files changes
+  nothing. A key that several table rows hold stops the table when a file
+  lists it.
 - Local validation runs before any write and covers every environment folder
   of the selected tables, so a broken prod file fails a dev push. It checks the
   document, the key, duplicate keys and, when the table's definition is in the

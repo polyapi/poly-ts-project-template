@@ -176,7 +176,7 @@ export function getRelativePath(filePath: string): string {
  * Strip JSONC comments from JSON string.
  * Handles single-line and multi-line style comments while preserving strings.
  */
-function stripJsonComments(jsonString: string): string {
+export function stripJsonComments(jsonString: string): string {
   let result = '';
   let inString = false;
   let inSingleLineComment = false;

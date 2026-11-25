@@ -147,6 +147,8 @@ type CliArgs = {
   functionTypes: FunctionTypeSelection[] | null;
   /** Delete table rows that no data file lists (table-data only). */
   pruneTableData: boolean;
+  /** Overwrite table rows changed in their table after their data file. */
+  forceTableData: boolean;
 };
 
 const SKIP_VALIDATION_ACKNOWLEDGEMENT = 'I know what am doing';
@@ -257,11 +259,11 @@ Usage:
 
   Options:
   --dry-run           Show planned actions without changing anything remotely
-  --force             Update existing remote artifacts even when payload is unchanged; subscriptions prompt to delete/re-create;
-                      table rows changed in their table after their data file are overwritten
+  --force             Update existing remote artifacts even when payload is unchanged; subscriptions prompt to delete/re-create
   --verbose           Print debug logging while scanning and diffing
   --delete-orphans    Delete remote artefacts that no longer exist locally
   --prune-table-data  Delete table rows that no table data file lists (otherwise they are only reported)
+  --force-table-data  Overwrite table rows changed in their table after their data file (otherwise they are blocked)
   --build-schema      Regenerate OpenAPI SDK/schemas before sync
   --types             Comma-separated types: canopy,variables,schemas,tables,table-data,functions,client-functions,server-functions,ai-functions,mcp-servers,webhooks,triggers,subscriptions,jobs
   --paths             Comma-separated scope filters, e.g. exampleWorkflow or src/utilities
@@ -279,7 +281,7 @@ Notes:
     POLY_DEPLOY_UPDATE_EXISTING_SECRET_VARIABLES=true (default false).
   - table-data syncs rows from artefacts/tabi/data/*.json into their Tabi tables by key, plus
     artefacts/tabi/data/<environment>/ when the env file sets POLY_DEPLOY_TABLE_DATA_ENV. A row
-    changed in its table after its file's last commit is blocked unless --force.
+    changed in its table after its file's last commit is blocked unless --force-table-data.
   - Production safeguards are skipped for --dry-run.
 `);
 }
@@ -456,6 +458,7 @@ function parseCliArgs(argv: string[] = process.argv.slice(2)): CliArgs | null {
       verbose: { type: 'boolean' },
       'delete-orphans': { type: 'boolean' },
       'prune-table-data': { type: 'boolean' },
+      'force-table-data': { type: 'boolean' },
       'build-schema': { type: 'boolean' },
       'skip-invalid': { type: 'boolean' },
       'skip-validation': { type: 'string' },
@@ -503,6 +506,7 @@ function parseCliArgs(argv: string[] = process.argv.slice(2)): CliArgs | null {
     enabledTypes: parsedTypes.enabledTypes,
     functionTypes: parsedTypes.functionTypes,
     pruneTableData: Boolean(values['prune-table-data']),
+    forceTableData: Boolean(values['force-table-data']),
   };
 }
 
@@ -688,7 +692,7 @@ function printSummary(
     logger.info(
       chalk.yellow(
         '\n[BLOCKED] Table rows changed in their table after their data file were not overwritten.\n' +
-          "Copy the table's values into the file, or rerun with --force to overwrite them."
+          "Copy the table's values into the file, or rerun with --force-table-data to overwrite them."
       )
     );
   }
@@ -1147,13 +1151,15 @@ function printConfig(
           enabledTypes: cliArgs.enabledTypes,
           functionTypes: cliArgs.functionTypes,
           pruneTableData: cliArgs.pruneTableData,
+          forceTableData: cliArgs.forceTableData,
           pathFilters: cliArgs.pathFilters.map(
             scope => path.relative(projectRoot, scope) || scope
           ),
         },
         envFile,
         preflight,
-        tableDataEnvironment: getTableDataEnvironment() || null,
+        tableDataEnvironment:
+          getTableDataEnvironment(envFile.declaredTableDataEnv) || null,
         serverFunctionImages: Object.fromEntries(serverDeployment.images),
         serverFunctionScripts: [...serverDeployment.scripts.keys()],
         ...(dynamic
@@ -1208,9 +1214,8 @@ Shared with push:
   --force             Update unchanged artefacts (functions are governed by seeds, not --force)
                       Required for existing OBSCURED variables; replacing protected values also
                       requires POLY_DEPLOY_UPDATE_EXISTING_SECRET_VARIABLES=true (default false).
-                      Overwrites table rows changed in their table after their data file.
-  --delete-orphans, --prune-table-data, --build-schema, --skip-invalid, --show-config,
-  --skip-generate, --verbose
+  --delete-orphans, --prune-table-data, --force-table-data, --build-schema, --skip-invalid,
+  --show-config, --skip-generate, --verbose
                       as for push
   --skip-validation   Bypass interactive confirmations only when its value is exactly
                       "${SKIP_VALIDATION_ACKNOWLEDGEMENT}" (as for push)
@@ -1278,6 +1283,7 @@ function parsePushDynamicArgs(rest: string[]): ParsedPushDynamic | null {
       verbose: { type: 'boolean' },
       'delete-orphans': { type: 'boolean' },
       'prune-table-data': { type: 'boolean' },
+      'force-table-data': { type: 'boolean' },
       'build-schema': { type: 'boolean' },
       'skip-invalid': { type: 'boolean' },
       'skip-validation': { type: 'string' },
@@ -1389,6 +1395,7 @@ function parsePushDynamicArgs(rest: string[]): ParsedPushDynamic | null {
     enabledTypes: functionsOnly ? ['functions'] : parsedTypes.enabledTypes,
     functionTypes: parsedTypes.functionTypes,
     pruneTableData: Boolean(values['prune-table-data']),
+    forceTableData: Boolean(values['force-table-data']),
   };
   const dynamic: PushDynamicArgs = {
     dryRun,
@@ -1563,10 +1570,21 @@ async function main(): Promise<void> {
     const projectRoot = process.cwd();
     let cliArgs = normalizeCliPathFilters(projectRoot, parsedArgs);
     readServerFunctionDeploymentConfig();
-    const tableDataEnvironment = getTableDataEnvironment();
+    const tableDataEnvironment = getTableDataEnvironment(
+      envFile.declaredTableDataEnv
+    );
     const preflight = buildDeploymentPreflight(projectRoot, envFile);
 
     warnForMissingDefaultEnvFile(envFile);
+    const inheritedTableDataEnv =
+      process.env.POLY_DEPLOY_TABLE_DATA_ENV?.trim();
+    if (inheritedTableDataEnv && envFile.declaredTableDataEnv === undefined) {
+      logger.warn(
+        chalk.yellow(
+          `WARN: POLY_DEPLOY_TABLE_DATA_ENV=${inheritedTableDataEnv} is ignored: only the selected env file (${envFile.displayPath}) picks the table data folder.`
+        )
+      );
+    }
 
     if (cliArgs.showConfig) {
       printConfig(cliArgs, envFile, preflight, projectRoot, dynamic);
@@ -1741,6 +1759,13 @@ async function main(): Promise<void> {
       logger.info(
         chalk.gray(
           'Force: enabled (existing remote artifacts will be updated even if unchanged; subscriptions require delete/re-create confirmation)'
+        )
+      );
+    }
+    if (cliArgs.forceTableData && cliArgs.enabledTypes.includes('table-data')) {
+      logger.info(
+        chalk.yellow(
+          'Force table data: enabled (table rows changed in their table after their data file will be overwritten)'
         )
       );
     }
@@ -2180,7 +2205,7 @@ async function main(): Promise<void> {
     if (cliArgs.enabledTypes.includes('table-data')) {
       await syncTableData(client, summary.tableData, {
         dryRun: cliArgs.dryRun,
-        force: cliArgs.force,
+        forceTableData: cliArgs.forceTableData,
         prune: cliArgs.pruneTableData,
         pathFilters: cliArgs.pathFilters,
         environment: tableDataEnvironment,

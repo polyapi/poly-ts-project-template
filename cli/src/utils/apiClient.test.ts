@@ -159,15 +159,20 @@ test('OTP-enabled Tabi row reads do not prompt, but row writes do', async t => {
   const params = { path: { id: 'example-table' } };
 
   await client.POST('/tables/{id}/select', { params, body: { limit: 1 } });
-  await client.POST('/tables/{id}/count', { params, body: {} });
-  assert.equal(requests.length, 2);
-  assert.ok(requests.every(request => !request.headers.has('x-otp')));
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0].headers.has('x-otp'), false);
 
-  await assert.rejects(
-    client.POST('/tables/{id}/insert', { params, body: { data: [] } }),
-    /no interactive terminal is available/
-  );
-  assert.equal(requests.length, 2);
+  for (const route of [
+    '/tables/{id}/insert',
+    '/tables/{id}/update',
+    '/tables/{id}/count',
+  ] as const) {
+    await assert.rejects(
+      client.POST(route, { params, body: { data: [] } as never }),
+      /no interactive terminal is available/
+    );
+  }
+  assert.equal(requests.length, 1);
 });
 
 test('OTP-enabled writes fail before dispatch without an interactive terminal', async t => {

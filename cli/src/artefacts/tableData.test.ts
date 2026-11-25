@@ -10,6 +10,7 @@ import {
   canonicalJson,
   collectTableDataSets,
   comparableRowKey,
+  exactDecimal,
   findTableDataFiles,
   getFileTimestamp,
   getTableDataEnvironment,
@@ -307,7 +308,7 @@ test('data files: shared, per environment, and refused when misplaced', t => {
   write('src/hotels/artefacts/tabi/data/hotels.json', doc([]));
   write(
     'src/hotels/artefacts/tabi/data/bom.json',
-    `﻿${JSON.stringify(doc([]))}`
+    String.fromCharCode(0xfeff) + JSON.stringify(doc([]))
   );
   write('src/hotels/artefacts/tabi/data/dev/hotels.json', doc([]));
   write('src/hotels/artefacts/tabi/data/dev/old/hotels.json', doc([]));
@@ -352,13 +353,17 @@ test('POLY_DEPLOY_TABLE_DATA_ENV names one lowercase environment folder', t => {
     [' dev ', 'dev'],
     ['eu-prod_2', 'eu-prod_2'],
   ]) {
-    setEnv(t, { POLY_DEPLOY_TABLE_DATA_ENV: value });
-    assert.equal(getTableDataEnvironment(), expected);
+    assert.equal(getTableDataEnvironment(value), expected);
   }
   for (const value of ['Prod', '../prod', 'a b', '-x']) {
-    setEnv(t, { POLY_DEPLOY_TABLE_DATA_ENV: value });
-    throwsWith(getTableDataEnvironment, 'POLY_DEPLOY_TABLE_DATA_ENV must be');
+    throwsWith(
+      () => getTableDataEnvironment(value),
+      'POLY_DEPLOY_TABLE_DATA_ENV must be'
+    );
   }
+  // Only the selected env file's value counts, never the shell's.
+  setEnv(t, { POLY_DEPLOY_TABLE_DATA_ENV: 'prod' });
+  assert.equal(getTableDataEnvironment(undefined), '');
 });
 
 // --- parsing and validation ---
@@ -751,7 +756,11 @@ test('a row changed in the table at or after its newest file is blocked unless f
 
 test('a plan refuses duplicate keys and new rows missing a required value', () => {
   throwsWith(
-    () => plan([], [stored('r1', 'A'), stored('r2', 'A')]),
+    () =>
+      plan(
+        [{ hotelId: 'A', name: 'A' }],
+        [stored('r1', 'A'), stored('r2', 'A')]
+      ),
     'several table rows have key A'
   );
   const numeric = new Map(COLUMNS);
@@ -1003,10 +1012,10 @@ test('rows changed in the table after their file are blocked unless forced', asy
   assert.equal(blocked.summary.blocked, 1);
   assert.ok(
     blocked.lines.includes(
-      '    [BLOCKED] Not updated: A (changed in the table at 2026-11-21T00:00:00Z; its file last changed at 2026-11-20T00:00:00Z); --force overwrites it'
+      '    [BLOCKED] Not updated: A (changed in the table at 2026-11-21T00:00:00Z; its file last changed at 2026-11-20T00:00:00Z); --force-table-data overwrites it'
     )
   );
-  const forced = await sync(tabi, { force: true });
+  const forced = await sync(tabi, { forceTableData: true });
   assert.equal(forced.summary.updated, 1);
   assert.equal(tabi.row('A')?.name, 'From file');
 });
@@ -1234,4 +1243,252 @@ test('a data file changed last when it was committed, or when it was edited sinc
   assert.equal(getFileTimestamp(committed), Date.UTC(2020, 0, 2, 3, 4, 5));
   assert.equal(getFileTimestamp(edited), later);
   assert.equal(getFileTimestamp(untracked), later);
+});
+
+// --- review fixes ---
+
+test('a prune keeps the rows another environment folder lists', async t => {
+  const write = useProject(t);
+  write(HOTELS, doc([{ hotelId: 'A', name: 'Hotel A' }]));
+  write(
+    'src/hotels/artefacts/tabi/data/dev/hotels.json',
+    doc([{ hotelId: 'D', name: 'Dev' }])
+  );
+  const tabi = new FakeTabi([
+    stored('r1', 'A'),
+    stored('r2', 'D'),
+    stored('r3', 'X'),
+  ]);
+  // The env file does not name the dev folder: dev's rows stay anyway.
+  const unset = await sync(tabi, { prune: true });
+  assert.deepEqual(tabi.writes('delete'), [{ where: { id: { in: ['r3'] } } }]);
+  assert.deepEqual(tabi.rows.map(row => row.hotelId).sort(), ['A', 'D']);
+  assert.equal(unset.summary.deleted, 1);
+  // A folder name that matches no folder is reported.
+  const typo = await sync(tabi, {
+    prune: true,
+    dryRun: true,
+    environment: 'develop',
+  });
+  assert.ok(
+    typo.lines.includes(
+      'No data/develop/ folder holds table data; check POLY_DEPLOY_TABLE_DATA_ENV in the selected env file'
+    ),
+    typo.lines.join('\n')
+  );
+});
+
+test('a prune deletes nothing while a data file it cannot read could list the rows', async t => {
+  const write = useProject(t);
+  write(HOTELS, doc([{ hotelId: 'A', name: 'Hotel A' }]));
+  const tabi = new FakeTabi([stored('r1', 'A'), stored('r3', 'X')]);
+  const prod = 'src/hotels/artefacts/tabi/data/prod/hotels.json';
+  write(prod, '{');
+  const unreadable = await sync(tabi, { prune: true });
+  assert.deepEqual(tabi.writes('delete'), []);
+  assert.ok(
+    unreadable.lines.includes(
+      `    Not pruning X: ${prod} could not be read, so its rows cannot be told apart from rows no file lists`
+    ),
+    unreadable.lines.join('\n')
+  );
+  assert.ok(
+    unreadable.lines.includes(
+      '    [WARN] 0 inserted, 0 updated, 0 deleted, 1 unchanged'
+    )
+  );
+  write(prod, doc([], { rows: {} }));
+  const unknownRows = await sync(tabi, { prune: true });
+  assert.deepEqual(tabi.writes('delete'), []);
+  assert.ok(
+    unknownRows.lines.includes(
+      '    Not pruning X: a data file of this table in another environment folder could not be read, so the rows it lists are unknown'
+    ),
+    unknownRows.lines.join('\n')
+  );
+});
+
+test('a shallow clone that cuts off a file history blocks its changed rows', t => {
+  try {
+    execFileSync('git', ['--version'], { stdio: 'ignore' });
+  } catch {
+    t.skip('git is not installed');
+    return;
+  }
+  const root = fs.realpathSync(
+    fs.mkdtempSync(path.join(os.tmpdir(), 'flow-table-data-shallow-'))
+  );
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const env = Object.fromEntries(
+    Object.entries(process.env).filter(([name]) => !name.startsWith('GIT_'))
+  );
+  const git = (cwd: string, date: string, ...args: string[]) =>
+    execFileSync('git', args, {
+      cwd,
+      stdio: 'ignore',
+      env: {
+        ...env,
+        GIT_AUTHOR_NAME: 'Flow',
+        GIT_AUTHOR_EMAIL: 'flow@example.test',
+        GIT_COMMITTER_NAME: 'Flow',
+        GIT_COMMITTER_EMAIL: 'flow@example.test',
+        GIT_AUTHOR_DATE: date,
+        GIT_COMMITTER_DATE: date,
+      },
+    });
+  const origin = path.join(root, 'origin');
+  fs.mkdirSync(origin);
+  const commit = (date: string, message: string) =>
+    git(
+      origin,
+      date,
+      'commit',
+      '-q',
+      '--no-verify',
+      '--no-gpg-sign',
+      '-m',
+      message
+    );
+  git(origin, '2020-01-01T00:00:00Z', 'init', '--quiet');
+  fs.writeFileSync(path.join(origin, 'rows.json'), '{}');
+  fs.writeFileSync(path.join(origin, 'recent.json'), '{}');
+  git(origin, '2020-01-01T00:00:00Z', 'add', '.');
+  commit('2020-01-01T00:00:00Z', 'rows');
+  fs.writeFileSync(path.join(origin, 'other.txt'), 'x');
+  git(origin, '2021-01-01T00:00:00Z', 'add', '.');
+  commit('2021-01-01T00:00:00Z', 'other');
+  fs.writeFileSync(path.join(origin, 'recent.json'), '{"changed":true}');
+  git(origin, '2025-06-01T00:00:00Z', 'add', '.');
+  commit('2025-06-01T00:00:00Z', 'recent');
+  // The clone's history starts at "other", which seems to add every file.
+  git(
+    root,
+    '2025-06-01T00:00:00Z',
+    'clone',
+    '-q',
+    '--depth',
+    '2',
+    `file://${origin}`,
+    'clone'
+  );
+  const clone = path.join(root, 'clone');
+  assert.equal(getFileTimestamp(path.join(clone, 'rows.json')), null);
+  assert.equal(
+    getFileTimestamp(path.join(clone, 'recent.json')),
+    Date.UTC(2025, 5, 1)
+  );
+
+  const local = [{ hotelId: 'A', name: 'From file' }];
+  const remoteRows = [stored('r1', 'A', { name: 'From app' })];
+  const unknown = planTableDataSet({
+    set: setOf(local),
+    columns: COLUMNS,
+    remoteRows,
+    force: false,
+    fileTimestamp: () => null,
+    now: NOW,
+  });
+  assert.deepEqual(unknown.blocked, [
+    "A (this shallow Git clone does not hold its file's last change; fetch the full history, such as fetch-depth: 0)",
+  ]);
+  assert.equal(
+    planTableDataSet({
+      set: setOf(local),
+      columns: COLUMNS,
+      remoteRows,
+      force: true,
+      fileTimestamp: () => null,
+      now: NOW,
+    }).updates.length,
+    1
+  );
+});
+
+test('keys on date and timestamp columns match the instants the table stores', () => {
+  const columns = new Map(COLUMNS);
+  columns.set('day', { name: 'day', type: 'date', required: true });
+  const result = planTableDataSet({
+    set: {
+      ...setOf([]),
+      key: ['hotelId', 'day', 'openedAt'],
+      rows: [
+        {
+          row: {
+            hotelId: 'A',
+            day: '2024-01-01',
+            openedAt: '2024-01-01T10:00:00+01:00',
+            rooms: 5,
+          },
+          files: ['/p/f.json'],
+        },
+      ],
+    },
+    columns,
+    remoteRows: [
+      stored('r1', 'A', {
+        day: '2024-01-01T00:00:00.000Z',
+        openedAt: '2024-01-01T09:00:00.000Z',
+        rooms: 5,
+      }),
+    ],
+    force: false,
+    fileTimestamp: () => FILE_TIME,
+    now: NOW,
+  });
+  assert.deepEqual(
+    [result.inserts.length, result.unchanged, result.extras.length],
+    [0, 1, 0]
+  );
+});
+
+test('rows without key values, or a key no file lists held twice, are only extras', () => {
+  const remote = [
+    stored('r1', 'A'),
+    { ...stored('r2', 'X'), hotelId: null },
+    { ...stored('r3', 'Y'), hotelId: null },
+    stored('r4', 'D'),
+    stored('r5', 'D'),
+  ];
+  const result = plan([{ hotelId: 'A', name: 'Hotel A' }], remote);
+  assert.equal(result.unchanged, 1);
+  assert.deepEqual(
+    result.extras.map(row => row.id),
+    ['r4', 'r5', 'r2', 'r3']
+  );
+  // A listed key that several rows hold is ambiguous, so the table stops.
+  throwsWith(
+    () => plan([{ hotelId: 'D', name: 'D' }], remote),
+    'several table rows have key D'
+  );
+});
+
+test('numbers compare by exact value, past 2^53 too', () => {
+  assert.equal(exactDecimal('10.50'), exactDecimal(10.5));
+  assert.equal(exactDecimal(' 1e3 '), exactDecimal(1000));
+  assert.equal(exactDecimal('-0.0'), '0');
+  assert.notEqual(
+    exactDecimal('9007199254740993'),
+    exactDecimal('9007199254740992')
+  );
+  for (const value of ['abc', '', '.', '0x10', true, null, Number.NaN]) {
+    assert.equal(exactDecimal(value), null, String(value));
+  }
+  assert.equal(
+    tableValuesEqual('bigint', '9007199254740993', '9007199254740992'),
+    false
+  );
+  const columns = new Map(COLUMNS);
+  columns.set('hotelId', { name: 'hotelId', type: 'bigint', required: true });
+  assert.notEqual(
+    comparableRowKey({ hotelId: '9007199254740993' }, ['hotelId'], columns),
+    comparableRowKey({ hotelId: '9007199254740992' }, ['hotelId'], columns)
+  );
+  // A JSON number cannot carry such a value: the file must use a string.
+  throwsWith(
+    () =>
+      parseTableDataDocument(
+        doc([{ hotelId: 'A', settings: { external: [2 ** 60] } }])
+      ),
+    "row 1 sets 'settings' to a whole number beyond 2^53, which JSON cannot carry exactly; write it as a string"
+  );
 });

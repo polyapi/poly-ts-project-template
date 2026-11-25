@@ -127,9 +127,9 @@ Flow 1.5.0 syncs the rows of Tabi tables from `artefacts/tabi/data/`; see
 default and changes nothing until a project adds data files. Before 1.5.0,
 Flow read every JSON file under `artefacts/tabi/`, including that folder, as a
 table definition. Move any table definition kept in `artefacts/tabi/data/` up
-to `artefacts/tabi/` before pushing. Otherwise Flow reports the file as invalid
-table data, no longer deploys the definition, and treats its table as an
-orphan: a full push with `--delete-orphans --types tables` would delete it.
+to `artefacts/tabi/`. Until you do, the tables step fails for that file and no
+longer deploys it, but still counts the table as local, so `--delete-orphans`
+does not delete it.
 
 ### Webhook triggers replaced by direct bindings
 

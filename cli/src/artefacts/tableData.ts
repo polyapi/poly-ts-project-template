@@ -209,11 +209,14 @@ export function tableLabel(context: string, name: string): string {
 // ---------------------------------------------------------------------------
 
 /**
- * POLY_DEPLOY_TABLE_DATA_ENV: the `data/<environment>/` folder this run
- * syncs besides `data/`, or '' for none.
+ * The `data/<environment>/` folder this run syncs besides `data/`, or '' for
+ * none: POLY_DEPLOY_TABLE_DATA_ENV as the selected env file declares it
+ * (EnvLoadResult.declaredTableDataEnv). Like TARGET_ENV_ID, a shell export or
+ * another env layer never supplies it, so one environment's rows cannot reach
+ * another environment's target.
  */
-export function getTableDataEnvironment(): string {
-  const environment = process.env.POLY_DEPLOY_TABLE_DATA_ENV?.trim() ?? '';
+export function getTableDataEnvironment(declared: string | undefined): string {
+  const environment = declared?.trim() ?? '';
   if (environment && !ENVIRONMENT_NAME.test(environment)) {
     throw new Error(
       `POLY_DEPLOY_TABLE_DATA_ENV must be ${ENVIRONMENT_NAME_RULE}, such as dev`
@@ -251,7 +254,7 @@ export function readTableDataFile(filePath: string): TableDataFile {
     return {
       filePath,
       environment,
-      data: JSON.parse(text.replace(/^﻿/, '')),
+      data: JSON.parse(text.charCodeAt(0) === 0xfeff ? text.slice(1) : text),
     };
   } catch {
     return unusable('not valid JSON');
@@ -363,6 +366,16 @@ function columnProblem(
   return undefined;
 }
 
+function holdsUnsafeInteger(value: unknown): boolean {
+  if (typeof value === 'number') {
+    return Number.isInteger(value) && !Number.isSafeInteger(value);
+  }
+  if (Array.isArray(value)) {
+    return value.some(holdsUnsafeInteger);
+  }
+  return isPlainObject(value) && Object.values(value).some(holdsUnsafeInteger);
+}
+
 /**
  * Check one data file, against the table's columns when they are known.
  */
@@ -427,6 +440,15 @@ export function parseTableDataDocument(
       );
     }
     seen.set(identity, index + 1);
+    // JSON numbers past 2^53 lose digits, here and in Tabi's own parser.
+    const unsafe = Object.keys(row)
+      .sort()
+      .find(column => holdsUnsafeInteger(row[column]));
+    if (unsafe !== undefined) {
+      throw new TableDataError(
+        `${where} sets '${unsafe}' to a whole number beyond 2^53, which JSON cannot carry exactly; write it as a string`
+      );
+    }
     const problem = columns && columnProblem(row, columns, 'the table');
     if (problem) {
       throw new TableDataError(`${where} ${problem}`);
@@ -503,23 +525,43 @@ export function mergeTableDataFiles(files: TableDataFile[]): TableDataSet {
   };
 }
 
+/** One table a run syncs. */
+export interface SelectedTable {
+  /** The files this run reads: data/ and the selected environment's folder. */
+  files: TableDataFile[];
+  /**
+   * The table's files in other environment folders. This run does not sync
+   * them, and never prunes the rows they list.
+   */
+  otherFiles: TableDataFile[];
+}
+
+export interface TableDataSelection {
+  tables: SelectedTable[];
+  /**
+   * Files in other environment folders whose table cannot be read. Their
+   * rows could belong to any table, so a run with them prunes nothing.
+   */
+  unreadable: TableDataFile[];
+}
+
 /**
  * The data files of each table one run syncs: the shared files plus the
  * selected environment's folder. A table is selected when one of those files
  * is under the path filters (every table without filters); all of its files
  * are then used, so a scoped run never mistakes the rows of another file for
- * extra rows. A file whose table cannot be read stops the run's table data:
- * its rows could belong to any table.
+ * extra rows. A file of those folders whose table cannot be read stops the
+ * run's table data: its rows could belong to any table.
  */
 export function selectTableDataFiles(
   files: TableDataFile[],
   options: { environment: string; pathFilters: string[] }
-): TableDataFile[][] {
-  const groups = new Map<string, TableDataFile[]>();
+): TableDataSelection {
+  const groups = new Map<string, SelectedTable>();
+  const unreadable: TableDataFile[] = [];
   for (const file of files) {
-    if (file.environment !== '' && file.environment !== options.environment) {
-      continue;
-    }
+    const read =
+      file.environment === '' || file.environment === options.environment;
     let identity: { context: string; name: string };
     try {
       if (file.error) {
@@ -527,18 +569,28 @@ export function selectTableDataFiles(
       }
       identity = tableDataIdentity(file.data);
     } catch (error) {
-      throw inFile(file.filePath, error);
+      if (read) {
+        throw inFile(file.filePath, error);
+      }
+      unreadable.push(file);
+      continue;
     }
     const id = tableIdentity(identity.context, identity.name);
-    groups.set(id, [...(groups.get(id) ?? []), file]);
+    const group = groups.get(id) ?? { files: [], otherFiles: [] };
+    (read ? group.files : group.otherFiles).push(file);
+    groups.set(id, group);
   }
-  return [...groups.values()].filter(
-    group =>
-      options.pathFilters.length === 0 ||
-      group.some(file =>
-        pathMatchesIncludedPaths(file.filePath, options.pathFilters)
-      )
-  );
+  return {
+    tables: [...groups.values()].filter(
+      group =>
+        group.files.length > 0 &&
+        (options.pathFilters.length === 0 ||
+          group.files.some(file =>
+            pathMatchesIncludedPaths(file.filePath, options.pathFilters)
+          ))
+    ),
+    unreadable,
+  };
 }
 
 /** The tables one run syncs, merged (see selectTableDataFiles). */
@@ -546,7 +598,9 @@ export function collectTableDataSets(
   files: TableDataFile[],
   options: { environment: string; pathFilters: string[] }
 ): TableDataSet[] {
-  return selectTableDataFiles(files, options).map(mergeTableDataFiles);
+  return selectTableDataFiles(files, options).tables.map(table =>
+    mergeTableDataFiles(table.files)
+  );
 }
 
 function columnsOf(columns: unknown): TableDataColumns {
@@ -700,14 +754,33 @@ export function toInstant(value: unknown): number | null {
   return Number.isNaN(instant) ? null : instant;
 }
 
-function toNumber(value: unknown): number | null {
-  const number =
-    typeof value === 'number'
-      ? value
-      : typeof value === 'string' && value.trim() !== ''
-        ? Number(value)
-        : Number.NaN;
-  return Number.isFinite(number) ? number : null;
+const DECIMAL = /^([+-]?)(\d*)(?:\.(\d*))?(?:e([+-]?\d+))?$/i;
+
+/**
+ * A number, or numeric text, as exact digits and a power of ten (such as
+ * "105e-1" for "10.50"), or null when it is not a number. Unlike a JS number
+ * it keeps every digit, so bigint values past 2^53 stay apart.
+ */
+export function exactDecimal(value: unknown): string | null {
+  if (
+    (typeof value !== 'number' || !Number.isFinite(value)) &&
+    typeof value !== 'string'
+  ) {
+    return null;
+  }
+  const match = DECIMAL.exec(String(value).trim());
+  if (!match || (match[2] === '' && !match[3])) {
+    return null;
+  }
+  const [, sign, whole, fraction = '', exponent = '0'] = match;
+  const digits = `${whole}${fraction}`.replace(/^0+/, '');
+  if (digits === '') {
+    return '0';
+  }
+  const significant = digits.replace(/0+$/, '');
+  const scale =
+    Number(exponent) - fraction.length + (digits.length - significant.length);
+  return `${sign === '-' ? '-' : ''}${significant}e${scale}`;
 }
 
 /** Compare a file value with the stored one as the column's type stores it. */
@@ -725,9 +798,9 @@ export function tableValuesEqual(
     return (local ?? null) === (remote ?? null);
   }
   const storage = storageType(type);
-  if (NUMERIC_STORAGE.has(storage) && typeof local !== 'boolean') {
-    const left = toNumber(local);
-    const right = toNumber(remote);
+  if (NUMERIC_STORAGE.has(storage)) {
+    const left = exactDecimal(local);
+    const right = exactDecimal(remote);
     if (left !== null && right !== null) {
       return left === right;
     }
@@ -761,7 +834,11 @@ export function tableValuesEqual(
   return canonicalJson(local) === canonicalJson(stored);
 }
 
-/** A comparable row key: numbers by value, UUIDs in lower case, text as written. */
+/**
+ * A comparable row key, as the table stores each key column: numbers by exact
+ * value, dates and timestamps as instants, UUIDs in lower case, text as
+ * written.
+ */
 export function comparableRowKey(
   row: Row,
   key: string[],
@@ -771,9 +848,13 @@ export function comparableRowKey(
     key.map(column => {
       const value = row[column];
       const storage = storageType(columns.get(column)?.type);
-      const number = NUMERIC_STORAGE.has(storage) ? toNumber(value) : null;
-      if (number !== null) {
-        return String(number);
+      const exact = NUMERIC_STORAGE.has(storage) ? exactDecimal(value) : null;
+      if (exact !== null) {
+        return exact;
+      }
+      const instant = INSTANT_STORAGE.has(storage) ? toInstant(value) : null;
+      if (instant !== null) {
+        return `@${instant}`;
       }
       if (storage === 'uuid' && typeof value === 'string') {
         return value.toLowerCase();
@@ -781,6 +862,11 @@ export function comparableRowKey(
       return typeof value === 'string' ? value : JSON.stringify(value);
     })
   );
+}
+
+/** Whether a stored row's key can match a data file row at all. */
+function hasKeyValues(row: Row, key: string[]): boolean {
+  return key.every(column => isKeyValue(row[column]));
 }
 
 function namedKeys(labels: string[]): string {
@@ -1034,30 +1120,37 @@ function formatInstant(ms: number): string {
  * columns that differ (stamping updatedAt, which tables created before
  * PolyAPI R24 do not stamp themselves), and block an update when the table
  * row changed (updatedAt) at or after its newest file unless forced. Extras
- * are the table rows no file lists. Throws, before anything is written, for
- * a key the table or the files hold twice and for a new row that cannot be
- * inserted.
+ * are the table rows no file lists, leaving out the keys of `keep`. Throws,
+ * before anything is written, for a key the files hold twice, a listed key
+ * the table holds twice, and a new row that cannot be inserted.
  */
 export function planTableDataSet(args: {
   set: TableDataSet;
   columns: TableDataColumns;
   remoteRows: Row[];
   force: boolean;
-  /** When a data file last changed, in epoch ms. */
-  fileTimestamp: (filePath: string) => number;
+  /**
+   * When a data file last changed, in epoch ms; null when Git cannot tell,
+   * because the file's history is cut off in a shallow clone.
+   */
+  fileTimestamp: (filePath: string) => number | null;
   /** The time an update stamps into updatedAt. */
   now: Date;
+  /** Keys (comparableRowKey) that are never extras: other environments list them. */
+  keep?: ReadonlySet<string>;
 }): TableDataPlan {
   const { set, columns, remoteRows, force, fileTimestamp, now } = args;
-  const remoteIndex = new Map<string, Row>();
+  // A key no file can use (empty, or a duplicate nobody lists) is only an
+  // extra; a listed key held by several rows stops the table below.
+  const remoteIndex = new Map<string, Row[]>();
+  const unkeyed: Row[] = [];
   for (const row of remoteRows) {
-    const identity = comparableRowKey(row, set.key, columns);
-    if (remoteIndex.has(identity)) {
-      throw new TableDataError(
-        `several table rows have key ${keyLabel(row, set.key)}; remove the duplicates first`
-      );
+    if (!hasKeyValues(row, set.key)) {
+      unkeyed.push(row);
+      continue;
     }
-    remoteIndex.set(identity, row);
+    const identity = comparableRowKey(row, set.key, columns);
+    remoteIndex.set(identity, [...(remoteIndex.get(identity) ?? []), row]);
   }
   const plan: TableDataPlan = {
     inserts: [],
@@ -1076,7 +1169,13 @@ export function planTableDataSet(args: {
       );
     }
     listed.add(identity);
-    const remote = remoteIndex.get(identity);
+    const matches = remoteIndex.get(identity) ?? [];
+    if (matches.length > 1) {
+      throw new TableDataError(
+        `several table rows have key ${keyLabel(row, set.key)}; remove the duplicates first`
+      );
+    }
+    const remote = matches[0];
     if (!remote) {
       const missing = missingRequiredColumns(row, columns);
       if (missing.length > 0) {
@@ -1101,14 +1200,23 @@ export function planTableDataSet(args: {
       continue;
     }
     const remoteChanged = toInstant(remote.updatedAt);
-    const fileChanged = Math.max(...files.map(fileTimestamp));
-    if (!force && remoteChanged !== null && remoteChanged >= fileChanged) {
-      plan.blocked.push(
-        `${keyLabel(row, set.key)} (changed in the table at ${formatInstant(
-          remoteChanged
-        )}; its file last changed at ${formatInstant(fileChanged)})`
-      );
-      continue;
+    if (!force && remoteChanged !== null) {
+      const times = files.map(fileTimestamp);
+      if (times.some(time => time === null)) {
+        plan.blocked.push(
+          `${keyLabel(row, set.key)} (this shallow Git clone does not hold its file's last change; fetch the full history, such as fetch-depth: 0)`
+        );
+        continue;
+      }
+      const fileChanged = Math.max(...(times as number[]));
+      if (remoteChanged >= fileChanged) {
+        plan.blocked.push(
+          `${keyLabel(row, set.key)} (changed in the table at ${formatInstant(
+            remoteChanged
+          )}; its file last changed at ${formatInstant(fileChanged)})`
+        );
+        continue;
+      }
     }
     const data: Row = Object.fromEntries(
       changed.map(column => [column, row[column]])
@@ -1122,9 +1230,14 @@ export function planTableDataSet(args: {
     });
   }
   plan.insertRequests = planInsertRequests(plan.inserts, set.key, columns);
-  plan.extras = [...remoteIndex.entries()]
-    .filter(([identity]) => !listed.has(identity))
-    .map(([, row]) => row);
+  plan.extras = [
+    ...[...remoteIndex.entries()]
+      .filter(
+        ([identity]) => !listed.has(identity) && !args.keep?.has(identity)
+      )
+      .flatMap(([, rows]) => rows),
+    ...unkeyed,
+  ];
   return plan;
 }
 
@@ -1132,7 +1245,8 @@ export function planTableDataSet(args: {
 // File timestamps
 // ---------------------------------------------------------------------------
 
-const timestampCache = new Map<string, number>();
+const timestampCache = new Map<string, number | null>();
+const shallowCache = new Map<string, Set<string>>();
 
 function git(args: string[], cwd: string): string {
   return execFileSync('git', args, {
@@ -1142,25 +1256,51 @@ function git(args: string[], cwd: string): string {
   }).trim();
 }
 
+/** The commits a shallow clone's history stops at (none in a full clone). */
+function shallowBoundaries(cwd: string): Set<string> {
+  const file = path.resolve(
+    cwd,
+    git(['rev-parse', '--git-path', 'shallow'], cwd)
+  );
+  let boundaries = shallowCache.get(file);
+  if (!boundaries) {
+    boundaries = new Set(
+      fs.existsSync(file)
+        ? fs.readFileSync(file, 'utf8').split(/\s+/).filter(Boolean)
+        : []
+    );
+    shallowCache.set(file, boundaries);
+  }
+  return boundaries;
+}
+
 /**
- * When a data file last changed: its last commit time when it is committed
- * and unmodified, otherwise (local edits, untracked, no Git) its mtime.
- * Checkouts rewrite mtimes, so the commit time is what tells an old file
- * from a new one, in CI as well.
+ * When a data file last changed: the commit time of the last commit that
+ * changed it when it is committed and unmodified, otherwise (local edits,
+ * untracked, no Git) its mtime. Checkouts rewrite mtimes, so the commit time
+ * is what tells an old file from a new one, in CI as well. It is the time the
+ * change was committed, not merged, so an app edit made in between still
+ * blocks the row. Null when a shallow clone cuts the file's history off: its
+ * last commit is then the clone's boundary, which only seems to change it.
  */
-export function getFileTimestamp(filePath: string): number {
+export function getFileTimestamp(filePath: string): number | null {
   const cached = timestampCache.get(filePath);
   if (cached !== undefined) {
     return cached;
   }
-  let timestamp = fs.statSync(filePath).mtimeMs;
+  let timestamp: number | null = fs.statSync(filePath).mtimeMs;
   try {
     const cwd = path.dirname(filePath);
     const file = path.basename(filePath);
     if (!git(['status', '--porcelain', '--', file], cwd)) {
-      const committed = git(['log', '-1', '--format=%ct', '--', file], cwd);
-      if (/^\d+$/.test(committed)) {
-        timestamp = Number(committed) * 1000;
+      const [commit, committed] = git(
+        ['log', '-1', '--format=%H %ct', '--', file],
+        cwd
+      ).split(' ');
+      if (commit && /^\d+$/.test(committed ?? '')) {
+        timestamp = shallowBoundaries(cwd).has(commit)
+          ? null
+          : Number(committed) * 1000;
       }
     }
   } catch {
@@ -1308,8 +1448,11 @@ async function applyTableDataPlan(
 
 export interface SyncTableDataOptions {
   dryRun?: boolean;
-  /** Overwrite rows changed in their table after their data file. */
-  force?: boolean;
+  /**
+   * Overwrite rows changed in their table after their data file
+   * (--force-table-data; plain --force leaves table rows alone).
+   */
+  forceTableData?: boolean;
   /** Delete table rows that no data file lists (--prune-table-data). */
   prune?: boolean;
   pathFilters?: string[];
@@ -1322,8 +1465,8 @@ export interface SyncTableDataOptions {
    * read one is skipped.
    */
   invalidFiles?: ReadonlySet<string>;
-  /** When a data file last changed; its last commit time by default. */
-  fileTimestamp?: (filePath: string) => number;
+  /** When a data file last changed; see getFileTimestamp, the default. */
+  fileTimestamp?: (filePath: string) => number | null;
   /** The time updates stamp into updatedAt; the current time by default. */
   now?: () => Date;
   reporter?: TableDataReporter;
@@ -1368,10 +1511,21 @@ export async function syncTableData(
           )
     );
   }
+  if (
+    environment &&
+    otherFolders.length > 0 &&
+    !files.some(file => file.environment === environment)
+  ) {
+    report.info(
+      warningColor(
+        `No data/${environment}/ folder holds table data; check POLY_DEPLOY_TABLE_DATA_ENV in the selected env file`
+      )
+    );
+  }
 
-  let groups: TableDataFile[][];
+  let selection: TableDataSelection;
   try {
-    groups = selectTableDataFiles(files, {
+    selection = selectTableDataFiles(files, {
       environment,
       pathFilters: options.pathFilters ?? [],
     });
@@ -1380,6 +1534,13 @@ export async function syncTableData(
     summary.failed += 1;
     return;
   }
+  // Rows of a file that cannot be read cannot be told apart from rows no
+  // file lists, so such a file anywhere stops every prune of this run.
+  const unreadable = selection.unreadable[0];
+  const pruneRefusal = unreadable
+    ? `${relative(unreadable.filePath)} could not be read, so its rows cannot be told apart from rows no file lists`
+    : undefined;
+  const groups = selection.tables;
   if (groups.length === 0) {
     report.info(
       chalk.gray(
@@ -1398,16 +1559,16 @@ export async function syncTableData(
     ])
   );
   for (const group of groups) {
-    const { context, name } = tableDataIdentity(group[0].data);
+    const { context, name } = tableDataIdentity(group.files[0].data);
     report.info(chalk.dim(`  → ${tableLabel(context, name)}`));
     const progress: WriteProgress = { inserted: 0, updated: 0, deleted: 0 };
     try {
-      if (group.some(file => options.invalidFiles?.has(file.filePath))) {
+      if (group.files.some(file => options.invalidFiles?.has(file.filePath))) {
         throw new TableDataError(
           'skipped: its data files failed local validation'
         );
       }
-      const set = mergeTableDataFiles(group);
+      const set = mergeTableDataFiles(group.files);
       report.info(
         chalk.gray(
           `    ${set.rows.length} row(s) from ${set.files.length} file(s), keyed by ${set.key.join(' + ')}`
@@ -1419,7 +1580,7 @@ export async function syncTableData(
         summary,
         set,
         tables.get(tableIdentity(context, name)),
-        options,
+        { ...options, otherFiles: group.otherFiles, pruneRefusal },
         report,
         progress
       );
@@ -1461,11 +1622,46 @@ function checkRowsAgainstColumns(
   }
 }
 
+type TableSyncOptions = SyncTableDataOptions & {
+  /** The table's files in other environment folders. */
+  otherFiles: TableDataFile[];
+  /** Why this run prunes nothing at all, when it must not. */
+  pruneRefusal?: string;
+};
+
+/**
+ * Keys that the table's other environment folders list: a prune keeps those
+ * rows. Undefined when one of those files cannot be read.
+ */
+function otherEnvironmentKeys(
+  otherFiles: TableDataFile[],
+  key: string[],
+  columns: TableDataColumns
+): Set<string> | undefined {
+  const keys = new Set<string>();
+  for (const file of otherFiles) {
+    let document: TableDataDocument;
+    try {
+      document = parseTableDataDocument(file.data);
+    } catch {
+      return undefined;
+    }
+    if (JSON.stringify(document.key) !== JSON.stringify(key)) {
+      return undefined;
+    }
+    for (const row of document.rows) {
+      keys.add(comparableRowKey(row, key, columns));
+    }
+  }
+  return keys;
+}
+
 function reportPlan(
   plan: TableDataPlan,
   set: TableDataSet,
-  options: SyncTableDataOptions,
-  report: TableDataReporter
+  options: TableSyncOptions,
+  report: TableDataReporter,
+  pruneRefusal: string | undefined
 ): void {
   const action = (verb: string): string =>
     options.dryRun
@@ -1503,7 +1699,9 @@ function reportPlan(
   }
   for (const line of plan.blocked.slice(0, REPORT_LIMIT)) {
     report.info(
-      warningColor(`    [BLOCKED] Not updated: ${line}; --force overwrites it`)
+      warningColor(
+        `    [BLOCKED] Not updated: ${line}; --force-table-data overwrites it`
+      )
     );
   }
   if (plan.blocked.length > REPORT_LIMIT) {
@@ -1514,11 +1712,15 @@ function reportPlan(
   if (plan.extras.length > 0) {
     const labels = namedKeys(plan.extras.map(label));
     report.info(
-      options.prune
-        ? warningColor(`    ${action('delete')} rows no file lists: ${labels}`)
-        : chalk.gray(
+      !options.prune
+        ? chalk.gray(
             `    Rows no file lists, kept: ${labels} (--prune-table-data deletes them)`
           )
+        : pruneRefusal
+          ? warningColor(`    Not pruning ${labels}: ${pruneRefusal}`)
+          : warningColor(
+              `    ${action('delete')} rows no file lists: ${labels}`
+            )
     );
   }
 }
@@ -1528,7 +1730,7 @@ async function syncTableDataSet(
   summary: ArtifactSummary,
   set: TableDataSet,
   table: TableResponseDto | undefined,
-  options: SyncTableDataOptions,
+  options: TableSyncOptions,
   report: TableDataReporter,
   progress: WriteProgress
 ): Promise<void> {
@@ -1549,19 +1751,29 @@ async function syncTableDataSet(
 
   const columns = await fetchTableColumns(client, table.id);
   checkRowsAgainstColumns(set, columns);
+  // Rows another environment's folder lists are never pruned here: they are
+  // that environment's, whatever this run's POLY_DEPLOY_TABLE_DATA_ENV says.
+  const keep = otherEnvironmentKeys(options.otherFiles, set.key, columns);
+  const pruneRefusal =
+    options.pruneRefusal ??
+    (keep === undefined
+      ? 'a data file of this table in another environment folder could not be read, so the rows it lists are unknown'
+      : undefined);
+  const prune = Boolean(options.prune) && pruneRefusal === undefined;
   const plan = planTableDataSet({
     set,
     columns,
     remoteRows: await fetchTableRows(client, table.id),
-    force: Boolean(options.force),
+    force: Boolean(options.forceTableData),
     fileTimestamp: options.fileTimestamp ?? getFileTimestamp,
     now: options.now?.() ?? new Date(),
+    keep,
   });
-  reportPlan(plan, set, options, report);
+  reportPlan(plan, set, options, report, pruneRefusal);
   summary.skipped += plan.unchanged;
   summary.blocked += plan.blocked.length;
 
-  const deleted = options.prune ? plan.extras.length : 0;
+  const deleted = prune ? plan.extras.length : 0;
   const outcome = `${plan.inserts.length} inserted, ${plan.updates.length} updated, ${deleted} deleted, ${plan.unchanged} unchanged${
     plan.blocked.length > 0 ? `, ${plan.blocked.length} blocked` : ''
   }`;
@@ -1570,15 +1782,10 @@ async function syncTableDataSet(
     report.info(chalk.blue(`    [PLAN] ${outcome}`));
     return;
   }
-  await applyTableDataPlan(
-    client,
-    table.id,
-    plan,
-    Boolean(options.prune),
-    progress
-  );
+  await applyTableDataPlan(client, table.id, plan, prune, progress);
+  const unpruned = Boolean(options.prune) && !prune && plan.extras.length > 0;
   report.info(
-    plan.blocked.length > 0
+    plan.blocked.length > 0 || unpruned
       ? warningColor(`    [WARN] ${outcome}`)
       : chalk.green(`    [OK] ${outcome}`)
   );

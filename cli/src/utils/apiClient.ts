@@ -38,10 +38,9 @@ class OtpManager {
 
 const otpManager = new OtpManager();
 
-/** POST endpoints that only read, such as Tabi row selects: no OTP needed. */
+/** POST endpoints Flow calls that only read: no OTP needed. */
 const READ_ONLY_POST_PATHS: ReadonlySet<string> = new Set([
   '/tables/{id}/select',
-  '/tables/{id}/count',
 ]);
 
 async function promptForHiddenInput(prompt: string): Promise<string> {
@@ -203,6 +202,7 @@ export function loadEnv(): EnvLoadResult {
     exists: fs.existsSync(selectedEnvPath),
     fromEnvPath: Boolean(envPathOverride),
     declaredTargetEnvId: selectedValues.TARGET_ENV_ID?.trim(),
+    declaredTableDataEnv: selectedValues.POLY_DEPLOY_TABLE_DATA_ENV?.trim(),
   };
 }
 
