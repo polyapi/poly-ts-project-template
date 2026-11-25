@@ -17,7 +17,7 @@ function isRelativeTo(targetPath: string, candidateParent: string): boolean {
   );
 }
 
-function pathMatchesIncludedPaths(
+export function pathMatchesIncludedPaths(
   targetPath: string,
   includePaths: string[] | undefined
 ): boolean {
@@ -129,6 +129,33 @@ export function isInArtefactDirectory(filePath: string): boolean {
 }
 
 /**
+ * The path segments below a workflow's `artefacts/tabi/data/` folder (or the
+ * legacy `artifacts/` spelling), such as `['dev', 'hotels.json']`, or null
+ * when the path is not inside one. That folder holds table rows (see
+ * artefacts/tableData.ts), not table definitions.
+ */
+export function getTableDataSegments(filePath: string): string[] | null {
+  const segments = filePath.split(/[\\/]+/);
+  for (let index = 0; index + 3 < segments.length; index++) {
+    if (
+      (segments[index] === 'artefacts' || segments[index] === 'artifacts') &&
+      segments[index + 1] === 'tabi' &&
+      segments[index + 2] === 'data'
+    ) {
+      return segments.slice(index + 3);
+    }
+  }
+  return null;
+}
+
+/**
+ * Check whether a path is inside a workflow's `artefacts/tabi/data/` folder.
+ */
+export function isTableDataPath(filePath: string): boolean {
+  return getTableDataSegments(filePath) !== null;
+}
+
+/**
  * Check whether a path contains an exact directory segment on any platform.
  */
 export function isInNamedDirectory(
@@ -149,7 +176,7 @@ export function getRelativePath(filePath: string): string {
  * Strip JSONC comments from JSON string.
  * Handles single-line and multi-line style comments while preserving strings.
  */
-function stripJsonComments(jsonString: string): string {
+export function stripJsonComments(jsonString: string): string {
   let result = '';
   let inString = false;
   let inSingleLineComment = false;

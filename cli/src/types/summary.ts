@@ -9,6 +9,12 @@ export interface ArtifactSummary {
   failed: number;
   skipped: number;
   planned: number;
+  /**
+   * Changes withheld because the remote copy changed after the local file
+   * (table rows changed in their table after their data file); --force
+   * applies them.
+   */
+  blocked: number;
 }
 
 export interface OrphanedResource {
@@ -38,136 +44,70 @@ export interface SyncSummary {
   subscriptions: ArtifactSummary;
   variables: ArtifactSummary;
   tables: ArtifactSummary;
+  tableData: ArtifactSummary;
   jobs: ArtifactSummary;
   orphans: OrphanedResource[];
   startTime: number;
   endTime?: number;
 }
 
-export function createSummary(): SyncSummary {
-  return {
-    canopy: {
-      created: 0,
-      updated: 0,
-      deleted: 0,
-      failed: 0,
-      skipped: 0,
-      planned: 0,
-    },
-    schemas: {
-      created: 0,
-      updated: 0,
-      deleted: 0,
-      failed: 0,
-      skipped: 0,
-      planned: 0,
-    },
-    webhooks: {
-      created: 0,
-      updated: 0,
-      deleted: 0,
-      failed: 0,
-      skipped: 0,
-      planned: 0,
-    },
-    functions: {
-      created: 0,
-      updated: 0,
-      deleted: 0,
-      failed: 0,
-      skipped: 0,
-      planned: 0,
-    },
-    aiFunctions: {
-      created: 0,
-      updated: 0,
-      deleted: 0,
-      failed: 0,
-      skipped: 0,
-      planned: 0,
-    },
-    mcpServers: {
-      created: 0,
-      updated: 0,
-      deleted: 0,
-      failed: 0,
-      skipped: 0,
-      planned: 0,
-    },
-    triggers: {
-      created: 0,
-      updated: 0,
-      deleted: 0,
-      failed: 0,
-      skipped: 0,
-      planned: 0,
-    },
-    subscriptions: {
-      created: 0,
-      updated: 0,
-      deleted: 0,
-      failed: 0,
-      skipped: 0,
-      planned: 0,
-    },
-    variables: {
-      created: 0,
-      updated: 0,
-      deleted: 0,
-      failed: 0,
-      skipped: 0,
-      planned: 0,
-    },
-    tables: {
-      created: 0,
-      updated: 0,
-      deleted: 0,
-      failed: 0,
-      skipped: 0,
-      planned: 0,
-    },
-    jobs: {
-      created: 0,
-      updated: 0,
-      deleted: 0,
-      failed: 0,
-      skipped: 0,
-      planned: 0,
-    },
-    orphans: [],
-    startTime: Date.now(),
-  };
-}
+const ARTIFACT_KEYS = [
+  'canopy',
+  'schemas',
+  'webhooks',
+  'functions',
+  'aiFunctions',
+  'mcpServers',
+  'triggers',
+  'subscriptions',
+  'variables',
+  'tables',
+  'tableData',
+  'jobs',
+] as const;
 
-export function getTotalStats(summary: SyncSummary): ArtifactSummary {
-  const total: ArtifactSummary = {
+export function createArtifactSummary(): ArtifactSummary {
+  return {
     created: 0,
     updated: 0,
     deleted: 0,
     failed: 0,
     skipped: 0,
     planned: 0,
+    blocked: 0,
   };
+}
 
-  for (const artifact of [
-    'canopy',
-    'schemas',
-    'webhooks',
-    'functions',
-    'aiFunctions',
-    'mcpServers',
-    'triggers',
-    'subscriptions',
-    'variables',
-    'tables',
-    'jobs',
-  ] as const) {
+export function createSummary(): SyncSummary {
+  return {
+    canopy: createArtifactSummary(),
+    schemas: createArtifactSummary(),
+    webhooks: createArtifactSummary(),
+    functions: createArtifactSummary(),
+    aiFunctions: createArtifactSummary(),
+    mcpServers: createArtifactSummary(),
+    triggers: createArtifactSummary(),
+    subscriptions: createArtifactSummary(),
+    variables: createArtifactSummary(),
+    tables: createArtifactSummary(),
+    tableData: createArtifactSummary(),
+    jobs: createArtifactSummary(),
+    orphans: [],
+    startTime: Date.now(),
+  };
+}
+
+export function getTotalStats(summary: SyncSummary): ArtifactSummary {
+  const total = createArtifactSummary();
+
+  for (const artifact of ARTIFACT_KEYS) {
     total.created += summary[artifact].created;
     total.updated += summary[artifact].updated;
     total.deleted += summary[artifact].deleted;
     total.failed += summary[artifact].failed;
     total.skipped += summary[artifact].skipped;
     total.planned += summary[artifact].planned;
+    total.blocked += summary[artifact].blocked;
   }
 
   return total;

@@ -132,11 +132,13 @@ for (const override of [false, true]) {
       'ENVPATH',
       'OTP_ENABLED',
       'TARGET_ENV_ID',
+      'POLY_DEPLOY_TABLE_DATA_ENV',
     ];
     const previous = names.map(name => [name, process.env[name]] as const);
     for (const name of names) delete process.env[name];
     if (override) process.env.ENVPATH = 'workflows/selected.env';
     process.env.TARGET_ENV_ID = 'shell-target';
+    process.env.POLY_DEPLOY_TABLE_DATA_ENV = 'shell';
     t.after(() => {
       process.chdir(previousDirectory);
       for (const [name, value] of previous) {
@@ -170,6 +172,7 @@ for (const override of [false, true]) {
               POLY_API_BASE_URL: 'https://setup.polyapi.test',
               POLY_API_KEY: 'placeholder-setup-key',
               TARGET_ENV_ID: 'saved-setup-target',
+              POLY_DEPLOY_TABLE_DATA_ENV: 'saved',
             },
           };
         assert.equal(options?.path, selectedFile);
@@ -181,6 +184,7 @@ for (const override of [false, true]) {
                   BASE_URL: 'https://selected.polyapi.test',
                   API_KEY: 'placeholder-selected-key',
                   TARGET_ENV_ID: 'selected-target',
+                  POLY_DEPLOY_TABLE_DATA_ENV: 'dev',
                 }
               : {}),
           },
@@ -201,6 +205,8 @@ for (const override of [false, true]) {
       envFile.declaredTargetEnvId,
       override ? 'selected-target' : undefined
     );
+    // Like the pin, the table data folder comes from the selected file only.
+    assert.equal(envFile.declaredTableDataEnv, override ? 'dev' : undefined);
     await createPolyApiClient().GET('/schemas', {});
     assert.equal(
       new URL(requests[0].url).origin,

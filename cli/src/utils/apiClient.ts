@@ -38,6 +38,11 @@ class OtpManager {
 
 const otpManager = new OtpManager();
 
+/** POST endpoints Flow calls that only read: no OTP needed. */
+const READ_ONLY_POST_PATHS: ReadonlySet<string> = new Set([
+  '/tables/{id}/select',
+]);
+
 async function promptForHiddenInput(prompt: string): Promise<string> {
   if (!process.stdin.isTTY || !process.stdout.isTTY) {
     throw new Error(
@@ -197,6 +202,7 @@ export function loadEnv(): EnvLoadResult {
     exists: fs.existsSync(selectedEnvPath),
     fromEnvPath: Boolean(envPathOverride),
     declaredTargetEnvId: selectedValues.TARGET_ENV_ID?.trim(),
+    declaredTableDataEnv: selectedValues.POLY_DEPLOY_TABLE_DATA_ENV?.trim(),
   };
 }
 
@@ -261,7 +267,13 @@ export function createPolyApiClient(): ReturnType<typeof createClient<paths>> {
   });
 
   client.use({
-    async onRequest({ request }) {
+    async onRequest({ request, schemaPath }) {
+      if (
+        request.method.toUpperCase() === 'POST' &&
+        READ_ONLY_POST_PATHS.has(schemaPath)
+      ) {
+        return request;
+      }
       const otpHeaders = await getOtpHeaders(request.method);
       for (const [name, value] of Object.entries(otpHeaders)) {
         request.headers.set(name, value);

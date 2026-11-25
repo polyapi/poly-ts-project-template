@@ -1,14 +1,19 @@
+import * as fs from 'node:fs';
 import type createClient from 'openapi-fetch';
 import type { components, paths } from '../sdk/schema';
 import type { TableFile } from '../types';
 import type { ArtifactSummary, OrphanedResource } from '../types/summary';
 import { getDeleteHeaders, sleep } from '../utils/apiClient';
 import { validateEndpointPayload } from '../utils/apiSchemaValidation';
+import { substituteEnvTokens } from '../utils/envSubstitution';
 import {
+  getRelativePath,
   getSrcPath,
   isInArtefactDirectory,
   isInNamedDirectory,
+  isTableDataPath,
   readJsonFile,
+  stripJsonComments,
   type WalkDirOptions,
   walkDir,
 } from '../utils/fileSystem';
@@ -40,7 +45,8 @@ const log = createLogger('tables');
 type FindTableFileOptions = WalkDirOptions;
 
 /**
- * Find all table JSON files in the project (artefacts/tabi/*.json)
+ * Find all table JSON files in the project (artefacts/tabi/*.json). Rows kept
+ * in artefacts/tabi/data/ are table data, synced by artefacts/tableData.ts.
  */
 export function findTableFiles(
   options: FindTableFileOptions = {}
@@ -55,7 +61,8 @@ export function findTableFiles(
         file.endsWith('.json') &&
         !file.endsWith('.test.json') &&
         isInNamedDirectory(fullPath, 'tabi') &&
-        isInArtefactDirectory(fullPath)
+        isInArtefactDirectory(fullPath) &&
+        !isTableDataPath(fullPath)
       ) {
         const content = readJsonFile(fullPath);
         if (content) {
@@ -71,6 +78,52 @@ export function findTableFiles(
   );
 
   return tableFiles;
+}
+
+/**
+ * Table definitions (JSON with `name` and `columns`) kept in
+ * artefacts/tabi/data/, where Flow reads table rows. Flow does not deploy
+ * them, and must never take their tables for orphans: before Flow 1.5.0 it
+ * read definitions from that folder too.
+ */
+export function findMisplacedTableDefinitions(
+  options: FindTableFileOptions = {}
+): TableFile[] {
+  const misplaced: TableFile[] = [];
+  walkDir(
+    getSrcPath(),
+    (fullPath, file) => {
+      if (
+        !file.endsWith('.json') ||
+        file.endsWith('.test.json') ||
+        !isTableDataPath(fullPath)
+      ) {
+        return;
+      }
+      let content: unknown;
+      try {
+        content = substituteEnvTokens(
+          JSON.parse(stripJsonComments(fs.readFileSync(fullPath, 'utf8')))
+        );
+      } catch {
+        return; // Not JSON: table data validation reports it.
+      }
+      if (
+        typeof content === 'object' &&
+        content !== null &&
+        typeof (content as { name?: unknown }).name === 'string' &&
+        Array.isArray((content as { columns?: unknown }).columns)
+      ) {
+        misplaced.push({
+          filePath: fullPath,
+          fileName: file,
+          content: content as TableFile['content'],
+        });
+      }
+    },
+    options
+  );
+  return misplaced;
 }
 
 /**
@@ -421,6 +474,15 @@ export async function syncTables(
 
   log.info(chalk.cyan(createHeader('TABLES')));
 
+  for (const table of findMisplacedTableDefinitions(options.discoveryOptions)) {
+    log.info(
+      chalk.red(
+        `[FAIL] ${getRelativePath(table.filePath)} is a table definition in artefacts/tabi/data/, where Flow reads table rows; move it to artefacts/tabi/`
+      )
+    );
+    summary.failed++;
+  }
+
   if (tableFiles.length === 0) {
     log.warn(
       warningColor(
@@ -446,8 +508,13 @@ export async function syncTables(
   if (options.detectOrphans === false) {
     log.info(chalk.gray('Skipping orphan detection for scoped table sync'));
   } else {
+    // A definition left in artefacts/tabi/data/ still claims its table, so a
+    // misplaced file never gets a live table deleted.
     const localTableKeys = new Set(
-      allTableFiles.map(tf => `${tf.content.name}:${tf.content.context ?? ''}`)
+      [
+        ...allTableFiles,
+        ...findMisplacedTableDefinitions({ respectSkipPaths: false }),
+      ].map(tf => `${tf.content.name}:${tf.content.context ?? ''}`)
     );
 
     const orphanCandidates = existingTables.filter(

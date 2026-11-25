@@ -2,10 +2,11 @@
 
 `flow push-dynamic` is `flow push` with a dependency-aware function step. It
 runs the same pipeline as `push` — discovery, validation, every artefact type
-in the same order (variables, canopy, schemas, tables, functions, AI
-functions, webhooks, triggers, jobs), the scope prompt, the production
-safeguards, the summary and the post-push `poly generate` — and accepts the
-same options. Only the function step differs: given the functions that changed
+in the same order (variables, canopy, schemas, tables, table data, functions,
+AI functions, MCP servers, webhooks, triggers, subscriptions, jobs), the scope
+prompt, the production safeguards, the summary and the post-push
+`poly generate` — and accepts the same options. Only the function step differs:
+given the functions that changed
 (or that you name), it works out every function that embeds them and deploys
 exactly that set in the right order. You can use it instead of `push`
 altogether.

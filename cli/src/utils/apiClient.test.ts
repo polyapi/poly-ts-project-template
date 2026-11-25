@@ -151,6 +151,30 @@ test('write methods attach x-otp and concurrent writes share one hidden prompt',
   assert.equal(requests[4].headers.has('x-otp'), false);
 });
 
+test('OTP-enabled Tabi row reads do not prompt, but row writes do', async t => {
+  setInteractiveTerminal(false);
+  const requests = captureRequests(t);
+  const { createPolyApiClient } = loadApiClient();
+  const client = createPolyApiClient();
+  const params = { path: { id: 'example-table' } };
+
+  await client.POST('/tables/{id}/select', { params, body: { limit: 1 } });
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0].headers.has('x-otp'), false);
+
+  for (const route of [
+    '/tables/{id}/insert',
+    '/tables/{id}/update',
+    '/tables/{id}/count',
+  ] as const) {
+    await assert.rejects(
+      client.POST(route, { params, body: { data: [] } as never }),
+      /no interactive terminal is available/
+    );
+  }
+  assert.equal(requests.length, 1);
+});
+
 test('OTP-enabled writes fail before dispatch without an interactive terminal', async t => {
   setInteractiveTerminal(false);
   const requests = captureRequests(t);
