@@ -1,4 +1,4 @@
-import type { PolyServerFunction } from 'polyapi';
+import poly, { type PolyServerFunction } from 'polyapi';
 
 export const polyConfig: PolyServerFunction = {
   name: 'motdErrorHandler',
@@ -17,17 +17,25 @@ export type MotdErrorEvent = {
 /**
  * Builds one message from the error event, logs it, and returns it as the
  * caller-facing payload — so the log and the response never drift apart.
+ *
+ * Logs at warn, not error: this function is also an error-handler trigger
+ * destination, and the shared logger raises an alert for error and fatal. An
+ * alert raised from inside an error handler re-enters the alert path, so the
+ * innermost catch that names the failure owns the alert instead.
  * @param {MotdErrorEvent} errorEvent - The error event passed by motdServer or by motdErrorHandlerTrigger.
- * @returns {{ message: string }} A normalized error response.
+ * @returns {Promise<{ message: string }>} A normalized error response.
  */
-export function motdErrorHandler(errorEvent: MotdErrorEvent): {
-  message: string;
-} {
+export async function motdErrorHandler(
+  errorEvent: MotdErrorEvent
+): Promise<{ message: string }> {
   const source = errorEvent.functionName ?? 'unknown function';
   const detail = errorEvent.message ?? JSON.stringify(errorEvent);
   const message = `motd request failed in ${source}: ${detail}`;
 
-  console.error(message);
+  await poly.example.utilities.log('warn', 'motdErrorHandler', message, {
+    functionName: source,
+    functionContext: errorEvent.functionContext,
+  });
 
   return { message };
 }

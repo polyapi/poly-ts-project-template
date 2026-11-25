@@ -72,8 +72,11 @@ for the wider resource model and execution boundaries.
 
 The [error handler](server/motdErrorHandler.ts) has two callers with different
 payload shapes, so its input fields are optional. It uses the supplied function
-name or `unknown function`, builds a message from the error detail, logs it,
-and returns it.
+name or `unknown function`, builds a message from the error detail, logs it
+through the shared `log` utility, and returns it. It logs at `warn` rather
+than `error`: the handler is also an error-handler trigger destination, and the
+shared logger raises an alert for `error` and `fatal`, which would re-enter the
+alert path from inside the handler.
 
 When the client throws, the server calls this handler directly from its `catch`
 block. If the handler succeeds, the server returns a body like:

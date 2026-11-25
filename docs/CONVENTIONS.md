@@ -136,7 +136,8 @@ Advanced projects can explicitly configure multiple owned roots with
 - Server functions live under `workflows/src/<workflowName>/server/`.
 - Give the primary function a name matching `polyConfig.name`; maintained
   examples use both named and default exports. Use `async` when the function
-  awaits work; synchronous validators and error formatters do not require it.
+  awaits work, including a call to the shared logger; synchronous validators
+  do not require it.
 - Flow identifies server and client functions from their `server/` and `client/`
   folders, and reads literal inline `polyConfig` metadata from each source file.
 - Keep deployment metadata in the TypeScript file's inline `polyConfig`; do not
@@ -270,9 +271,17 @@ platform behavior or delivery to an external service.
 
 - Throw explicit errors for invalid input or unrecoverable boundary failures.
 - Catch `unknown` and extract safe messages.
+- Deployed functions log through the shared `log` client function
+  (`poly.<namespace>.utilities.log`), never the console directly. It applies
+  the Vari-controlled level and redacts known credential keys. Developer
+  scripts under `scripts/` are not deployed and use the console.
 - Log useful identifiers and redacted context.
 - Never log secrets.
 - Keep global error handlers best-effort and non-throwing.
+- An error-handler trigger destination logs at `warn`, not `error`. The shared
+  logger raises an alert for `error` and `fatal`, and an alert raised from
+  inside an error handler re-enters the alert path. The innermost catch that
+  names the failure owns the alert.
 - Inspect the [common utilities](../workflows/src/utilities/common/OVERVIEW.md)
   before reusing them. Their current implementation can propagate alert
   failures and only filters a fixed set of sensitive context keys; the global
